@@ -1,0 +1,295 @@
+{
+  "responseContext": {
+    "visitorData": "Cgs1QUhGdnBuWnY4WSicss_CBjIKCgJBVRIEGgAgEQ%3D%3D",
+    "serviceTrackingParams": [
+      {
+        "service": "GFEEDBACK",
+        "params": [
+          {
+            "key": "route",
+            "value": "channel.featured"
+          },
+          {
+            "key": "is_owner",
+            "value": "false"
+          },
+          {
+            "key": "is_alc_surface",
+            "value": "false"
+          },
+          {
+            "key": "browse_id",
+            "value": "UCw49uOTAJjGUdoAeUcp7tOg"
+          },
+          {
+            "key": "browse_id_prefix",
+            "value": ""
+          },
+          {
+            "key": "logged_in",
+            "value": "0"
+          },
+          {
+            "key": "e",
+            "value": "23804281,24004644,24007613,24077241,24166867,24181174,24290153,24453989,24566687,24699899,39320593,39325854,39327052,39327564,39328857,39329111,39329270,39329667,39329671,39329753,39329778,39329817,51010235,51020570,51025415,51063643,51072748,51091058,51095478,51098299,51115184,51141472,51152050,51183910,51204329,51222973,51224489,51227037,51237842,51242448,51256074,51272458,51285052,51300176,51300241,51303432,51313109,51313767,51314158,51324733,51338524,51340662,51342857,51349914,51353393,51354083,51355912,51364270,51366423,51372971,51375205,51375719,51386540,51389629,51397332,51403602,51404808,51404810,51420457,51421832,51428417,51429106,51432294,51432529,51432560,51437206,51439005,51439874,51441796,51442683,51445757,51447191,51452420,51456413,51456629,51459424,51462020,51463930,51466643,51466697,51466900,51467525,51467676,51469820,51471144,51471920,51472254,51472817,51475961,51476897,51477847,51478931,51481409,51481788,51483631,51484222,51485417,51485425,51486018,51487679,51489555,51489568,51490158,51490331,51491436,51492252,51492930,51493010,51495859,51496733,51497739,51499188,51500051,51500153,51503025,51503027,51505436,51506681,51506715,51508444,51508739,51508979,51509183,51509315,51509522,51509543,51509592,51509613,51509830,51510887,51511440,51512529,51512708,51513113,51514876,51516122,51516745,51518179,51518964,51519691,51519754,51520249,51520400,51520576"
+          },
+          {
+            "key": "visitor_data",
+            "value": "Cgs1QUhGdnBuWnY4WSicss_CBjIKCgJBVRIEGgAgEQ%3D%3D"
+          }
+        ]
+      },
+      {
+        "service": "GOOGLE_HELP",
+        "params": [
+          {
+            "key": "browse_id",
+            "value": "UCw49uOTAJjGUdoAeUcp7tOg"
+          },
+          {
+            "key": "browse_id_prefix",
+            "value": ""
+          }
+        ]
+      },
+      {
+        "service": "CSI",
+        "params": [
+          {
+            "key": "c",
+            "value": "WEB"
+          },
+          {
+            "key": "cver",
+            "value": "2.20210721.00.00"
+          },
+          {
+            "key": "yt_li",
+            "value": "0"
+          },
+          {
+            "key": "GetChannelPage_rid",
+            "value": "0x2c3fcbcd17648efa"
+          }
+        ]
+      },
+      {
+        "service": "GUIDED_HELP",
+        "params": [
+          {
+            "key": "logged_in",
+            "value": "0"
+          }
+        ]
+      },
+      {
+        "service": "ECATCHER",
+        "params": [
+          {
+            "key": "client.version",
+            "value": "2.20250331"
+          },
+          {
+            "key": "client.name",
+            "value": "WEB"
+          }
+        ]
+      }
+    ],
+    "maxAgeSeconds": 300,
+    "mainAppWebResponseContext": {
+      "loggedOut": true,
+      "trackingParam": "kx_fmPxhoPZRnMWxzcxZwZQLrRwRfyQQoYpYHCj8sHmRgNwRgkuswmIBwOcCE59TDtslLKPQ-SS"
+    },
+    "webResponseContextExtensionData": {
+      "hasDecorated": true
+    }
+  },
+  "trackingParams": "CAAQhGciEwjvz8_clv2NAxUkUQ8CHdEvKwU=",
+  "onResponseReceivedActions": [
+    {
+      "clickTrackingParams": "CAAQhGciEwjvz8_clv2NAxUkUQ8CHdEvKwU=",
+      "appendContinuationItemsAction": {
+        "continuationItems": [
+          {
+            "richItemRenderer": {
+              "content": {
+                "videoRenderer": {
+                  "videoId": "PCJOx9dU3mg",
+                  "thumbnail": {
+                    "thumbnails": [
+                      {
+                        "url": "https://i.ytimg.com/vi/PCJOx9dU3mg/hqdefault.jpg?sqp=-oaymwEiCKgBEF5IWvKriqkDFQgBFQAAAAAYASUAAMhCPQCAokN4AQ==&rs=AOn4CLB5lE68liKfP6NwAfzChG2I9r5ExQ",
+                        "width": 168,
+                        "height": 94
+                      },
+                      {
+                        "url": "https://i.ytimg.com/vi/PCJOx9dU3mg/hqdefault.jpg?sqp=-oaymwEiCMQBEG5IWvKriqkDFQgBFQAAAAAYASUAAMhCPQCAokN4AQ==&rs=AOn4CLDhdObGZg0o7qWUWWUIVJR6eamN2w",
+                        "width": 196,
+                        "height": 110
+                      },
+                      {
+                        "url": "https://i.ytimg.com/vi/PCJOx9dU3mg/hqdefault.jpg?sqp=-oaymwEjCPYBEIoBSFryq4qpAxUIARUAAAAAGAElAADIQj0AgKJDeAE=&rs=AOn4CLBlzB1dfvlEt0Kf1Vxq-TOqZgZGXg",
+                        "width": 246,
+                        "height": 138
+                      },
+                      {
+                        "url": "https://i.ytimg.com/vi/PCJOx9dU3mg/hqdefault.jpg?sqp=-oaymwEjCNACELwBSFryq4qpAxUIARUAAAAAGAElAADIQj0AgKJDeAE=&rs=AOn4CLDMls__AZDzrsJWOrKGco4vis5tDw",
+                        "width": 336,
+                        "height": 188
+                      }
+                    ]
+                  },
+                  "title": {
+                    "runs": [
+                      {
+                        "text": "Doktor x P Money x D Double E x Diagnostix - Big Bad"
+                      }
+                    ],
+                    "accessibility": {
+                      "accessibilityData": {
+                        "label": "Doktor x P Money x D Double E x Diagnostix - Big Bad 3 minutes, 1 second"
+                      }
+                    }
+                  },
+                  "descriptionSnippet": {
+                    "runs": [
+                      {
+                        "text": "Buy or stream 'Big Bad' here: https://hospitalrecords.ffm.to/bigbad.OYD\n\nThings are about to get serious as some of the most iconic figures from the UK music scene join forces. Doktor, P Money,..."
+                      }
+                    ]
+                  },
+                  "publishedTimeText": {
+                    "simpleText": "8 months ago"
+                  },
+                  "lengthText": {
+                    "accessibility": {
+                      "accessibilityData": {
+                        "label": "3 minutes, 1 second"
+                      }
+                    },
+                    "simpleText": "3:01"
+                  },
+                  "viewCountText": {
+                    "simpleText": "9,151 views"
+                  },
+                  "navigationEndpoint": {
+                    "clickTrackingParams": "CLABENwwIhMI78_P3Jb9jQMVJFEPAh3RLysFWhhVQ3c0OXVPVEFKakdVZG9BZVVjcDd0T2eaAQMQ8jg=",
+                    "commandMetadata": {
+                      "webCommandMetadata": {
+                        "url": "/watch?v=PCJOx9dU3mg",
+                        "webPageType": "WEB_PAGE_TYPE_WATCH",
+                        "rootVe": 3832
+                      }
+                    },
+                    "watchEndpoint": {
+                      "videoId": "PCJOx9dU3mg",
+                      "watchEndpointSupportedOnesieConfig": {
+                        "html5PlaybackOnesieConfig": {
+                          "commonConfig": {
+                            "url": "https://rr3---sn-ntq7yney.googlevideo.com/initplayback?source=youtube&oeis=1&c=WEB&oad=3200&ovd=3200&oaad=11000&oavd=11000&ocs=700&oewis=1&oputc=1&ofpcc=1&msp=1&odepv=1&onvi=1&id=3c224ec7d754de68&ip=159.196.106.175&initcwndbps=3402500&mt=1750325138&oweuc="
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "ownerBadges": [
+                    {
+                      "metadataBadgeRenderer": {
+                        "icon": {
+                          "iconType": "CHECK_CIRCLE_THICK"
+                        },
+                        "style": "BADGE_STYLE_TYPE_VERIFIED",
+                        "tooltip": "Verified",
+                        "trackingParams": "CLABENwwIhMI78_P3Jb9jQMVJFEPAh3RLysF",
+                        "accessibilityData": {
+                          "label": "Verified"
+                        }
+                      }
+                    }
+                  ],
+                  "trackingParams": "CLABENwwIhMI78_P3Jb9jQMVJFEPAh3RLysFQOi807r92JORPA==",
+                  "showActionMenu": false,
+                  "shortViewCountText": {
+                    "accessibility": {
+                      "accessibilityData": {
+                        "label": "9.1 thousand views"
+                      }
+                    },
+                    "simpleText": "9.1K views"
+                  },
+                  "menu": {
+                    "menuRenderer": {
+                      "items": [
+                        {
+                          "menuServiceItemRenderer": {
+                            "text": {
+                              "runs": [
+                                {
+                                  "text": "Add to queue"
+                                }
+                              ]
+                            },
+                            "icon": {
+                              "iconType": "ADD_TO_QUEUE_TAIL"
+                            },
+                            "serviceEndpoint": {
+                              "clickTrackingParams": "CLQBEP6YBBgGIhMI78_P3Jb9jQMVJFEPAh3RLysF",
+                              "commandMetadata": {
+                                "webCommandMetadata": {
+                                  "sendPost": true
+                                }
+                              },
+                              "signalServiceEndpoint": {
+                                "signal": "CLIENT_SIGNAL",
+                                "actions": [
+                                  {
+                                    "clickTrackingParams": "CLQBEP6YBBgGIhMI78_P3Jb9jQMVJFEPAh3RLysF",
+                                    "addToPlaylistCommand": {
+                                      "openMiniplayer": true,
+                                      "videoId": "PCJOx9dU3mg",
+                                      "listType": "PLAYLIST_EDIT_LIST_TYPE_QUEUE",
+                                      "onCreateListCommand": {
+                                        "clickTrackingParams": "CLQBEP6YBBgGIhMI78_P3Jb9jQMVJFEPAh3RLysF",
+                                        "commandMetadata": {
+                                          "webCommandMetadata": {
+                                            "sendPost": true,
+                                            "apiUrl": "/youtubei/v1/playlist/create"
+                                          }
+                                        },
+                                        "createPlaylistServiceEndpoint": {
+                                          "videoIds": [
+                                            "PCJOx9dU3mg"
+                                          ],
+                                          "params": "CAQ%3D"
+                                        }
+                                      },
+                                      "videoIds": [
+                                        "PCJOx9dU3mg"
+                                      ]
+                                    }
+                                  }
+                                ]
+                              }
+                            }
+                          }
+                        }
+                      ],
+                      "trackingParams": "CLQBEP6YBBgGIhMI78_P3Jb9jQMVJFEPAh3RLysF",
+                      "accessibility": {
+                        "accessibilityData": {
+                          "label": "Action menu"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "trackingParams": "CLABENwwIhMI78_P3Jb9jQMVJFEPAh3RLysF"
+            }
+          }
+        ]
+      }
+    }
+  ]
+} 

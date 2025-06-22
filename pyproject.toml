@@ -1,0 +1,60 @@
+[project]
+name = "yt-meta"
+version = "0.1.1"
+description = "A lightweight YouTube metadata library."
+readme = "README.md"
+authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "youtube-comment-downloader>=0.1.76",
+    "beautifulsoup4>=4.12.3",
+    "httpx>=0.27.0",
+    "python-dateutil>=2.9.0",
+    "loguru>=0.7.2",
+]
+requires-python = ">=3.9"
+
+[project.urls]
+Homepage = "https://github.com/shaneisley/yt-meta"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-cov>=6.2.1",
+    "pytest-mock>=3.14.1",
+    "freezegun>=1.5.1",
+    "ruff>=0.5.5",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: marks tests as integration tests (slow, requires network)",
+]
+addopts = "--durations=10"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+# Enable Pyflakes, pycodestyle, and isort rules.
+select = ["E", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "double"
