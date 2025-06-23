@@ -237,6 +237,87 @@ class YtMetaClient(YoutubeCommentDownloader):
             )
             videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
 
+    def get_playlist_videos(self, playlist_id: str, fetch_full_metadata: bool = False):
+        """
+        A generator that yields metadata for all videos in a playlist.
+
+        Args:
+            playlist_id: The ID of the playlist.
+            fetch_full_metadata: If True, fetches the full, detailed metadata for each video.
+        """
+        self.logger.info("Starting to fetch videos for playlist: %s", playlist_id)
+        playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
+
+        try:
+            self.logger.info(f"Fetching playlist page: {playlist_url}")
+            response = self.session.get(playlist_url, timeout=10)
+            response.raise_for_status()
+            html = response.text
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Request failed for playlist page {playlist_url}: {e}")
+            raise VideoUnavailableError(f"Could not fetch playlist page: {e}", playlist_id=playlist_id) from e
+
+        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
+        if not initial_data:
+            raise MetadataParsingError("Could not extract ytInitialData from playlist page.", playlist_id=playlist_id)
+
+        ytcfg = parsing.find_ytcfg(html)
+        if not ytcfg:
+            raise MetadataParsingError("Could not extract ytcfg from playlist page.", playlist_id=playlist_id)
+
+        path_to_renderer = "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.itemSectionRenderer.contents.0.playlistVideoListRenderer"
+        renderer = _deep_get(initial_data, path_to_renderer)
+        if not renderer:
+            # Fallback for slightly different structures
+            path_to_renderer = "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.playlistVideoListRenderer"
+            renderer = _deep_get(initial_data, path_to_renderer)
+
+        if not renderer:
+            self.logger.warning("No video renderers found on the initial playlist page: %s", playlist_id)
+            return
+
+        videos, continuation_token = parsing.extract_videos_from_playlist_renderer(renderer)
+
+        while True:
+            for video in videos:
+                if fetch_full_metadata:
+                    try:
+                        yield self.get_video_metadata(video["watchUrl"])
+                    except (VideoUnavailableError, KeyError) as e:
+                        self.logger.warning(
+                            "Could not fetch full metadata for video %s: %s",
+                            video.get("videoId"),
+                            e,
+                        )
+                else:
+                    yield video
+            
+            if not continuation_token:
+                self.logger.info("Terminating video fetch loop.")
+                break
+
+            self.logger.info("Fetching next page of videos with continuation token.")
+            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
+            if not continuation_data:
+                self.logger.warning("Stopping pagination due to missing continuation data.")
+                break
+            
+            # The path to renderers is different for playlist continuations
+            renderers = _deep_get(
+                continuation_data,
+                "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
+                [],
+            )
+            
+            # For playlists, the continuation response contains a list of renderers directly
+            # So we can't just use extract_videos_from_renderers.
+            # We need a new function or adapt the existing one.
+            # Let's adapt extract_videos_from_playlist_renderer to handle this
+            
+            # HACK: Create a temporary renderer structure to reuse the parsing function
+            temp_renderer = {"contents": renderers}
+            videos, continuation_token = parsing.extract_videos_from_playlist_renderer(temp_renderer)
+
     def _get_continuation_data(self, token: str, ytcfg: dict):
         """Fetches the next page of videos using a continuation token."""
         try:

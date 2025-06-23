@@ -70,7 +70,25 @@ for video in itertools.islice(videos_generator, 5):
     print(f"- {video['title']} (ID: {video['videoId']})")
 ```
 
-### 4. Filtering Channel Videos by Date
+### 4. Get All Videos from a Playlist
+
+Returns a generator that yields metadata for all videos in a playlist, handling pagination automatically.
+
+**Example:**
+```python
+import itertools
+from yt_meta import YtMetaClient
+
+client = YtMetaClient()
+playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"
+videos_generator = client.get_playlist_videos(playlist_id)
+
+# Print the first 5 videos
+for video in itertools.islice(videos_generator, 5):
+    print(f"- {video['title']} (ID: {video['videoId']})")
+```
+
+### 5. Filtering Channel Videos by Date
 
 You can efficiently filter videos by a date range using the `start_date` and `end_date` arguments. The library automatically stops fetching older videos once it passes the `start_date`, saving time and network requests.
 
@@ -144,6 +162,12 @@ Returns a generator that yields metadata for all videos on a channel's "Videos" 
 -   **`start_date`**: The earliest date for videos to include. Can be a `datetime.date` object or a string (e.g., `"30d"`, `"2 months ago"`). The generator will efficiently stop once it encounters videos older than this date.
 -   **`end_date`**: The latest date for videos to include. Can be a `datetime.date` object or a string.
 -   **Yields**: Dictionaries of video metadata. The contents depend on the `fetch_full_metadata` flag.
+
+#### `get_playlist_videos(playlist_id: str, fetch_full_metadata: bool = False) -> Generator[dict, None, None]`
+Returns a generator that yields metadata for all videos in a playlist. It handles pagination automatically.
+-   **`playlist_id`**: The ID of the playlist (e.g., `PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU`).
+-   **`fetch_full_metadata`**: If `True`, fetches the complete, detailed metadata for each video. This is slower as it requires an additional request per video. If `False` (default), returns basic metadata available directly from the playlist page.
+-   **Yields**: Dictionaries of video metadata.
 
 #### `clear_cache(channel_url: str = None)`
 Clears the internal in-memory cache.

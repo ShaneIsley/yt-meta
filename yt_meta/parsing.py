@@ -194,6 +194,43 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
     return videos, continuation_token
 
 
+def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:
+    """Helper to extract video data and a continuation token from a playlistVideoListRenderer."""
+    videos = []
+    continuation_token = None
+    if not renderer or "contents" not in renderer:
+        return videos, continuation_token
+
+    renderer_list = renderer["contents"]
+
+    for item in renderer_list:
+        if "playlistVideoRenderer" in item:
+            videos.append(parse_video_renderer(item["playlistVideoRenderer"]))
+        elif "continuationItemRenderer" in item:
+            continuation_endpoint = _deep_get(item, "continuationItemRenderer.continuationEndpoint")
+            if continuation_endpoint and "continuationCommand" in continuation_endpoint:
+                continuation_token = _deep_get(continuation_endpoint, "continuationCommand.token")
+            # Fallback for the case where it's nested deeper
+            elif continuation_endpoint and "commandExecutorCommand" in continuation_endpoint:
+                for command in _deep_get(continuation_endpoint, "commandExecutorCommand.commands", []):
+                    if "continuationCommand" in command:
+                        continuation_token = _deep_get(command, "continuationCommand.token")
+                        break
+
+    return videos, continuation_token
+
+
+def parse_video_renderer(renderer: dict) -> dict:
+    """Helper to parse a single video renderer from a playlist."""
+    return {
+        "videoId": renderer.get("videoId"),
+        "title": _deep_get(renderer, "title.runs.0.text"),
+        "thumbnails": _deep_get(renderer, "thumbnail.thumbnails", []),
+        "lengthSeconds": parse_duration(_deep_get(renderer, "lengthText.accessibility.accessibilityData.label")),
+        "watchUrl": f"https://www.youtube.com{_deep_get(renderer, 'navigationEndpoint.commandMetadata.webCommandMetadata.url')}",
+    }
+
+
 def parse_channel_metadata(initial_data: dict) -> dict:
     """
     Parses channel metadata from the initial data blob.
@@ -218,6 +255,39 @@ def parse_channel_metadata(initial_data: dict) -> dict:
         "vanity_url": vanity_url,
         "keywords": [kw.strip() for kw in metadata_renderer.get("keywords", "").split(",") if kw.strip()],
         "is_family_safe": metadata_renderer.get("isFamilySafe"),
+    }
+
+
+def parse_playlist_metadata(initial_data: dict) -> dict:
+    """
+    Parses playlist metadata from the initial data blob.
+    """
+    header = _deep_get(initial_data, "header.playlistHeaderRenderer")
+    microformat = _deep_get(initial_data, "microformat.microformatDataRenderer")
+    sidebar_primary = _deep_get(
+        initial_data, "sidebar.playlistSidebarRenderer.items.0.playlistSidebarPrimaryInfoRenderer"
+    )
+    sidebar_secondary = _deep_get(
+        initial_data, "sidebar.playlistSidebarRenderer.items.1.playlistSidebarSecondaryInfoRenderer"
+    )
+
+    video_count_text = _deep_get(sidebar_primary, "stats.0.runs.0.text", "").replace(",", "")
+    playlist_id = None
+    if microformat and "urlCanonical" in microformat:
+        match = re.search(r"list=([^&]+)", microformat["urlCanonical"])
+        if match:
+            playlist_id = match.group(1)
+
+    author = _deep_get(sidebar_secondary, "videoOwner.videoOwnerRenderer.title.runs.0.text")
+    if not author:
+        author = _deep_get(header, "ownerText.runs.0.text")
+
+    return {
+        "title": _deep_get(microformat, "title"),
+        "author": author,
+        "description": _deep_get(microformat, "description"),
+        "video_count": int(video_count_text) if video_count_text.isdigit() else 0,
+        "playlist_id": playlist_id,
     }
 
 

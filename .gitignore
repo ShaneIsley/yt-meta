@@ -84,4 +84,6 @@ cython_debug/
 
 # project specific
 TODO.md
-yt-meta.code-workspace
+*.code-workspace
+CONTINUATION_GUIDE.md
+DESIGN.md
