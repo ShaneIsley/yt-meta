@@ -1,6 +1,6 @@
 [project]
 name = "yt-meta"
-version = "0.1.1"
+version = "0.2.0"
 description = "A lightweight YouTube metadata library."
 readme = "README.md"
 authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
@@ -37,6 +37,10 @@ dev = [
     "pytest-mock>=3.14.1",
     "freezegun>=1.5.1",
     "ruff>=0.5.5",
+]
+publish = [
+    "build>=1.2.1",
+    "twine>=5.1.1",
 ]
 
 [build-system]
