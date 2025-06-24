@@ -4,7 +4,7 @@ from .client import YtMetaClient
 from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 __all__ = [
     "YtMetaClient",
