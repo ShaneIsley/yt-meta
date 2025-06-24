@@ -1,12 +1,11 @@
 [project]
 name = "yt-meta"
-version = "0.2.0"
+version = "0.2.1"
 description = "A lightweight YouTube metadata library."
 readme = "README.md"
 authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
-license = { file = "LICENSE" }
+license = "MIT"
 classifiers = [
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Development Status :: 4 - Beta",
@@ -52,6 +51,9 @@ markers = [
     "integration: marks tests as integration tests (slow, requires network)",
 ]
 addopts = "--durations=10"
+
+[tool.setuptools.packages.find]
+include = ["yt_meta"]
 
 [tool.ruff]
 line-length = 120
