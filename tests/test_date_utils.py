@@ -57,6 +57,19 @@ def test_parse_human_readable_years():
     assert parse_relative_date_string("2 years ago") == expected
 
 
+def test_parse_human_readable_mixed_case_and_spacing():
+    """Tests that mixed case and extra spacing are handled correctly."""
+    expected = date.today() - timedelta(days=10)
+    assert parse_relative_date_string("  10   DAY  ago  ") == expected
+
+
+def test_parse_zero_value():
+    """Tests that a value of 0 returns today's date."""
+    expected = date.today()
+    assert parse_relative_date_string("0d") == expected
+    assert parse_relative_date_string("0 weeks ago") == expected
+
+
 def test_parse_invalid_string_returns_today():
     """Tests that an invalid or empty string returns today's date."""
     assert parse_relative_date_string("invalid date") == date.today()

@@ -148,6 +148,50 @@ for video in itertools.islice(videos, 5):
 
 ```
 
+### 6. Advanced Filtering with Dictionaries
+
+For more complex queries, you can use the `filters` argument. This accepts a dictionary where keys are video attributes (like `view_count` or `duration_seconds`) and values are dictionaries of operators and their corresponding values.
+
+**Supported Fields:**
+*   `view_count`: The number of views a video has.
+*   `duration_seconds`: The length of the video in seconds.
+
+**Supported Operators:**
+*   `gt`: Greater than
+*   `gte`: Greater than or equal to
+*   `lt`: Less than
+*   `lte`: Less than or equal to
+*   `eq`: Equal to
+
+**Example: Finding popular, short videos**
+
+```python
+import itertools
+from yt_meta import YtMetaClient
+
+client = YtMetaClient()
+channel_url = "https://www.youtube.com/@TED/videos"
+
+# Find videos over 1M views AND shorter than 5 minutes (300s)
+adv_filters = {
+    "view_count": {"gt": 1_000_000},
+    "duration_seconds": {"lt": 300}
+}
+
+# This is fast because both view_count and duration are available
+# in the basic metadata returned from the main channel page.
+videos = client.get_channel_videos(
+    channel_url,
+    filters=adv_filters,
+    fetch_full_metadata=False
+)
+
+for video in itertools.islice(videos, 5):
+    views = video.get('viewCount', 0)
+    duration = video.get('lengthSeconds', 0)
+    print(f"- {video.get('title')} ({views:,} views, {duration}s)")
+```
+
 ## Logging
 
 `yt-meta` uses Python's `logging` module to provide insights into its operations. To see the log output, you can configure a basic logger.
@@ -182,21 +226,23 @@ Fetches metadata for a YouTube channel.
 -   **Returns**: A dictionary with channel metadata like `title`, `description`, `subscriber_count`, `vanity_url`, etc.
 -   **Raises**: `VideoUnavailableError`, `MetadataParsingError`.
 
-#### `get_channel_videos(channel_url: str, force_refresh: bool = False, fetch_full_metadata: bool = False, start_date: Optional[Union[str, date]] = None, end_date: Optional[Union[str, date]] = None) -> Generator[dict, None, None]`
+#### `get_channel_videos(channel_url: str, force_refresh: bool = False, fetch_full_metadata: bool = False, start_date: Optional[Union[str, date]] = None, end_date: Optional[Union[str, date]] = None, filters: Optional[dict] = None) -> Generator[dict, None, None]`
 Returns a generator that yields metadata for all videos on a channel's "Videos" tab. It handles pagination automatically.
 -   **`channel_url`**: URL of the channel's "Videos" tab.
 -   **`force_refresh`**: If `True`, bypasses the cache for the initial page load.
 -   **`fetch_full_metadata`**: If `True`, fetches the complete, detailed metadata for each video. This is slower as it requires an additional request per video. If `False` (default), returns basic metadata available directly from the channel page.
 -   **`start_date`**: The earliest date for videos to include. Can be a `datetime.date` object or a string (e.g., `"30d"`, `"2 months ago"`). The generator will efficiently stop once it encounters videos older than this date.
 -   **`end_date`**: The latest date for videos to include. Can be a `datetime.date` object or a string.
+-   **`filters`**: A dictionary for advanced filtering (e.g., `{"view_count": {"gt": 1000}}`).
 -   **Yields**: Dictionaries of video metadata. The contents depend on the `fetch_full_metadata` flag.
 
-#### `get_playlist_videos(playlist_id: str, fetch_full_metadata: bool = False, start_date: Optional[Union[str, date]] = None, end_date: Optional[Union[str, date]] = None) -> Generator[dict, None, None]`
+#### `get_playlist_videos(playlist_id: str, fetch_full_metadata: bool = False, start_date: Optional[Union[str, date]] = None, end_date: Optional[Union[str, date]] = None, filters: Optional[dict] = None) -> Generator[dict, None, None]`
 Returns a generator that yields metadata for all videos in a playlist. It handles pagination automatically.
 -   **`playlist_id`**: The ID of the playlist (e.g., `PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU`).
 -   **`fetch_full_metadata`**: If `True`, fetches the complete, detailed metadata for each video. This is slower as it requires an additional request per video. If `False` (default), returns basic metadata available directly from the playlist page.
 -   **`start_date`**: The earliest date for videos to include. Can be a `datetime.date` object or a string.
 -   **`end_date`**: The latest date for videos to include. Can be a `datetime.date` object or a string.
+-   **`filters`**: A dictionary for advanced filtering (e.g., `{"duration_seconds": {"lte": 60}}`).
 -   **Yields**: Dictionaries of video metadata.
 
 #### `clear_cache(channel_url: str = None)`

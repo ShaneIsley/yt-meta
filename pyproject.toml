@@ -48,9 +48,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.pytest.ini_options]
 markers = [
-    "integration: marks tests as integration tests (slow, requires network)",
+    "integration: marks tests as integration tests (slow, require network)",
 ]
-addopts = "--durations=10"
+addopts = "--color=yes"
+pythonpath = "."
 
 [tool.setuptools.packages.find]
 include = ["yt_meta"]
