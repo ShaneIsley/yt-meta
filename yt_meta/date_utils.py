@@ -5,8 +5,17 @@ from datetime import date, datetime, timedelta
 
 def parse_relative_date_string(date_str: str) -> date:
     """
-    Parses a relative date string (e.g., "1d", "2 weeks ago") into a date object.
-    Returns today's date if the string is invalid.
+    Parses a relative date string into a date object.
+
+    Handles two main formats:
+    1. Shorthand notation (e.g., "1d", "2w", "3m", "4y" for days, weeks,
+       months, and years).
+    2. Human-readable notation (e.g., "1 day ago", "2 weeks ago").
+
+    Note:
+    - Months are approximated as 30 days.
+    - Years are approximated as 365 days.
+    - Returns today's date if the string format is unrecognized.
     """
     if not isinstance(date_str, str):
         return datetime.today().date()

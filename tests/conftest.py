@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
+import os
 
 import pytest
-
-from yt_meta import parsing
+from yt_meta import YtMetaClient, parsing
+from yt_meta.exceptions import VideoUnavailableError
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -76,3 +77,20 @@ def player_response_data(video_html):
 @pytest.fixture
 def initial_data(video_html):
     return parsing.extract_and_parse_json(video_html, "ytInitialData")
+
+
+def get_fixture_path(filename):
+    """Returns the absolute path to a fixture file."""
+    return os.path.join(os.path.dirname(__file__), "fixtures", filename)
+
+
+def get_fixture(filename):
+    """Reads and returns the content of a fixture file."""
+    with open(get_fixture_path(filename), "r") as f:
+        return f.read()
+
+
+@pytest.fixture
+def client():
+    """Provides a YtMetaClient instance for integration tests."""
+    return YtMetaClient()

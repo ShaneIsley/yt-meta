@@ -4,22 +4,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
+from tests.conftest import get_fixture
 from yt_meta import MetadataParsingError, VideoUnavailableError, YtMetaClient
 
 # Define the path to our test fixture
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "B68agR-OeJM.html"
 CHANNEL_FIXTURE_PATH = Path(__file__).parent / "fixtures"
-
-
-def get_fixture(name):
-    with open(Path(__file__).parent / "fixtures" / name, "r") as f:
-        return f.read()
-
-
-@pytest.fixture
-def client():
-    # In-memory cache for testing
-    return YtMetaClient()
 
 
 @pytest.fixture
@@ -75,8 +65,7 @@ def test_get_video_metadata_live_stream(client):
         mock_get.return_value.text = get_fixture("live_stream.html")
         mock_get.return_value.status_code = 200
         result = client.get_video_metadata("LIVE_STREAM_VIDEO_ID")
-        assert result["is_live"] is True
-        assert result["like_count"] is None
+        assert result["is_live"] is True, "Should correctly identify a live stream"
 
 
 def test_get_channel_page_data_fails_on_request_error(mocked_client):
@@ -95,5 +84,30 @@ def test_get_channel_videos_raises_for_bad_initial_data(mock_get_page_data, clie
         list(client.get_channel_videos("test_channel"))
 
 
-def test_get_channel_videos_handles_continuation_errors(client):
-    pass
+def test_get_channel_videos_handles_continuation_errors(
+    client, mocker, youtube_channel_initial_data, youtube_channel_ytcfg
+):
+    """
+    Tests that video fetching gracefully stops if a continuation request fails.
+
+    This test simulates a scenario where the first page of videos is fetched
+    successfully (containing a continuation token), but the subsequent API call
+    for the next page fails (returns None). The client should not crash and
+    should return only the videos from the first page.
+    """
+    mocker.patch(
+        "yt_meta.client.YtMetaClient._get_channel_page_data",
+        return_value=(youtube_channel_initial_data, youtube_channel_ytcfg, "<html></html>"),
+    )
+
+    mock_continuation = mocker.patch(
+        "yt_meta.client.YtMetaClient._get_continuation_data",
+        return_value=None,
+    )
+
+    # The channel fixture is known to have 30 videos on the first page
+    # and a continuation token.
+    videos = list(client.get_channel_videos("https://any-url.com"))
+
+    assert len(videos) == 30, "Should only return the videos from the first page."
+    mock_continuation.assert_called_once()

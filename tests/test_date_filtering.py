@@ -8,14 +8,10 @@ from yt_meta import YtMetaClient
 
 # Using a channel with frequent uploads for reliable date testing
 LIVE_CHANNEL_URL = "https://www.youtube.com/@samwitteveenai/videos"
+# A playlist from the same channel with a good number of videos
+LIVE_PLAYLIST_ID = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"
 # How many videos to check in each test. Keep this low for speed.
 VIDEO_SAMPLE_SIZE = 3
-
-
-@pytest.fixture
-def client():
-    """Provides a fresh instance of the client for each test."""
-    return YtMetaClient()
 
 
 @pytest.mark.integration
@@ -87,3 +83,75 @@ def test_stop_pagination_works_efficiently(client):
     if last_video_published_text:
         estimated_date = date.today() - timedelta(weeks=2)  # Give a 1 week buffer
         assert estimated_date <= start_date
+
+
+@pytest.mark.integration
+def test_playlist_filter_by_start_date_shorthand(client):
+    """
+    Tests filtering a playlist with a relative shorthand string for start_date.
+    """
+    start_date = date.today() - timedelta(days=90)  # A wider range for playlists
+
+    videos_generator = client.get_playlist_videos(LIVE_PLAYLIST_ID, start_date="90d", fetch_full_metadata=True)
+    videos = list(itertools.islice(videos_generator, VIDEO_SAMPLE_SIZE))
+
+    assert len(videos) > 0, "Should have found at least one video in the last 90 days"
+
+    for video in videos:
+        assert "publish_date" in video, "Full metadata should include publish_date"
+        publish_date = datetime.fromisoformat(video["publish_date"]).date()
+        assert publish_date >= start_date
+
+
+@pytest.mark.integration
+def test_playlist_filter_with_end_date(client):
+    """
+    Tests that the end_date correctly filters out newer videos in a playlist.
+    """
+    # A window from 180 to 90 days ago
+    start_date = date.today() - timedelta(days=180)
+    end_date = date.today() - timedelta(days=90)
+
+    videos_generator = client.get_playlist_videos(
+        LIVE_PLAYLIST_ID,
+        start_date=start_date,
+        end_date=end_date,
+        fetch_full_metadata=True,
+    )
+    videos = list(itertools.islice(videos_generator, VIDEO_SAMPLE_SIZE))
+
+    assert len(videos) > 0, "Should find videos in the specified window from the past"
+
+    for video in videos:
+        publish_date = datetime.fromisoformat(video["publish_date"]).date()
+        assert start_date <= publish_date <= end_date, (
+            f"Video with date {publish_date} is outside the expected range {start_date} to {end_date}"
+        )
+
+
+@pytest.mark.integration
+def test_playlist_filter_efficiently(client):
+    """
+    Tests filtering a playlist efficiently by NOT fetching full metadata.
+    This relies on the estimated date from `publishedTimeText`.
+    """
+    # Use a wide date range where videos are known to exist.
+    # The test playlist has videos from ~8 years ago.
+    start_date = "9y"
+    end_date = "7y"
+
+    # fetch_full_metadata is False to make this test extremely fast
+    videos_generator = client.get_playlist_videos(
+        LIVE_PLAYLIST_ID,
+        start_date=start_date,
+        end_date=end_date,
+        fetch_full_metadata=False,
+    )
+    videos = list(videos_generator)
+
+    assert len(videos) > 0, "Should find videos in the specified window"
+
+    # Check that at least one video has a publishedTimeText
+    assert any(
+        v.get("publishedTimeText") for v in videos
+    ), "At least one video should have a publishedTimeText"

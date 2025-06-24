@@ -33,23 +33,40 @@ def find_ytcfg(html: str) -> Optional[dict]:
 
 def extract_and_parse_json(html: str, variable_name: str) -> dict | None:
     """
-    Finds a javascript variable assignment, extracts the JSON blob, and parses it.
+    Finds a javascript variable assignment, extracts the JSON blob by finding
+    the matching braces, and parses it.
     """
     try:
         start_key = f"var {variable_name} = "
         start_index = html.find(start_key)
+
         if start_index == -1:
             logger.warning(f"Could not find JavaScript variable '{variable_name}'.")
             return None
 
         start_index += len(start_key)
-        end_index = html.find("};", start_index)
-        if end_index == -1:
-            logger.warning(f"Could not find end of JSON for variable '{variable_name}'.")
+
+        # Find the opening brace of the JSON object
+        first_brace = html.find("{", start_index)
+        if first_brace == -1:
+            logger.warning(f"Could not find opening brace for '{variable_name}'.")
             return None
 
-        json_str = html[start_index : end_index + 1]
-        return json.loads(json_str)
+        # Find the matching closing brace
+        open_braces = 1
+        for i, char in enumerate(html[first_brace + 1 :], start=first_brace + 1):
+            if char == "{":
+                open_braces += 1
+            elif char == "}":
+                open_braces -= 1
+
+            if open_braces == 0:
+                json_str = html[first_brace : i + 1]
+                return json.loads(json_str)
+
+        logger.warning(f"Could not find matching closing brace for '{variable_name}'.")
+        return None
+
     except (json.JSONDecodeError, IndexError) as e:
         logger.error(f"Failed to parse JSON for '{variable_name}': {e}")
         return None
@@ -222,10 +239,19 @@ def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | N
 
 def parse_video_renderer(renderer: dict) -> dict:
     """Helper to parse a single video renderer from a playlist."""
+    published_time_text = None
+    video_info_runs = _deep_get(renderer, "videoInfo.runs", [])
+    if video_info_runs:
+        # The text is usually in the last run, like "6 years ago"
+        text = video_info_runs[-1].get("text")
+        if text:
+            published_time_text = text
+
     return {
         "videoId": renderer.get("videoId"),
         "title": _deep_get(renderer, "title.runs.0.text"),
         "thumbnails": _deep_get(renderer, "thumbnail.thumbnails", []),
+        "publishedTimeText": published_time_text,
         "lengthSeconds": parse_duration(_deep_get(renderer, "lengthText.accessibility.accessibilityData.label")),
         "watchUrl": f"https://www.youtube.com{_deep_get(renderer, 'navigationEndpoint.commandMetadata.webCommandMetadata.url')}",
     }

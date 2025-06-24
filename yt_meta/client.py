@@ -1,4 +1,4 @@
-# yt_meta/farmer.py
+# yt_meta/client.py
 
 import json
 import logging
@@ -18,7 +18,15 @@ logger = logging.getLogger(__name__)
 
 class YtMetaClient(YoutubeCommentDownloader):
     """
-    Downloads metadata for YouTube videos and channels.
+    A client for fetching metadata for YouTube videos, channels, and playlists.
+
+    This class provides methods to retrieve detailed information such as titles,
+    descriptions, view counts, and publication dates. It handles the complexity
+    of YouTube's internal data structures and pagination logic (continuations),
+    offering a simple interface for data collection.
+
+    It also includes an in-memory cache for channel pages to improve performance
+    for repeated requests.
     """
 
     def __init__(self):
@@ -237,15 +245,36 @@ class YtMetaClient(YoutubeCommentDownloader):
             )
             videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
 
-    def get_playlist_videos(self, playlist_id: str, fetch_full_metadata: bool = False):
+    def get_playlist_videos(
+        self,
+        playlist_id: str,
+        fetch_full_metadata: bool = False,
+        start_date: Optional[Union[str, date]] = None,
+        end_date: Optional[Union[str, date]] = None,
+    ):
         """
         A generator that yields metadata for all videos in a playlist.
 
         Args:
             playlist_id: The ID of the playlist.
             fetch_full_metadata: If True, fetches the full, detailed metadata for each video.
+            start_date: The earliest date for videos to include. Can be a date object
+                        or a string (e.g., "1d", "2 weeks ago").
+            end_date: The latest date for videos to include. Can be a date object
+                      or a string.
         """
         self.logger.info("Starting to fetch videos for playlist: %s", playlist_id)
+
+        # --- Date Processing ---
+        if isinstance(start_date, str):
+            start_date = parse_relative_date_string(start_date)
+        if isinstance(end_date, str):
+            # For end_date, we just need to parse it if it's a string, no 'today' default needed.
+            end_date = parse_relative_date_string(end_date)
+        elif end_date is None:
+            # Default end_date to today if not provided
+            end_date = datetime.today().date()
+
         playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
 
         try:
@@ -267,6 +296,7 @@ class YtMetaClient(YoutubeCommentDownloader):
 
         path_to_renderer = "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.itemSectionRenderer.contents.0.playlistVideoListRenderer"
         renderer = _deep_get(initial_data, path_to_renderer)
+
         if not renderer:
             # Fallback for slightly different structures
             path_to_renderer = "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.playlistVideoListRenderer"
@@ -279,10 +309,41 @@ class YtMetaClient(YoutubeCommentDownloader):
         videos, continuation_token = parsing.extract_videos_from_playlist_renderer(renderer)
 
         while True:
+            # Yield videos that are within the date range
             for video in videos:
                 if fetch_full_metadata:
+                    # Optimization: perform a rough date check first to avoid fetching metadata
+                    # for videos that are clearly outside the requested date range.
+                    if start_date or end_date:
+                        published_text = video.get("publishedTimeText")
+                        if published_text:
+                            estimated_date = parse_relative_date_string(published_text)
+                            # Add a buffer to the date range to account for inaccuracies
+                            # in the relative date string.
+                            buffer = timedelta(days=30)
+                            should_skip = False
+                            if start_date and estimated_date < (start_date - buffer):
+                                should_skip = True
+                            if end_date and estimated_date > (end_date + buffer):
+                                should_skip = True
+
+                            if should_skip:
+                                self.logger.debug(
+                                    "Skipping video %s due to rough date check.",
+                                    video.get("videoId"),
+                                )
+                                continue
                     try:
-                        yield self.get_video_metadata(video["watchUrl"])
+                        full_meta = self.get_video_metadata(video["watchUrl"])
+                        publish_date_obj = datetime.fromisoformat(
+                            full_meta["publish_date"]
+                        ).date()
+
+                        if (not start_date or publish_date_obj >= start_date) and (
+                            not end_date or publish_date_obj <= end_date
+                        ):
+                            yield full_meta
+
                     except (VideoUnavailableError, KeyError) as e:
                         self.logger.warning(
                             "Could not fetch full metadata for video %s: %s",
@@ -290,33 +351,40 @@ class YtMetaClient(YoutubeCommentDownloader):
                             e,
                         )
                 else:
-                    yield video
-            
+                    # Without full metadata, we can't filter precisely.
+                    # We will filter out videos that are clearly too old from the rough check.
+                    published_text = video.get("publishedTimeText")
+                    if published_text:
+                        estimated_date = parse_relative_date_string(published_text)
+                        if (not start_date or estimated_date >= start_date) and (
+                            not end_date or estimated_date <= end_date
+                        ):
+                            yield video
+                    else:  # if no date, yield it
+                        yield video
+
             if not continuation_token:
                 self.logger.info("Terminating video fetch loop.")
                 break
 
+            # Fetch the next page
             self.logger.info("Fetching next page of videos with continuation token.")
             continuation_data = self._get_continuation_data(continuation_token, ytcfg)
             if not continuation_data:
-                self.logger.warning("Stopping pagination due to missing continuation data.")
+                self.logger.warning(
+                    "Stopping pagination due to missing continuation data."
+                )
                 break
-            
-            # The path to renderers is different for playlist continuations
+
             renderers = _deep_get(
                 continuation_data,
                 "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
                 [],
             )
-            
-            # For playlists, the continuation response contains a list of renderers directly
-            # So we can't just use extract_videos_from_renderers.
-            # We need a new function or adapt the existing one.
-            # Let's adapt extract_videos_from_playlist_renderer to handle this
-            
-            # HACK: Create a temporary renderer structure to reuse the parsing function
             temp_renderer = {"contents": renderers}
-            videos, continuation_token = parsing.extract_videos_from_playlist_renderer(temp_renderer)
+            videos, continuation_token = parsing.extract_videos_from_playlist_renderer(
+                temp_renderer
+            )
 
     def _get_continuation_data(self, token: str, ytcfg: dict):
         """Fetches the next page of videos using a continuation token."""

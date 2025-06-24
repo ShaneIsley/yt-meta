@@ -87,3 +87,7 @@ TODO.md
 *.code-workspace
 CONTINUATION_GUIDE.md
 DESIGN.md
+LESSONS_LEARNED.md
+debug/
+*.json
+*.html
