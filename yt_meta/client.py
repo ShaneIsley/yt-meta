@@ -3,7 +3,7 @@
 import json
 import logging
 from datetime import date, datetime, timedelta
-from typing import Optional, Union
+from typing import Optional, Union, Generator
 
 import requests
 from youtube_comment_downloader.downloader import YoutubeCommentDownloader
@@ -37,8 +37,10 @@ class YtMetaClient(YoutubeCommentDownloader):
 
     def clear_cache(self, channel_url: str = None):
         """
-        Clears the internal cache. If a channel_url is provided, only that
-        entry is cleared. Otherwise, the entire cache is cleared.
+        Clears the in-memory cache for channel pages.
+
+        If a `channel_url` is provided, only the cache for that specific
+        channel is cleared. Otherwise, the entire cache is cleared.
         """
         if channel_url:
             key = channel_url.rstrip("/")
@@ -92,6 +94,13 @@ class YtMetaClient(YoutubeCommentDownloader):
     def get_channel_metadata(self, channel_url: str, force_refresh: bool = False) -> dict:
         """
         Fetches and parses metadata for a given YouTube channel.
+
+        Args:
+            channel_url: The URL of the channel's main page or "Videos" tab.
+            force_refresh: If True, bypasses the in-memory cache.
+
+        Returns:
+            A dictionary containing channel metadata.
         """
         initial_data, _, _ = self._get_channel_page_data(channel_url, force_refresh=force_refresh)
         return parsing.parse_channel_metadata(initial_data)
@@ -99,6 +108,12 @@ class YtMetaClient(YoutubeCommentDownloader):
     def get_video_metadata(self, youtube_url: str) -> dict:
         """
         Fetches and parses comprehensive metadata for a given YouTube video.
+
+        Args:
+            youtube_url: The full URL of the YouTube video.
+
+        Returns:
+            A dictionary containing detailed video metadata.
         """
         try:
             self.logger.info(f"Fetching video page: {youtube_url}")
@@ -122,19 +137,34 @@ class YtMetaClient(YoutubeCommentDownloader):
         start_date: Optional[Union[str, date]] = None,
         end_date: Optional[Union[str, date]] = None,
         filters: Optional[dict] = None,
-    ):
+    ) -> Generator[dict, None, None]:
         """
-        A generator that yields metadata for all videos on a channel.
+        A generator that yields metadata for all videos on a channel's "Videos" tab.
+
+        This method efficiently fetches videos page by page and can be configured
+        to stop paginating early based on date, which is useful for channels
+        with a very large number of videos.
+
+        It also supports a powerful two-stage filtering system:
+        1.  **Fast Filters**: Applied first on basic metadata (e.g., title, view count).
+        2.  **Slow Filters**: Applied on full metadata for videos that pass the first
+            stage (e.g., like count). This requires `fetch_full_metadata=True` or
+            for a slow filter to be present in the `filters` dict.
 
         Args:
             channel_url: The URL of the channel's "Videos" tab.
             force_refresh: If True, bypasses the cache for the initial page load.
-            fetch_full_metadata: If True, fetches the full, detailed metadata for each video.
+            fetch_full_metadata: If True, fetches the complete metadata for each video.
+                This is slower as it requires an additional request per video.
             start_date: The earliest date for videos to include. Can be a date object
-                        or a string (e.g., "1d", "2 weeks ago").
+                or a string (e.g., "1d", "2 weeks ago").
             end_date: The latest date for videos to include. Can be a date object
-                      or a string.
+                or a string.
             filters: A dictionary of filters to apply to the videos.
+
+        Yields:
+            Dictionaries of video metadata. The contents depend on the
+            `fetch_full_metadata` flag.
         """
         self.logger.info("Starting to fetch videos for channel: %s", channel_url)
 
@@ -173,7 +203,8 @@ class YtMetaClient(YoutubeCommentDownloader):
 
         stop_pagination = False
         while True:
-            # Check the last video on the page for the stop condition
+            # Efficiently stop paginating if the last video on the page is older
+            # than the requested start_date.
             if videos and start_date:
                 last_video = videos[-1]
                 published_text = last_video.get("publishedTimeText")
@@ -276,18 +307,33 @@ class YtMetaClient(YoutubeCommentDownloader):
         start_date: Optional[Union[str, date]] = None,
         end_date: Optional[Union[str, date]] = None,
         filters: Optional[dict] = None,
-    ):
+    ) -> Generator[dict, None, None]:
         """
         A generator that yields metadata for all videos in a playlist.
+
+        It supports a powerful two-stage filtering system:
+        1.  **Fast Filters**: Applied first on basic metadata (e.g., title, view count).
+        2.  **Slow Filters**: Applied on full metadata for videos that pass the first
+            stage (e.g., like count). This requires `fetch_full_metadata=True` or
+            for a slow filter to be present in the `filters` dict.
+
+        Note:
+            Unlike channel video fetching, playlist fetching cannot be stopped
+            early based on date, as playlists are not guaranteed to be in
+            chronological order.
 
         Args:
             playlist_id: The ID of the playlist.
             fetch_full_metadata: If True, fetches the full, detailed metadata for each video.
             start_date: The earliest date for videos to include. Can be a date object
-                        or a string (e.g., "1d", "2 weeks ago").
+                or a string (e.g., "1d", "2 weeks ago").
             end_date: The latest date for videos to include. Can be a date object
-                      or a string.
+                or a string.
             filters: A dictionary of filters to apply to the videos.
+
+        Yields:
+            Dictionaries of video metadata. The contents depend on the
+            `fetch_full_metadata` flag.
         """
         self.logger.info("Starting to fetch videos for playlist: %s", playlist_id)
 
@@ -328,7 +374,7 @@ class YtMetaClient(YoutubeCommentDownloader):
         renderer = _deep_get(initial_data, path_to_renderer)
 
         if not renderer:
-            # Fallback for slightly different structures
+            # Fallback for slightly different structures that can sometimes occur.
             path_to_renderer = "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.playlistVideoListRenderer"
             renderer = _deep_get(initial_data, path_to_renderer)
 

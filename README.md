@@ -129,7 +129,8 @@ for video in itertools.islice(window_videos, 5):
 
 You can also filter a playlist's videos by date.
 
-**Important:** Unlike channel filtering, playlist filtering requires fetching **all** videos in the playlist first before applying the date filter. Playlists are not guaranteed to be in chronological order, so the efficient "stop pagination" technique cannot be used.
+> **Important Note on Playlist Filtering:**
+> Unlike channel filtering, playlist filtering requires fetching **all** videos in the playlist first before applying the date filter. Playlists are not guaranteed to be in chronological order, so the efficient "stop pagination" technique cannot be used.
 
 **Example:**
 ```python
@@ -152,16 +153,17 @@ for video in itertools.islice(videos, 5):
 
 For more complex queries, you can use the `filters` argument. This accepts a dictionary where keys are video attributes (like `view_count` or `duration_seconds`) and values are dictionaries of operators and their corresponding values.
 
-**Supported Fields:**
-*   `view_count`: The number of views a video has.
-*   `duration_seconds`: The length of the video in seconds.
+The library uses an efficient two-stage filtering process. "Fast" filters (like `title` or `view_count`) are applied first on the basic metadata fetched in bulk. "Slow" filters (like `like_count`) are only applied after fetching full metadata for videos that pass the first stage, minimizing network requests.
 
-**Supported Operators:**
-*   `gt`: Greater than
-*   `gte`: Greater than or equal to
-*   `lt`: Less than
-*   `lte`: Less than or equal to
-*   `eq`: Equal to
+**Supported Fields and Operators:**
+
+| Field                 | Supported Operators      | Filter Type |
+| --------------------- | ------------------------ | ----------- |
+| `title`               | `contains`, `re`         | Fast        |
+| `description_snippet` | `contains`, `re`         | Fast        |
+| `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq` | Fast        |
+| `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq` | Fast        |
+| `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
 
 **Example: Finding popular, short videos**
 

@@ -191,6 +191,46 @@ def test_apply_filters_missing_key():
     assert not apply_filters(video_missing_likes, filters)
 
 
+def test_apply_filters_description_snippet():
+    """Tests filtering by description snippet."""
+    videos = [
+        {"descriptionSnippet": "A video about Python programming."},
+        {"descriptionSnippet": "A great video about cooking."},
+        {"descriptionSnippet": "A tutorial on pyTEst and other tools."},
+    ]
+    
+    # Test 'contains'
+    filters_py = {"description_snippet": {"contains": "python"}}
+    filtered_py = [v for v in videos if apply_filters(v, filters_py)]
+    assert len(filtered_py) == 1
+    assert filtered_py[0]["descriptionSnippet"] == "A video about Python programming."
+
+    # Test 're'
+    filters_re = {"description_snippet": {"re": r"pyt(hon|est)"}}
+    filtered_re = [v for v in videos if apply_filters(v, filters_re)]
+    assert len(filtered_re) == 2
+
+
+def test_apply_filters_title():
+    """Tests filtering by video title."""
+    videos = [
+        {"title": "An Introduction to Python"},
+        {"title": "Advanced Python Programming"},
+        {"title": "A video about Rust"},
+    ]
+
+    # Test 'contains'
+    filters_py = {"title": {"contains": "python"}}
+    filtered_py = [v for v in videos if apply_filters(v, filters_py)]
+    assert len(filtered_py) == 2
+
+    # Test 're'
+    filters_re = {"title": {"re": r"^Advanced"}}
+    filtered_re = [v for v in videos if apply_filters(v, filters_re)]
+    assert len(filtered_re) == 1
+    assert filtered_re[0]["title"] == "Advanced Python Programming"
+
+
 # --- Integration Tests ---
 
 

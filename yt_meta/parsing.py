@@ -15,10 +15,10 @@ logger = logging.getLogger(__name__)
 
 def find_ytcfg(html: str) -> Optional[dict]:
     """
-    Find and parse the ytcfg data from the page's HTML.
+    Finds and parses the `ytcfg` data from a page's HTML source.
 
-    This data contains important context for making API requests, such as the
-    API key and client version.
+    This data contains important context for making subsequent API requests,
+    such as the INNERTUBE_API_KEY and client version.
     """
     match = re.search(r"ytcfg\.set\s*\(\s*({.*?})\s*\)\s*;", html, re.DOTALL)
     if match:
@@ -33,8 +33,18 @@ def find_ytcfg(html: str) -> Optional[dict]:
 
 def extract_and_parse_json(html: str, variable_name: str) -> dict | None:
     """
-    Finds a javascript variable assignment, extracts the JSON blob by finding
-    the matching braces, and parses it.
+    Finds a JavaScript variable assignment in HTML and parses its JSON content.
+
+    This is used to extract data blobs like `ytInitialData` or
+    `ytInitialPlayerResponse` by locating the variable and then carefully
+    finding the matching opening and closing braces of the JSON object.
+
+    Args:
+        html: The HTML content of the page.
+        variable_name: The name of the JavaScript variable (e.g., "ytInitialData").
+
+    Returns:
+        A dictionary parsed from the JSON, or None if not found or invalid.
     """
     try:
         start_key = f"var {variable_name} = "
@@ -74,8 +84,10 @@ def extract_and_parse_json(html: str, variable_name: str) -> dict | None:
 
 def parse_duration(duration_label: str) -> int | None:
     """
-    Parses a duration label like '11 minutes, 6 seconds' into total seconds.
-    Handles hours, minutes, and seconds.
+    Parses a human-readable duration label into a total number of seconds.
+
+    Example:
+        "11 minutes, 6 seconds" -> 666
     """
     if not duration_label:
         return None
@@ -95,7 +107,7 @@ def parse_duration(duration_label: str) -> int | None:
 
 def parse_view_count(view_count_text: str) -> int | None:
     """
-    Parses a view count string like '2,905,010 views' into an integer.
+    Parses a view count string (e.g., '2,905,010 views') into an integer.
     """
     if not view_count_text:
         return None
@@ -107,7 +119,7 @@ def parse_view_count(view_count_text: str) -> int | None:
 
 def find_like_count(player_response_data: dict) -> int | None:
     """
-    Finds the like count from the player response data.
+    Extracts the like count from the `ytInitialPlayerResponse` data structure.
     """
     try:
         renderer = _deep_get(player_response_data, "microformat.playerMicroformatRenderer", {})
@@ -122,7 +134,9 @@ def find_like_count(player_response_data: dict) -> int | None:
 
 def find_heatmap(initial_data: dict) -> list | None:
     """
-    Finds the heatmap data by searching through the framework update mutations.
+    Finds the video's "Most replayed" heatmap data from the `ytInitialData`.
+
+    This data is located within the `frameworkUpdates` part of the initial data.
     """
     try:
         mutations = _deep_get(initial_data, "frameworkUpdates.entityBatchUpdate.mutations", [])
@@ -154,7 +168,21 @@ def find_heatmap(initial_data: dict) -> list | None:
 
 
 def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
-    """Helper to extract video data and a continuation token from a list of renderers."""
+    """
+    Parses a list of video renderers from a channel's "Videos" tab.
+
+    This function iterates through a list of renderer items, extracts the
+    relevant information for each video, and finds the continuation token for
+    paginating to the next set of results.
+
+    Args:
+        renderers: A list of renderer dictionaries from the channel page's data.
+
+    Returns:
+        A tuple containing:
+        - A list of dictionaries, where each dict is a simplified video object.
+        - A continuation token string for the next page, or None if not found.
+    """
     videos = []
     continuation_token = None
     if not renderers:
@@ -212,7 +240,20 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
 
 
 def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:
-    """Helper to extract video data and a continuation token from a playlistVideoListRenderer."""
+    """
+    Parses a `playlistVideoListRenderer` from a playlist page.
+
+    This function iterates through the contents of the renderer, extracts
+    video data, and finds the continuation token for pagination.
+
+    Args:
+        renderer: A `playlistVideoListRenderer` dictionary from the page's data.
+
+    Returns:
+        A tuple containing:
+        - A list of dictionaries, where each dict is a simplified video object.
+        - A continuation token string for the next page, or None if not found.
+    """
     videos = []
     continuation_token = None
     if not renderer or "contents" not in renderer:
@@ -238,7 +279,9 @@ def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | N
 
 
 def parse_video_renderer(renderer: dict) -> dict:
-    """Helper to parse a single video renderer from a playlist."""
+    """
+    Parses a single `playlistVideoRenderer` from a playlist page.
+    """
     published_time_text = None
     video_info_runs = _deep_get(renderer, "videoInfo.runs", [])
     if video_info_runs:
@@ -259,7 +302,7 @@ def parse_video_renderer(renderer: dict) -> dict:
 
 def parse_channel_metadata(initial_data: dict) -> dict:
     """
-    Parses channel metadata from the initial data blob.
+    Parses the main metadata for a channel from the `ytInitialData` object.
     """
     metadata_renderer = _deep_get(initial_data, "metadata.channelMetadataRenderer")
     if not metadata_renderer:
@@ -286,7 +329,7 @@ def parse_channel_metadata(initial_data: dict) -> dict:
 
 def parse_playlist_metadata(initial_data: dict) -> dict:
     """
-    Parses playlist metadata from the initial data blob.
+    Parses the main metadata for a playlist from the `ytInitialData` object.
     """
     header = _deep_get(initial_data, "header.playlistHeaderRenderer")
     microformat = _deep_get(initial_data, "microformat.microformatDataRenderer")
@@ -319,7 +362,8 @@ def parse_playlist_metadata(initial_data: dict) -> dict:
 
 def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict:
     """
-    Parses video metadata from the player response and initial data blobs.
+    Parses comprehensive video metadata from the `ytInitialPlayerResponse`
+    and `ytInitialData` objects from a video's watch page.
     """
     if not player_response_data and not initial_data:
         logger.error("Could not extract playerResponse or initialData from page.")
