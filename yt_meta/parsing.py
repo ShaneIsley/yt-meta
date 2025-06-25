@@ -15,13 +15,13 @@ logger = logging.getLogger(__name__)
 # Regex patterns adopted from the parent youtube-comment-downloader library
 # for proven robustness.
 YT_CFG_RE = r"ytcfg\.set\s*\(\s*({.+?})\s*\)\s*;"
-YT_INITIAL_DATA_RE = r'(?:window\s*\[\s*["\']ytInitialData["\']\s*\]|ytInitialData)\s*=\s*({.+?})\s*;\s*(?:var\s+meta|</script|\n)'
-YT_INITIAL_PLAYER_RESPONSE_RE = r'(?:window\s*\[\s*["\']ytInitialPlayerResponse["\']\s*\]|ytInitialPlayerResponse)\s*=\s*({.+?})\s*;\s*(?:var\s+meta|</script|\n)'
+YT_INITIAL_DATA_RE = r'(?:window\s*\[\s*["\']ytInitialData["\']\s*\]|(?:var\s+)?ytInitialData)\s*=\s*({.+?});'
+YT_INITIAL_PLAYER_RESPONSE_RE = r'(?:window\s*\[\s*["\']ytInitialPlayerResponse["\']\s*\]|(?:var\s+)?ytInitialPlayerResponse)\s*=\s*({.+?});'
 
 
-def _regex_search(text: str, pattern: str, default: str = "") -> str:
+def _regex_search(text: str, pattern: str, default: str = "", flags: int = 0) -> str:
     """Helper to run a regex search and return the first group or a default."""
-    match = re.search(pattern, text)
+    match = re.search(pattern, text, flags)
     return match.group(1) if match else default
 
 
@@ -59,7 +59,7 @@ def extract_and_parse_json(html_content: str, variable_name: str) -> Optional[di
         )
         pattern = rf'var\s+{re.escape(variable_name)}\s*=\s*({{.*?}});'
 
-    json_str = _regex_search(html_content, pattern)
+    json_str = _regex_search(html_content, pattern, flags=re.DOTALL)
     if not json_str:
         logger.warning(
             f"Could not find JSON for '{variable_name}' using its designated regex."
