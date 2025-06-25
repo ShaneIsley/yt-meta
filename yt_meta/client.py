@@ -13,7 +13,6 @@ from . import parsing
 from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
 from .filtering import (
-    _get_date_condition_from_filter,
     apply_filters,
     partition_filters,
 )
@@ -186,18 +185,12 @@ class YtMetaClient(YoutubeCommentDownloader):
             filters = {}
 
         # --- Date Processing & Filter Setup ---
-        # 1. Extract dates from all sources (args and filters dict)
         publish_date_from_filter = filters.get("publish_date", {})
-        start_date_from_filter, end_date_from_filter = None, None
-        if publish_date_from_filter:
-            date_condition = _get_date_condition_from_filter(publish_date_from_filter)
-            if "eq" in date_condition:
-                start_date_from_filter = end_date_from_filter = date_condition["eq"]
-            else:
-                start_date_from_filter = date_condition.get("gt") or date_condition.get("gte")
-                end_date_from_filter = date_condition.get("lt") or date_condition.get("lte")
+        
+        start_date_from_filter = publish_date_from_filter.get("gt") or publish_date_from_filter.get("gte")
+        end_date_from_filter = publish_date_from_filter.get("lt") or publish_date_from_filter.get("lte")
 
-        # 2. Prioritize dedicated arguments and resolve to final date objects
+        # Prioritize dedicated arguments and resolve to final date objects
         final_start_date = start_date or start_date_from_filter
         final_end_date = end_date or end_date_from_filter
 
@@ -209,9 +202,9 @@ class YtMetaClient(YoutubeCommentDownloader):
         # 3. Create/update the 'publish_date' filter to enforce the final dates
         date_filter_conditions = {}
         if final_start_date:
-            date_filter_conditions["gte"] = final_start_date.isoformat()
+            date_filter_conditions["gte"] = final_start_date
         if final_end_date:
-            date_filter_conditions["lte"] = final_end_date.isoformat()
+            date_filter_conditions["lte"] = final_end_date
         
         if date_filter_conditions:
             # This ensures that start_date/end_date args are always enforced by apply_filters
@@ -245,73 +238,12 @@ class YtMetaClient(YoutubeCommentDownloader):
 
         videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
 
-        stop_pagination = False
         while True:
-            # Efficiently stop paginating if the last video on the page is older
-            # than the requested start_date.
-            if videos and final_start_date:
-                last_video = videos[-1]
-                published_text = last_video.get("publishedTimeText")
-                if published_text:
-                    try:
-                        estimated_date = parse_relative_date_string(published_text)
-                        # Rough check: if estimated date is more than 30 days older than start_date,
-                        # we do a precise check to be sure. This avoids calls on very old pages.
-                        if estimated_date < (final_start_date - timedelta(days=30)):
-                            self.logger.info(
-                                "Stopping pagination based on rough check. Last video published ~%s.",
-                                estimated_date,
-                            )
-                            # To be absolutely sure, fetch the metadata for the last video
-                            # This is a small cost to avoid fetching an entire extra page
-                            try:
-                                # Use a temporary client to avoid cache pollution if not needed
-                                last_video_meta = self.get_video_metadata(
-                                    last_video["watchUrl"]
-                                )
-                                precise_date = datetime.fromisoformat(
-                                    last_video_meta["publish_date"]
-                                ).date()
-                                if precise_date < final_start_date:
-                                    self.logger.info(
-                                        "Stopping pagination based on precise check. Last video published on %s.",
-                                        precise_date,
-                                    )
-                                    stop_pagination = True
-                            except (VideoUnavailableError, KeyError):
-                                # If we can't get metadata, we'll just keep going.
-                                self.logger.warning(
-                                    "Could not perform precise date check for pagination stop."
-                                )
-                    except ValueError:
-                        # If parsing the relative date string fails, log a warning and continue
-                        self.logger.warning(
-                            "Could not parse 'publishedTimeText': %s for early pagination stop.",
-                            published_text,
-                        )
-
             # Yield videos that are within the date range
             for video in videos:
                 # --- Stage 1: Apply Fast Filters (including estimated date) ---
                 if not apply_filters(video, fast_filters):
                     continue
-
-                # Preliminary date check using estimated 'publishedTimeText'
-                if final_start_date or final_end_date:
-                    published_text = video.get("publishedTimeText")
-                    if published_text:
-                        try:
-                            estimated_date = parse_relative_date_string(published_text)
-                            # If the estimated date is outside the bounds, skip it.
-                            if (final_start_date and estimated_date < final_start_date) or \
-                               (final_end_date and estimated_date > final_end_date):
-                                continue
-                        except ValueError:
-                            self.logger.warning(
-                                "Could not parse 'publishedTimeText': %s for video %s. Proceeding to slow check.",
-                                published_text,
-                                video.get("videoId"),
-                            )
 
                 # --- Stage 2: Fetch Full Metadata and Apply Slow/Precise Filters ---
                 if must_fetch_full_metadata:
@@ -322,12 +254,12 @@ class YtMetaClient(YoutubeCommentDownloader):
                         else:
                             # If fetching full metadata fails, log it and skip the video
                             # to avoid filtering on incomplete data.
-                            logger.warning(
+                            self.logger.warning(
                                 f"Skipping video {video['videoId']} due to missing full metadata."
                             )
                             continue
                     except VideoUnavailableError as e:
-                        logger.warning(f"Skipping video {video['videoId']}: {e}")
+                        self.logger.warning(f"Skipping video {video['videoId']}: {e}")
                         continue
                 else:
                     merged_video = video
@@ -336,19 +268,9 @@ class YtMetaClient(YoutubeCommentDownloader):
                 if not apply_filters(merged_video, filters):
                     continue
 
-                # If date filtering is active, ensure we have a precise date before yielding
-                if (final_start_date or final_end_date) and not merged_video.get(
-                    "publish_date"
-                ):
-                    logger.warning(
-                        "Skipping video %s because it passed estimated date check but lacked a precise publish_date.",
-                        merged_video.get("videoId"),
-                    )
-                    continue
-
                 yield merged_video
 
-            if stop_pagination or not continuation_token:
+            if not continuation_token:
                 self.logger.info("Terminating video fetch loop.")
                 break
 
@@ -407,18 +329,12 @@ class YtMetaClient(YoutubeCommentDownloader):
             filters = {}
 
         # --- Date Processing & Filter Setup ---
-        # 1. Extract dates from all sources (args and filters dict)
         publish_date_from_filter = filters.get("publish_date", {})
-        start_date_from_filter, end_date_from_filter = None, None
-        if publish_date_from_filter:
-            date_condition = _get_date_condition_from_filter(publish_date_from_filter)
-            if "eq" in date_condition:
-                start_date_from_filter = end_date_from_filter = date_condition["eq"]
-            else:
-                start_date_from_filter = date_condition.get("gt") or date_condition.get("gte")
-                end_date_from_filter = date_condition.get("lt") or date_condition.get("lte")
+        
+        start_date_from_filter = publish_date_from_filter.get("gt") or publish_date_from_filter.get("gte")
+        end_date_from_filter = publish_date_from_filter.get("lt") or publish_date_from_filter.get("lte")
 
-        # 2. Prioritize dedicated arguments and resolve to final date objects
+        # Prioritize dedicated arguments and resolve to final date objects
         final_start_date = start_date or start_date_from_filter
         final_end_date = end_date or end_date_from_filter
 
@@ -430,9 +346,9 @@ class YtMetaClient(YoutubeCommentDownloader):
         # 3. Create/update the 'publish_date' filter to enforce the final dates
         date_filter_conditions = {}
         if final_start_date:
-            date_filter_conditions["gte"] = final_start_date.isoformat()
+            date_filter_conditions["gte"] = final_start_date
         if final_end_date:
-            date_filter_conditions["lte"] = final_end_date.isoformat()
+            date_filter_conditions["lte"] = final_end_date
 
         if date_filter_conditions:
             # This ensures that start_date/end_date args are always enforced by apply_filters
@@ -489,49 +405,24 @@ class YtMetaClient(YoutubeCommentDownloader):
                 if not apply_filters(video, fast_filters):
                     continue
                 
-                # Preliminary date check using estimated 'publishedTimeText'
-                if final_start_date or final_end_date:
-                    published_text = video.get("publishedTimeText")
-                    if published_text:
-                        try:
-                            estimated_date = parse_relative_date_string(published_text)
-                            # If the estimated date is outside the bounds, skip it.
-                            if (final_start_date and estimated_date < final_start_date) or \
-                               (final_end_date and estimated_date > final_end_date):
-                                continue
-                        except ValueError:
-                            self.logger.warning(
-                                "Could not parse 'publishedTimeText': %s for video %s. Proceeding to slow check.",
-                                published_text,
-                                video.get("videoId"),
-                            )
-
-
                 # --- Stage 2: Fetch Full Metadata and Apply Slow/Precise Filters ---
                 if must_fetch_full_metadata:
                     try:
                         full_meta = self.get_video_metadata(video["watchUrl"])
-                        merged_video = {**video, **full_meta}
-
-                        if not apply_filters(merged_video, filters):
-                            continue
-
-                        # If date filtering is active, ensure we have a precise date before yielding
-                        if (final_start_date or final_end_date) and not merged_video.get("publish_date"):
-                            logger.warning(
-                                "Skipping video %s because it passed date filter but lacked a precise publish_date.",
-                                merged_video.get("videoId"),
+                        if full_meta:
+                            merged_video = {**video, **full_meta}
+                        else:
+                            # If fetching full metadata fails, log it and skip the video
+                            # to avoid filtering on incomplete data.
+                            self.logger.warning(
+                                f"Skipping video {video['videoId']} due to missing full metadata."
                             )
                             continue
-
-                        yield merged_video
-
-                    except (VideoUnavailableError, KeyError) as e:
+                    except VideoUnavailableError as e:
                         self.logger.warning(
-                            "Could not fetch full metadata for video %s: %s",
-                            video.get("videoId"),
-                            e,
+                            f"Skipping video {video['videoId']} due to being unavailable: {e}"
                         )
+                        continue
                 else:
                     # If we passed the fast stage and don't need full metadata, yield basic video
                     yield video

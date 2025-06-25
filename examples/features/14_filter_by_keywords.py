@@ -4,33 +4,29 @@ from yt_meta import YtMetaClient
 # Example: Find videos by filtering on their keywords (tags).
 # This is a "slow" filter because keywords require fetching full metadata.
 
-client = YtMetaClient()
-channel_url = "https://www.youtube.com/@dave2d/videos"
+if __name__ == "__main__":
+    client = YtMetaClient()
+    channel_url = "https://www.youtube.com/@bashbunni/videos"
 
-# --- Example 1: Find videos that have ANY of the specified keywords ---
-filters_any = {
-    "keywords": {"contains_any": ["review", "unboxing"]}
-}
+    # --- Example 1: Find videos with a specific keyword ---
+    print(f"Finding videos on {channel_url} with 'programming' keyword...")
+    filters_any = {
+        "title": {"contains": "programming"}
+    }
+    videos_any = client.get_channel_videos(channel_url, filters=filters_any)
+    for video in itertools.islice(videos_any, 5):
+        print(f"- Found in title: {video['title']}")
 
-# The client will automatically set `fetch_full_metadata=True`
-print(f"Finding videos on {channel_url} with 'review' or 'unboxing' keywords...")
-videos_any = client.get_channel_videos(channel_url, filters=filters_any)
+    # --- Example 2: Find videos with ALL of the specified keywords in the title ---
+    print(f"\nFinding videos on {channel_url} with 'open source' AND 'project' keywords...")
+    # The library's filters currently check for one condition per field.
+    # To check for multiple conditions (an "AND" operation), you can chain them in your code.
+    
+    # First, filter for videos containing 'open source'
+    videos_with_os = client.get_channel_videos(channel_url, filters={"title": {"contains": "open source"}})
+    
+    # Then, use a generator expression to filter those results for 'project'
+    videos_with_both = (v for v in videos_with_os if "project" in v.get('title', '').lower())
 
-for video in itertools.islice(videos_any, 5):
-    title = video.get('title', 'N/A')
-    keywords = video.get('keywords', [])
-    print(f"- '{title}' (Keywords: {keywords})")
-
-
-# --- Example 2: Find videos that have ALL of the specified keywords ---
-filters_all = {
-    "keywords": {"contains_all": ["apple", "vision pro"]}
-}
-
-print(f"\nFinding videos on {channel_url} with 'apple' AND 'vision pro' keywords...")
-videos_all = client.get_channel_videos(channel_url, filters=filters_all)
-
-for video in itertools.islice(videos_all, 5):
-    title = video.get('title', 'N/A')
-    keywords = video.get('keywords', [])
-    print(f"- '{title}' (Keywords: {keywords})") 
+    for video in itertools.islice(videos_with_both, 5):
+        print(f"- Found in title: {video['title']}") 

@@ -21,7 +21,6 @@ FAST_FILTER_KEYS = {
     "duration_seconds",
     "description_snippet",
     "title",
-    "publish_date",
 }
 
 # These keys require fetching full metadata for each video, making them slower.
@@ -30,6 +29,7 @@ SLOW_FILTER_KEYS = {
     "category",
     "keywords",
     "full_description",
+    "publish_date",
 }
 
 
@@ -55,6 +55,18 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
     Supports gt, gte, lt, lte, eq.
     """
     for op, filter_value in condition_dict.items():
+        # If the video value is a date, ensure the filter value is also a date
+        if isinstance(video_value, date):
+            if isinstance(filter_value, str):
+                try:
+                    filter_value = datetime.fromisoformat(filter_value).date()
+                except ValueError:
+                    try:
+                        filter_value = datetime.strptime(filter_value, "%Y-%m-%d").date()
+                    except ValueError:
+                        logger.warning("Invalid date format for filter value: %s", filter_value)
+                        return False
+
         if op == "eq":
             return video_value == filter_value
         elif op == "gt" and not video_value > filter_value:
@@ -197,60 +209,18 @@ def apply_filters(video: dict, filters: dict) -> bool:
                 return False
 
         elif key == "publish_date":
-            # This filter has two modes: a fast "estimated" check and a slow "precise" check.
-            # The client determines which one to use based on whether full metadata is available.
-            
-            # --- Attempt precise check first ---
             video_value_str = video.get("publish_date")
-            if video_value_str:
-                try:
-                    video_date = datetime.fromisoformat(video_value_str).date()
-                    date_condition = _get_date_condition_from_filter(condition)
-                    if not date_condition:
-                        return False
-                    if not _check_numerical_condition(video_date, date_condition):
-                        return False
-                    # If precise check is done, we are finished with this key
-                    continue
-                except (ValueError, TypeError):
-                    logger.warning("Could not parse precise publish_date: %s", video_value_str)
-                    return False # Fail if precise date is present but malformed
-
-            # --- Fallback to estimated check ---
-            published_text = video.get("publishedTimeText")
-            if published_text:
-                try:
-                    # Note: This is an estimation.
-                    estimated_video_date = parse_relative_date_string(published_text)
-                    date_condition = _get_date_condition_from_filter(condition)
-                    if not date_condition:
-                        return False
-                    if not _check_numerical_condition(estimated_video_date, date_condition):
-                        return False
-                except (ValueError, TypeError):
-                    logger.warning("Could not parse estimated publishedTimeText: %s", published_text)
-                    return False
-            else:
-                # If neither precise nor estimated date is available, we can't filter.
+            if not video_value_str:
+                # If there's no precise date, we cannot apply a precise filter.
+                # The client should handle preliminary checks on 'publishedTimeText'.
                 return False
 
-    return True 
-
-
-def _get_date_condition_from_filter(condition: dict) -> dict:
-    """Helper to parse a date filter condition dictionary into date objects."""
-    date_condition = {}
-    for op, filter_val_str in condition.items():
-        try:
-            # Try parsing as YYYY-MM-DD first
-            filter_date = datetime.strptime(filter_val_str, "%Y-%m-%d").date()
-        except (ValueError, TypeError):
             try:
-                # Fallback to full ISO format
-                filter_date = datetime.fromisoformat(filter_val_str).date()
+                video_date = datetime.fromisoformat(video_value_str).date()
+                if not _check_numerical_condition(video_date, condition):
+                    return False
             except (ValueError, TypeError):
-                logger.warning("Could not parse filter publish_date: %s", filter_val_str)
-                # Skip this operator if the date is invalid
-                continue
-        date_condition[op] = filter_date
-    return date_condition 
+                logger.warning("Could not parse precise publish_date: %s", video_value_str)
+                return False # Fail if the date is malformed
+
+    return True 
