@@ -157,13 +157,17 @@ The library uses an efficient two-stage filtering process. "Fast" filters (like 
 
 **Supported Fields and Operators:**
 
-| Field                 | Supported Operators      | Filter Type |
-| --------------------- | ------------------------ | ----------- |
-| `title`               | `contains`, `re`         | Fast        |
-| `description_snippet` | `contains`, `re`         | Fast        |
-| `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq` | Fast        |
-| `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq` | Fast        |
-| `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
+| Field | Supported Operators | Filter Type |
+| :--- | :--- | :--- |
+| `title` | `contains`, `re`, `eq` | Fast |
+| `description_snippet` | `contains`, `re`, `eq` | Fast |
+| `view_count` | `gt`, `gte`, `lt`, `lte`, `eq` | Fast |
+| `duration_seconds` | `gt`, `gte`, `lt`, `lte`, `eq` | Fast |
+| `like_count` | `gt`, `gte`, `lt`, `lte`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
+| `category` | `contains`, `re`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
+| `keywords` | `contains_any`, `contains_all` | **Slow** (requires `fetch_full_metadata=True`) |
+| `full_description`| `contains`, `re`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
+| `publish_date` | `gt`, `gte`, `lt`, `lte`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
 
 **Example: Finding popular, short videos**
 
@@ -192,6 +196,34 @@ for video in itertools.islice(videos, 5):
     views = video.get('viewCount', 0)
     duration = video.get('lengthSeconds', 0)
     print(f"- {video.get('title')} ({views:,} views, {duration}s)")
+```
+
+**Example: Advanced slow filtering**
+
+This example finds videos in the "Comedy" category, tagged with the keyword "skit", and published after the start of 2023. This requires fetching full metadata, which is triggered automatically by the presence of slow filters.
+
+```python
+import itertools
+from yt_meta import YtMetaClient
+
+client = YtMetaClient()
+channel_url = "https://www.youtube.com/@TheAIEpiphany/videos"
+
+adv_filters = {
+    "category": {"eq": "Comedy"},
+    "keywords": {"contains_any": ["skit", "sketch"]},
+    "publish_date": {"gte": "2023-01-01"}
+}
+
+# The client will automatically set `fetch_full_metadata=True`
+# because "category", "keywords", and "publish_date" are slow filters.
+videos = client.get_channel_videos(channel_url, filters=adv_filters)
+
+for video in itertools.islice(videos, 5):
+    title = video.get('title', 'N/A')
+    category = video.get('category', 'N/A')
+    p_date = video.get('publish_date', 'N/A')
+    print(f"- {title} (Category: {category}, Published: {p_date})")
 ```
 
 ## Logging

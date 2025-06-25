@@ -12,6 +12,18 @@ from .utils import _deep_get
 
 logger = logging.getLogger(__name__)
 
+# Regex patterns adopted from the parent youtube-comment-downloader library
+# for proven robustness.
+YT_CFG_RE = r"ytcfg\.set\s*\(\s*({.+?})\s*\)\s*;"
+YT_INITIAL_DATA_RE = r'(?:window\s*\[\s*["\']ytInitialData["\']\s*\]|ytInitialData)\s*=\s*({.+?})\s*;\s*(?:var\s+meta|</script|\n)'
+YT_INITIAL_PLAYER_RESPONSE_RE = r'(?:window\s*\[\s*["\']ytInitialPlayerResponse["\']\s*\]|ytInitialPlayerResponse)\s*=\s*({.+?})\s*;\s*(?:var\s+meta|</script|\n)'
+
+
+def _regex_search(text: str, pattern: str, default: str = "") -> str:
+    """Helper to run a regex search and return the first group or a default."""
+    match = re.search(pattern, text)
+    return match.group(1) if match else default
+
 
 def find_ytcfg(html: str) -> Optional[dict]:
     """
@@ -31,53 +43,32 @@ def find_ytcfg(html: str) -> Optional[dict]:
     return None
 
 
-def extract_and_parse_json(html: str, variable_name: str) -> dict | None:
+def extract_and_parse_json(html_content: str, variable_name: str) -> Optional[dict]:
     """
-    Finds a JavaScript variable assignment in HTML and parses its JSON content.
-
-    This is used to extract data blobs like `ytInitialData` or
-    `ytInitialPlayerResponse` by locating the variable and then carefully
-    finding the matching opening and closing braces of the JSON object.
-
-    Args:
-        html: The HTML content of the page.
-        variable_name: The name of the JavaScript variable (e.g., "ytInitialData").
-
-    Returns:
-        A dictionary parsed from the JSON, or None if not found or invalid.
+    Extracts and parses a JSON object assigned to a JavaScript variable in HTML content.
     """
-    try:
-        start_key = f"var {variable_name} = "
-        start_index = html.find(start_key)
+    # Use the proven, robust regex for the known complex YouTube variables.
+    if variable_name == "ytInitialData":
+        pattern = YT_INITIAL_DATA_RE
+    elif variable_name == "ytInitialPlayerResponse":
+        pattern = YT_INITIAL_PLAYER_RESPONSE_RE
+    else:
+        # Use a simpler, more generic pattern for other variables (e.g., in tests).
+        logger.warning(
+            f"Using generic regex for '{variable_name}'. This is less robust and intended for simple cases."
+        )
+        pattern = rf'var\s+{re.escape(variable_name)}\s*=\s*({{.*?}});'
 
-        if start_index == -1:
-            logger.warning(f"Could not find JavaScript variable '{variable_name}'.")
-            return None
-
-        start_index += len(start_key)
-
-        # Find the opening brace of the JSON object
-        first_brace = html.find("{", start_index)
-        if first_brace == -1:
-            logger.warning(f"Could not find opening brace for '{variable_name}'.")
-            return None
-
-        # Find the matching closing brace
-        open_braces = 1
-        for i, char in enumerate(html[first_brace + 1 :], start=first_brace + 1):
-            if char == "{":
-                open_braces += 1
-            elif char == "}":
-                open_braces -= 1
-
-            if open_braces == 0:
-                json_str = html[first_brace : i + 1]
-                return json.loads(json_str)
-
-        logger.warning(f"Could not find matching closing brace for '{variable_name}'.")
+    json_str = _regex_search(html_content, pattern)
+    if not json_str:
+        logger.warning(
+            f"Could not find JSON for '{variable_name}' using its designated regex."
+        )
         return None
 
-    except (json.JSONDecodeError, IndexError) as e:
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError as e:
         logger.error(f"Failed to parse JSON for '{variable_name}': {e}")
         return None
 

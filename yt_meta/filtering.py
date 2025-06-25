@@ -8,15 +8,29 @@ set of specified criteria.
 """
 import logging
 import re
+from datetime import date, datetime, timedelta
+
+from .date_utils import parse_relative_date_string
 
 logger = logging.getLogger(__name__)
 
 
 # These keys are available in the basic video metadata from channel/playlist pages.
-FAST_FILTER_KEYS = {"view_count", "duration_seconds", "description_snippet", "title"}
+FAST_FILTER_KEYS = {
+    "view_count",
+    "duration_seconds",
+    "description_snippet",
+    "title",
+    "publish_date",
+}
 
 # These keys require fetching full metadata for each video, making them slower.
-SLOW_FILTER_KEYS = {"like_count"}
+SLOW_FILTER_KEYS = {
+    "like_count",
+    "category",
+    "keywords",
+    "full_description",
+}
 
 
 def partition_filters(filters: dict) -> tuple[dict, dict]:
@@ -41,15 +55,15 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
     Supports gt, gte, lt, lte, eq.
     """
     for op, filter_value in condition_dict.items():
-        if op == "gt" and not video_value > filter_value:
+        if op == "eq":
+            return video_value == filter_value
+        elif op == "gt" and not video_value > filter_value:
             return False
         elif op == "gte" and not video_value >= filter_value:
             return False
         elif op == "lt" and not video_value < filter_value:
             return False
         elif op == "lte" and not video_value <= filter_value:
-            return False
-        elif op == "eq" and not video_value == filter_value:
             return False
         elif op not in {"gt", "gte", "lt", "lte", "eq"}:
             logger.warning("Unrecognized operator: %s", op)
@@ -59,15 +73,44 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
 def _check_text_condition(video_value, condition_dict) -> bool:
     """
     Checks if a text video value meets the conditions in the dictionary.
-    Supports 'contains' and 're'.
+    Supports 'contains', 're', and 'eq'.
     """
-    contains = condition_dict.get("contains")
-    if contains is not None and contains.lower() not in video_value.lower():
-        return False
+    for op, filter_value in condition_dict.items():
+        if op == "contains":
+            if filter_value.lower() not in video_value.lower():
+                return False
+        elif op == "re":
+            if not re.search(filter_value, video_value, re.IGNORECASE):
+                return False
+        elif op == "eq":
+            if filter_value.lower() != video_value.lower():
+                return False
+        elif op not in {"contains", "re", "eq"}:
+            logger.warning("Unrecognized text operator: %s", op)
+    return True
 
-    regex = condition_dict.get("re")
-    if regex is not None and not re.search(regex, video_value, re.IGNORECASE):
-        return False
+
+def _check_list_condition(video_value_list, condition_dict) -> bool:
+    """
+    Checks if a list of video values meets the conditions in the dictionary.
+    Supports 'contains_any' and 'contains_all'.
+    """
+    # Ensure video_value_list is a list of lowercase strings for case-insensitive matching
+    video_value_list = [str(v).lower() for v in video_value_list]
+
+    contains_any = condition_dict.get("contains_any", [])
+    if contains_any:
+        # Ensure filter values are a list of lowercase strings
+        filter_values = [str(v).lower() for v in contains_any]
+        if not any(v in video_value_list for v in filter_values):
+            return False
+
+    contains_all = condition_dict.get("contains_all", [])
+    if contains_all:
+        # Ensure filter values are a list of lowercase strings
+        filter_values = [str(v).lower() for v in contains_all]
+        if not all(v in video_value_list for v in filter_values):
+            return False
 
     return True
 
@@ -132,4 +175,82 @@ def apply_filters(video: dict, filters: dict) -> bool:
             if not _check_numerical_condition(video_value, condition):
                 return False
 
+        elif key == "category":
+            video_value = video.get("category")
+            if video_value is None:
+                return False
+            if not _check_text_condition(video_value, condition):
+                return False
+
+        elif key == "full_description":
+            video_value = video.get("full_description")
+            if video_value is None:
+                return False
+            if not _check_text_condition(video_value, condition):
+                return False
+
+        elif key == "keywords":
+            video_value = video.get("keywords")
+            if not isinstance(video_value, list):
+                return False
+            if not _check_list_condition(video_value, condition):
+                return False
+
+        elif key == "publish_date":
+            # This filter has two modes: a fast "estimated" check and a slow "precise" check.
+            # The client determines which one to use based on whether full metadata is available.
+            
+            # --- Attempt precise check first ---
+            video_value_str = video.get("publish_date")
+            if video_value_str:
+                try:
+                    video_date = datetime.fromisoformat(video_value_str).date()
+                    date_condition = _get_date_condition_from_filter(condition)
+                    if not date_condition:
+                        return False
+                    if not _check_numerical_condition(video_date, date_condition):
+                        return False
+                    # If precise check is done, we are finished with this key
+                    continue
+                except (ValueError, TypeError):
+                    logger.warning("Could not parse precise publish_date: %s", video_value_str)
+                    return False # Fail if precise date is present but malformed
+
+            # --- Fallback to estimated check ---
+            published_text = video.get("publishedTimeText")
+            if published_text:
+                try:
+                    # Note: This is an estimation.
+                    estimated_video_date = parse_relative_date_string(published_text)
+                    date_condition = _get_date_condition_from_filter(condition)
+                    if not date_condition:
+                        return False
+                    if not _check_numerical_condition(estimated_video_date, date_condition):
+                        return False
+                except (ValueError, TypeError):
+                    logger.warning("Could not parse estimated publishedTimeText: %s", published_text)
+                    return False
+            else:
+                # If neither precise nor estimated date is available, we can't filter.
+                return False
+
     return True 
+
+
+def _get_date_condition_from_filter(condition: dict) -> dict:
+    """Helper to parse a date filter condition dictionary into date objects."""
+    date_condition = {}
+    for op, filter_val_str in condition.items():
+        try:
+            # Try parsing as YYYY-MM-DD first
+            filter_date = datetime.strptime(filter_val_str, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            try:
+                # Fallback to full ISO format
+                filter_date = datetime.fromisoformat(filter_val_str).date()
+            except (ValueError, TypeError):
+                logger.warning("Could not parse filter publish_date: %s", filter_val_str)
+                # Skip this operator if the date is invalid
+                continue
+        date_condition[op] = filter_date
+    return date_condition 

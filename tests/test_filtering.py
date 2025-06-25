@@ -2,6 +2,7 @@ import pytest
 from yt_meta import YtMetaClient
 from yt_meta.filtering import apply_filters, partition_filters
 import logging
+from datetime import date
 
 # --- Unit Tests for apply_filters ---
 
@@ -229,6 +230,81 @@ def test_apply_filters_title():
     filtered_re = [v for v in videos if apply_filters(v, filters_re)]
     assert len(filtered_re) == 1
     assert filtered_re[0]["title"] == "Advanced Python Programming"
+
+
+def test_apply_filters_category():
+    """Tests filtering by category."""
+    videos = [
+        {"category": "Science & Technology"},
+        {"category": "Music"},
+        {"category": "Gaming"},
+        {"category": "DIY & Crafts"},
+    ]
+    filters = {"category": {"contains": "sci"}}
+    filtered = [v for v in videos if apply_filters(v, filters)]
+    assert len(filtered) == 1
+    assert filtered[0]["category"] == "Science & Technology"
+
+    filters_eq = {"category": {"eq": "Music"}}
+    filtered_eq = [v for v in videos if apply_filters(v, filters_eq)]
+    assert len(filtered_eq) == 1
+    assert filtered_eq[0]["category"] == "Music"
+
+
+def test_apply_filters_full_description():
+    """Tests filtering by full_description."""
+    videos = [
+        {"full_description": "A deep dive into machine learning models."},
+        {"full_description": "An unrelated video about baking."},
+        {"full_description": "This tutorial covers deep neural networks."},
+    ]
+    filters = {"full_description": {"re": r"deep.*learning"}}
+    filtered = [v for v in videos if apply_filters(v, filters)]
+    assert len(filtered) == 1
+
+
+def test_apply_filters_keywords():
+    """Tests filtering by keywords."""
+    videos = [
+        {"keywords": ["python", "programming", "tutorial"]},
+        {"keywords": ["cooking", "baking", "recipe"]},
+        {"keywords": ["python", "data science"]},
+    ]
+    # Test contains_any
+    filters_any = {"keywords": {"contains_any": ["data science", "recipe"]}}
+    filtered_any = [v for v in videos if apply_filters(v, filters_any)]
+    assert len(filtered_any) == 2
+
+    # Test contains_all
+    filters_all = {"keywords": {"contains_all": ["python", "tutorial"]}}
+    filtered_all = [v for v in videos if apply_filters(v, filters_all)]
+    assert len(filtered_all) == 1
+    assert filtered_all[0]["keywords"] == ["python", "programming", "tutorial"]
+
+
+def test_apply_filters_publish_date():
+    """Tests filtering by publish_date."""
+    videos = [
+        {"publish_date": "2023-01-15T10:00:00-07:00"},
+        {"publish_date": "2023-06-20T12:00:00-07:00"},
+        {"publish_date": "2024-02-10T14:00:00-07:00"},
+    ]
+    # Test greater than with short-form date
+    filters_gt = {"publish_date": {"gt": "2023-06-20"}}
+    filtered_gt = [v for v in videos if apply_filters(v, filters_gt)]
+    assert len(filtered_gt) == 1
+    assert filtered_gt[0]["publish_date"] == "2024-02-10T14:00:00-07:00"
+
+    # Test equality with short-form date
+    filters_eq = {"publish_date": {"eq": "2023-01-15"}}
+    filtered_eq = [v for v in videos if apply_filters(v, filters_eq)]
+    assert len(filtered_eq) == 1
+    assert filtered_eq[0]["publish_date"].startswith("2023-01-15")
+
+    # Test less than or equal to with full ISO date
+    filters_lte = {"publish_date": {"lte": "2023-06-20T12:00:00-07:00"}}
+    filtered_lte = [v for v in videos if apply_filters(v, filters_lte)]
+    assert len(filtered_lte) == 2
 
 
 # --- Integration Tests ---
