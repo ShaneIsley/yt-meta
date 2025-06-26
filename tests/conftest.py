@@ -1,10 +1,10 @@
 import json
-from pathlib import Path
 import os
+from pathlib import Path
 
 import pytest
-from yt_meta import YtMetaClient, parsing
-from yt_meta.exceptions import VideoUnavailableError
+
+from yt_meta import YtMeta, parsing
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -93,4 +93,4 @@ def get_fixture(filename):
 @pytest.fixture
 def client():
     """Provides a YtMetaClient instance for integration tests."""
-    return YtMetaClient()
+    return YtMeta()

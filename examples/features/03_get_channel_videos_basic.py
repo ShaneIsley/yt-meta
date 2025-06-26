@@ -1,10 +1,10 @@
 # examples/features/03_get_channel_videos_basic.py
 import itertools
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
 # --- 1. Initialize the client ---
-client = YtMetaClient()
+client = YtMeta()
 
 # --- 2. Define the channel URL ---
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"

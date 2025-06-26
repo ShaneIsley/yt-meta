@@ -1,11 +1,12 @@
 import itertools
-from yt_meta import YtMetaClient
+
+from yt_meta import YtMeta
 
 # Example: Find videos with a specific keyword in their description snippet.
 # This is a "fast" filter because the description snippet is available on the
 # main channel page, avoiding extra requests.
 
-client = YtMetaClient()
+client = YtMeta()
 channel_url = "https://www.youtube.com/@TED/videos"
 
 # --- Example 1: Using the 'contains' operator ---

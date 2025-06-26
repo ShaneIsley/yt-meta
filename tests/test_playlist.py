@@ -76,4 +76,30 @@ def test_extract_videos_from_playlist(playlist_fixture, expected_video_count, ex
     if expect_token:
         assert continuation_token is not None
     else:
-        assert continuation_token is None 
+        assert continuation_token is None
+
+
+def test_get_playlist_videos_stops_at_id(client, mocker):
+    # Arrange
+    # Simulate a generator that would be produced by _get_raw_playlist_videos_generator
+    def mock_video_generator():
+        yield {"video_id": "vid1", "title": "Video 1"}
+        yield {"video_id": "vid2", "title": "Video 2"}
+        yield {"video_id": "vid3", "title": "Video 3"}  # This is the stop video
+        yield {"video_id": "vid4", "title": "Video 4"}  # This should not be processed
+        yield {"video_id": "vid5", "title": "Video 5"}  # This should not be processed
+
+    mocker.patch(
+        "yt_meta.client.YtMeta._get_raw_playlist_videos_generator",
+        return_value=mock_video_generator(),
+    )
+
+    # Act
+    videos_gen = client.get_playlist_videos("any_playlist_id", stop_at_video_id="vid3")
+    videos = list(videos_gen)
+
+    # Assert
+    assert len(videos) == 3
+    assert videos[0]["video_id"] == "vid1"
+    assert videos[1]["video_id"] == "vid2"
+    assert videos[2]["video_id"] == "vid3" 

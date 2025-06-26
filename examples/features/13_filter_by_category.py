@@ -1,12 +1,13 @@
 import itertools
-from yt_meta import YtMetaClient
+
+from yt_meta import YtMeta
 
 # Example: Find videos by filtering on their category.
 # This is a "slow" filter because the category is not available on the
 # main channel page. This means the client must fetch the full metadata for
 # each video, which is slower.
 
-client = YtMetaClient()
+client = YtMeta()
 # Using a channel with a clear variety of categories
 channel_url = "https://www.youtube.com/@MrBeast/videos"
 

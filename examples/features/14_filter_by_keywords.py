@@ -1,11 +1,12 @@
 import itertools
-from yt_meta import YtMetaClient
+
+from yt_meta import YtMeta
 
 # Example: Find videos by filtering on their keywords (tags).
 # This is a "slow" filter because keywords require fetching full metadata.
 
 if __name__ == "__main__":
-    client = YtMetaClient()
+    client = YtMeta()
     channel_url = "https://www.youtube.com/@bashbunni/videos"
 
     # --- Example 1: Find videos with a specific keyword ---

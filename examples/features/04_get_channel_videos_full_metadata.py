@@ -2,13 +2,13 @@
 import itertools
 import logging
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
 # --- Optional: Configure logging to see what's happening ---
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # --- 1. Initialize the client ---
-client = YtMetaClient()
+client = YtMeta()
 
 # --- 2. Define the channel URL ---
 # Using a channel with fewer videos to keep the example quick.

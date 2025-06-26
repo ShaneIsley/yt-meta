@@ -5,7 +5,7 @@ import pytest
 import requests
 
 from tests.conftest import get_fixture
-from yt_meta import MetadataParsingError, VideoUnavailableError, YtMetaClient
+from yt_meta import MetadataParsingError, VideoUnavailableError, YtMeta
 
 # Define the path to our test fixture
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "B68agR-OeJM.html"
@@ -20,15 +20,15 @@ def mocked_client():
         mock_session.return_value.get = mock_get
 
         # Return a client instance
-        yield YtMetaClient(), mock_get
+        yield YtMeta(), mock_get
 
 
 @pytest.fixture
 def client_with_caching(tmp_path):
-    """Provides a YtMetaClient instance with caching enabled in a temporary directory."""
+    """Provides a YtMeta instance with caching enabled in a temporary directory."""
     # cache_path = tmp_path / "yt_meta_cache"
-    # This is a placeholder as file-based caching is not implemented yet in YtMetaClient
-    return YtMetaClient()
+    # This is a placeholder as file-based caching is not implemented yet in YtMeta
+    return YtMeta()
 
 
 def test_video_unavailable_raises_error(client, mocker):
@@ -45,7 +45,7 @@ def test_get_channel_metadata(client, mocker, bulwark_channel_initial_data, bulw
     Tests that channel metadata can be parsed correctly from a fixture file.
     """
     mocker.patch(
-        "yt_meta.client.YtMetaClient._get_channel_page_data",
+        "yt_meta.client.YtMeta._get_channel_page_data",
         return_value=(bulwark_channel_initial_data, bulwark_channel_ytcfg, None),
     )
 
@@ -78,7 +78,7 @@ def test_get_channel_page_data_fails_on_request_error(mocked_client):
 
 
 @patch(
-    "yt_meta.client.YtMetaClient._get_channel_page_data",
+    "yt_meta.client.YtMeta._get_channel_page_data",
     return_value=(None, None, "bad data"),
 )
 def test_get_channel_videos_raises_for_bad_initial_data(mock_get_page_data, client):
@@ -98,12 +98,12 @@ def test_get_channel_videos_handles_continuation_errors(
     should return only the videos from the first page.
     """
     mocker.patch(
-        "yt_meta.client.YtMetaClient._get_channel_page_data",
+        "yt_meta.client.YtMeta._get_channel_page_data",
         return_value=(youtube_channel_initial_data, youtube_channel_ytcfg, "<html></html>"),
     )
 
     mock_continuation = mocker.patch(
-        "yt_meta.client.YtMetaClient._get_continuation_data",
+        "yt_meta.client.YtMeta._get_continuation_data",
         return_value=None,
     )
 

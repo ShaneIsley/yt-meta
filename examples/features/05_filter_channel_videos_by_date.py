@@ -2,11 +2,11 @@
 import itertools
 from datetime import date, timedelta
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 from yt_meta.date_utils import parse_relative_date_string
 
 # --- 1. Initialize the client ---
-client = YtMetaClient()
+client = YtMeta()
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
 # --- Use Case 1: Fetch videos from the last 30 days ---

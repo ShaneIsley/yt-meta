@@ -1,7 +1,7 @@
 import itertools
 import logging
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
 # Enable logging to see the process
 logging.basicConfig(level=logging.INFO)
@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 # number of views.
 
 print("--- Example: Filtering a channel by view count > 1,000,000 ---")
-client = YtMetaClient()
+client = YtMeta()
 
 # A channel known for having many videos with high view counts
 channel_url = "https://www.youtube.com/@TED/videos"
