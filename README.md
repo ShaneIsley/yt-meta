@@ -8,10 +8,10 @@ This library is designed to provide a simple and efficient way to collect metada
 
 ## Installation
 
-You can install `yt-meta` from PyPI:
+This project uses `uv` for package management. You can install `yt-meta` from PyPI:
 
 ```bash
-pip install yt-meta
+uv pip install yt-meta
 ```
 
 ## Inspiration
@@ -67,7 +67,7 @@ videos_generator = client.get_channel_videos(channel_url)
 
 # Print the first 5 videos
 for video in itertools.islice(videos_generator, 5):
-    print(f"- {video['title']} (ID: {video['videoId']})")
+    print(f"- {video['title']} (ID: {video['video_id']})")
 ```
 
 ### 4. Get All Videos from a Playlist
@@ -85,91 +85,39 @@ videos_generator = client.get_playlist_videos(playlist_id)
 
 # Print the first 5 videos
 for video in itertools.islice(videos_generator, 5):
-    print(f"- {video['title']} (ID: {video['videoId']})")
+    print(f"- {video['title']} (ID: {video['video_id']})")
 ```
 
-### 5. Filtering by Date
+### 5. Filtering Videos
 
-You can filter videos by a date range using the `start_date` and `end_date` arguments.
+The library provides a powerful filtering system via the `filters` argument, available on both `get_channel_videos` and `get_playlist_videos`. This allows you to find videos matching specific criteria.
 
-The date arguments can be a `datetime.date` object or a string in two formats:
-*   **Shorthand:** `"1d"`, `"2w"`, `"3m"`, `"4y"` (days, weeks, months, years)
-*   **Human-readable:** `"1 day ago"`, `"2 weeks ago"`
+#### Two-Stage Filtering: Fast vs. Slow
 
-#### Filtering Channel Videos (Efficient)
+The library uses an efficient two-stage filtering process:
 
-When filtering a channel's videos, the library is optimized to stop fetching older videos once it passes the `start_date`. This saves time and network requests.
+*   **Fast Filters:** Applied first, using metadata that is available on the main channel or playlist page (e.g., `title`, `view_count`). This is very efficient.
+*   **Slow Filters:** Applied second, only on videos that pass the fast filters. This requires fetching full metadata for each video individually, which is much slower.
 
-**Example:**
-
-```python
-from datetime import date, timedelta
-from yt_meta import YtMetaClient
-import itertools
-
-client = YtMetaClient()
-channel_url = "https://www.youtube.com/@samwitteveenai/videos"
-
-# Get videos from the last 30 days
-print("\n--- Videos from the last 30 days ---")
-recent_videos = client.get_channel_videos(channel_url, start_date="30d")
-for video in itertools.islice(recent_videos, 5):
-    print(f"- {video.get('title')}")
-
-# Get videos from a specific window (90 to 60 days ago)
-print("\n--- Videos from a specific 30-day window in the past ---")
-start = date.today() - timedelta(days=90)
-end = date.today() - timedelta(days=60)
-window_videos = client.get_channel_videos(channel_url, start_date=start, end_date=end)
-for video in itertools.islice(window_videos, 5):
-    print(f"- {video.get('title')}")
-```
-
-#### Filtering Playlist Videos
-
-You can also filter a playlist's videos by date.
-
-> **Important Note on Playlist Filtering:**
-> Unlike channel filtering, playlist filtering requires fetching **all** videos in the playlist first before applying the date filter. Playlists are not guaranteed to be in chronological order, so the efficient "stop pagination" technique cannot be used.
-
-**Example:**
-```python
-from yt_meta import YtMetaClient
-import itertools
-
-client = YtMetaClient()
-playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"
-
-# Get playlist videos from the last 5 years
-print("\n--- Playlist videos from the last 5 years ---")
-videos = client.get_playlist_videos(playlist_id, start_date="5y", fetch_full_metadata=True)
-for video in itertools.islice(videos, 5):
-    publish_date = video.get('publish_date', 'N/A')
-    print(f"- {video.get('title')} (Published: {publish_date})")
-
-```
-
-### 6. Advanced Filtering with Dictionaries
-
-For more complex queries, you can use the `filters` argument. This accepts a dictionary where keys are video attributes (like `view_count` or `duration_seconds`) and values are dictionaries of operators and their corresponding values.
-
-The library uses an efficient two-stage filtering process. "Fast" filters (like `title` or `view_count`) are applied first on the basic metadata fetched in bulk. "Slow" filters (like `like_count`) are only applied after fetching full metadata for videos that pass the first stage, minimizing network requests.
+The client automatically detects when a slow filter is used and sets `fetch_full_metadata=True` for you.
 
 **Supported Fields and Operators:**
 
-| Field | Supported Operators | Filter Type |
-| :--- | :--- | :--- |
-| `title` | `contains`, `re`, `eq` | Fast |
-| `description_snippet` | `contains`, `re`, `eq` | Fast |
-| `view_count` | `gt`, `gte`, `lt`, `lte`, `eq` | Fast |
-| `duration_seconds` | `gt`, `gte`, `lt`, `lte`, `eq` | Fast |
-| `like_count` | `gt`, `gte`, `lt`, `lte`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
-| `category` | `contains`, `re`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
-| `keywords` | `contains_any`, `contains_all` | **Slow** (requires `fetch_full_metadata=True`) |
-| `full_description`| `contains`, `re`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
-| `publish_date` | `gt`, `gte`, `lt`, `lte`, `eq` | **Slow** (requires `fetch_full_metadata=True`) |
+| Field                 | Supported Operators              | Filter Type                                                 |
+| :-------------------- | :------------------------------- | :---------------------------------------------------------- |
+| `title`               | `contains`, `re`, `eq`           | Fast                                                        |
+| `description_snippet` | `contains`, `re`, `eq`           | Fast                                                        |
+| `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast                                                        |
+| `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast                                                        |
+| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | **Slow** (Automatic full metadata fetch)                    |
+| `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | **Slow** (Automatic full metadata fetch)                    |
+| `category`            | `contains`, `re`, `eq`           | **Slow** (Automatic full metadata fetch)                    |
+| `keywords`            | `contains_any`, `contains_all` | **Slow** (Automatic full metadata fetch)                    |
+| `full_description`    | `contains`, `re`, `eq`           | **Slow** (Automatic full metadata fetch)                    |
 
-**Example: Finding popular, short videos**
+#### Example: Basic Filtering (Fast)
+
+This example finds popular, short videos. Since both `view_count` and `duration_seconds` are fast filters, this query is very efficient.
 
 ```python
 import itertools
@@ -188,22 +136,72 @@ adv_filters = {
 # in the basic metadata returned from the main channel page.
 videos = client.get_channel_videos(
     channel_url,
-    filters=adv_filters,
-    fetch_full_metadata=False
+    filters=adv_filters
 )
 
 for video in itertools.islice(videos, 5):
-    views = video.get('viewCount', 0)
-    duration = video.get('lengthSeconds', 0)
+    views = video.get('view_count', 0)
+    duration = video.get('duration_seconds', 0)
     print(f"- {video.get('title')} ({views:,} views, {duration}s)")
 ```
 
-**Example: Advanced slow filtering**
+#### Example: Filtering by Date
 
-This example finds videos in the "Comedy" category, tagged with the keyword "skit", and published after the start of 2023. This requires fetching full metadata, which is triggered automatically by the presence of slow filters.
+Filtering by `publish_date` is a "slow" filter, but the library optimizes it for channels by using the approximate date text to avoid paginating through the entire channel history when possible.
+
+You can provide `datetime.date` objects or a relative date string.
+
+**Using `datetime.date` objects:**
+
+```python
+from datetime import date
+from yt_meta import YtMetaClient
+import itertools
+
+client = YtMetaClient()
+channel_url = "https://www.youtube.com/@samwitteveenai/videos"
+
+# Get videos from a specific window
+start = date(2025, 4, 1)
+end = date(2025, 6, 30)
+
+date_filters = {"publish_date": {"gte": start, "lte": end}}
+videos = client.get_channel_videos(channel_url, filters=date_filters)
+
+for video in itertools.islice(videos, 5):
+    print(f"- {video.get('title')}")
+```
+
+**Using relative date strings:**
+
+To use shorthand relative dates (e.g., `"30d"`), you must use the `parse_relative_date_string` helper.
+
+```python
+from yt_meta import YtMetaClient
+from yt_meta.date_utils import parse_relative_date_string
+import itertools
+
+client = YtMetaClient()
+channel_url = "https://www.youtube.com/@samwitteveenai/videos"
+
+thirty_days_ago = parse_relative_date_string("30d")
+date_filters = {"publish_date": {"gte": thirty_days_ago}}
+
+recent_videos = client.get_channel_videos(channel_url, filters=date_filters)
+for video in itertools.islice(recent_videos, 5):
+    print(f"- {video.get('title')}")
+```
+
+> **Important Note on Playlist Filtering:**
+> When filtering a playlist by date, the library must fetch metadata for **all** videos first, as playlists are not guaranteed to be chronological. This can be very slow for large playlists.
+
+#### Example: Combining Slow Filters
+
+This example finds videos in the "Comedy" category, tagged with the keyword "skit," and published after the start of 2023. The client handles fetching the required metadata automatically.
 
 ```python
 import itertools
+from datetime import date
 from yt_meta import YtMetaClient
 
 client = YtMetaClient()
@@ -212,7 +210,7 @@ channel_url = "https://www.youtube.com/@TheAIEpiphany/videos"
 adv_filters = {
     "category": {"eq": "Comedy"},
     "keywords": {"contains_any": ["skit", "sketch"]},
-    "publish_date": {"gte": "2023-01-01"}
+    "publish_date": {"gte": date(2023, 1, 1)}
 }
 
 # The client will automatically set `fetch_full_metadata=True`
