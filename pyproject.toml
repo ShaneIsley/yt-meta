@@ -1,6 +1,6 @@
 [project]
 name = "yt-meta"
-version = "0.2.5"
+version = "0.2.6"
 description = "A lightweight YouTube metadata library."
 readme = "README.md"
 authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
