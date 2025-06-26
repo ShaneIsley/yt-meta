@@ -35,7 +35,7 @@ for video in filtered_videos:
     duration = video.get('lengthSeconds')
     print(f"- Title: {video.get('title')}")
     print(f"  Duration: {duration}s")
-    print(f"  URL: {video.get('watchUrl')}")
+    print(f"  URL: {video.get('url')}")
 
 if not filtered_videos:
     print("No shorts found in the first batch of videos from this channel.") 
