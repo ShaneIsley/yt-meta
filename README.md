@@ -95,6 +95,48 @@ for video in itertools.islice(videos_generator, 5):
     print(f"- {video['title']} (ID: {video['video_id']})")
 ```
 
+### 5. Get All Shorts from a Channel
+
+Similar to videos, you can fetch all "Shorts" from a channel. This also supports a fast path (basic metadata) and a slow path (full metadata).
+
+**Fast Path Example:**
+
+This is the most efficient way to get a list of shorts, but it provides limited metadata.
+
+```python
+import itertools
+from yt_meta import YtMeta
+
+client = YtMeta()
+channel_url = "https://www.youtube.com/@bashbunni"
+shorts_generator = client.get_channel_shorts(channel_url)
+
+# Print the first 5 shorts
+for short in itertools.islice(shorts_generator, 5):
+    print(f"- {short['title']} (ID: {short['video_id']})")
+```
+
+**Slow Path Example (Full Metadata):**
+
+Set `fetch_full_metadata=True` to retrieve all details for each short, such as `like_count` and `publish_date`.
+
+```python
+import itertools
+from yt_meta import YtMeta
+
+client = YtMeta()
+channel_url = "https://www.youtube.com/@bashbunni"
+shorts_generator = client.get_channel_shorts(
+    channel_url,
+    fetch_full_metadata=True
+)
+
+# Print the first 5 shorts with full metadata
+for short in itertools.islice(shorts_generator, 5):
+    likes = short.get('like_count', 'N/A')
+    print(f"- {short['title']} (Likes: {likes})")
+```
+
 ## Caching
 
 `yt-meta` includes a flexible caching system to improve performance and avoid re-fetching data from YouTube.
@@ -139,9 +181,11 @@ metadata = client.get_video_metadata("some_url")
 
 Any object that implements the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) can be used as a cache. See `examples/features/19_alternative_caching_sqlite.py` for a demonstration using `sqlitedict`.
 
-### 5. Filtering Videos
+## Advanced Features
 
-The library provides a powerful filtering system via the `filters` argument, available on both `get_channel_videos` and `get_playlist_videos`. This allows you to find videos matching specific criteria.
+### Filtering Videos and Shorts
+
+The library provides a powerful filtering system via the `filters` argument, available on `get_channel_videos`, `get_channel_shorts`, and `get_playlist_videos`. This allows you to find items matching specific criteria.
 
 #### Two-Stage Filtering: Fast vs. Slow
 
@@ -160,7 +204,7 @@ The client automatically detects when a slow filter is used and sets `fetch_full
 | `description_snippet` | `contains`, `re`, `eq`           | Fast                                                        |
 | `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast                                                        |
 | `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast                                                        |
-| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast                                                        |
+| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast (for `get_channel_videos`), **Slow** (for `get_channel_shorts` and `get_playlist_videos`) |
 | `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | **Slow** (Automatic full metadata fetch)                    |
 | `category`            | `contains`, `re`, `eq`           | **Slow** (Automatic full metadata fetch)                    |
 | `keywords`            | `contains_any`, `contains_all` | **Slow** (Automatic full metadata fetch)                    |
@@ -249,6 +293,9 @@ for video in itertools.islice(recent_videos, 5):
 > **Important Note on Playlist Filtering:**
 > When filtering a playlist by date, the library must fetch metadata for **all** videos first, as playlists are not guaranteed to be chronological. This can be very slow for large playlists.
 
+> **Important Note on Shorts Filtering:**
+> Similarly, the Shorts feed does not provide a publish date on its fast path. Any date-based filter on `get_channel_shorts` will automatically trigger the slower, full metadata fetch for each short.
+
 ## Logging
 
 `yt-meta` uses Python's `logging` module to provide insights into its operations. To see the log output, you can configure a basic logger.
@@ -317,3 +364,6 @@ Raised when the necessary metadata (e.g., the `ytInitialData` JSON object) canno
 
 ### `VideoUnavailableError`
 Raised when a video or channel page cannot be fetched. This could be due to a network error, a deleted/private video, or an invalid URL.
+
+## Development
+# ... existing code ...
