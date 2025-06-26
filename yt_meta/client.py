@@ -164,6 +164,12 @@ class YtMetaClient(YoutubeCommentDownloader):
             stage (e.g., like count). This requires `fetch_full_metadata=True` or
             for a slow filter to be present in the `filters` dict.
 
+        Note:
+            Using a "slow" filter (e.g., `like_count`, `publish_date`) or setting
+            `fetch_full_metadata=True` will trigger an additional network request
+            for every video that passes the initial fast filters, which can be
+            significantly slower.
+
         Args:
             channel_url: The URL of the channel's "Videos" tab.
             force_refresh: If True, bypasses the cache for the initial page load.
@@ -218,6 +224,12 @@ class YtMetaClient(YoutubeCommentDownloader):
 
         # Determine if we need to enter the slow path for any video
         must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
+
+        if must_fetch_full_metadata and slow_filters:
+            self.logger.info(
+                f"Slow filter(s) detected: {list(slow_filters.keys())}. "
+                "Fetching full metadata for videos, which may be slow."
+            )
 
         initial_data, ytcfg, html = self._get_channel_page_data(channel_url, force_refresh)
         if not initial_data or not ytcfg:
@@ -308,7 +320,8 @@ class YtMetaClient(YoutubeCommentDownloader):
         Note:
             Unlike channel video fetching, playlist fetching cannot be stopped
             early based on date, as playlists are not guaranteed to be in
-            chronological order.
+            chronological order. Using a "slow" filter (like `publish_date`)
+            will require fetching all videos in the playlist.
 
         Args:
             playlist_id: The ID of the playlist.
@@ -362,6 +375,12 @@ class YtMetaClient(YoutubeCommentDownloader):
 
         # Determine if we need to enter the slow path for any video
         must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
+
+        if must_fetch_full_metadata and slow_filters:
+            self.logger.info(
+                f"Slow filter(s) detected: {list(slow_filters.keys())}. "
+                "Fetching full metadata for videos, which may be slow."
+            )
 
         playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
 
