@@ -21,6 +21,7 @@ FAST_FILTER_KEYS = {
     "duration_seconds",
     "description_snippet",
     "title",
+    "publish_date",
 }
 
 # These keys require fetching full metadata for each video, making them slower.
@@ -29,7 +30,6 @@ SLOW_FILTER_KEYS = {
     "category",
     "keywords",
     "full_description",
-    "publish_date",
 }
 
 
