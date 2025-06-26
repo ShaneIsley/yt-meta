@@ -499,8 +499,33 @@ class YtMeta(YoutubeCommentDownloader):
         self,
         channel_url: str,
         force_refresh: bool = False,
+        fetch_full_metadata: bool = False,
+        filters: Optional[dict] = None,
+        stop_at_video_id: str | None = None,
+        max_videos: int = -1,
     ) -> Generator[dict, None, None]:
-        yield from self._get_raw_shorts_generator(channel_url, force_refresh)
+        if filters is None:
+            filters = {}
+
+        fast_filters, slow_filters = partition_filters(filters)
+        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
+
+        if slow_filters and not fetch_full_metadata:
+            self.logger.warning(
+                f"Slow filters {list(slow_filters.keys())} provided without fetch_full_metadata=True. "
+                "Full metadata will be fetched."
+            )
+
+        raw_shorts_generator = self._get_raw_shorts_generator(channel_url, force_refresh)
+
+        yield from self._process_videos_generator(
+            video_generator=raw_shorts_generator,
+            must_fetch_full_metadata=must_fetch_full_metadata,
+            fast_filters=fast_filters,
+            slow_filters=slow_filters,
+            stop_at_video_id=stop_at_video_id,
+            max_videos=max_videos,
+        )
 
     def _get_continuation_data(self, token: str, ytcfg: dict):
         """

@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+import logging
 
 from tests.conftest import get_fixture
 from yt_meta import MetadataParsingError, VideoUnavailableError, YtMeta
@@ -201,7 +202,7 @@ def test_get_channel_shorts_integration(client):
     shorts = list(shorts_generator)
     assert len(shorts) > 0, "Should find at least one short"
     short = shorts[0]
-    assert "videoId" in short
+    assert "video_id" in short
     assert "title" in short
 
 
@@ -215,4 +216,31 @@ def test_get_channel_metadata_integration(client):
 def test_clear_cache_all(mocker):
     # Setup mock cache and client
     mock_cache = mocker.MagicMock(spec=dict)
+    # ... existing code ...
+
+
+def test_get_channel_shorts_with_full_metadata_integration(client, caplog):
+    caplog.set_level(logging.INFO)
+    shorts_generator = client.get_channel_shorts(
+        "https://www.youtube.com/@MrBeast", fetch_full_metadata=True, max_videos=1
+    )
+    shorts = list(shorts_generator)
+    assert len(shorts) > 0, "Should have returned at least one short"
+    short = shorts[0]
+    assert "video_id" in short
+    assert "title" in short
+    assert "view_count" in short
+    assert "url" in short
+    # Assert slow-path keys
+    assert "publish_date" in short
+    assert "like_count" in short
+    assert "category" in short
+    assert "duration_seconds" in short
+    assert short["duration_seconds"] is not None
+    assert short["duration_seconds"] < 90  # Shorts are typically short
+
+
+def test_get_playlist_videos_integration(client, caplog):
+    caplog.set_level(logging.INFO)
+    # Playlist from The Verge, known to be stable
     # ... existing code ...

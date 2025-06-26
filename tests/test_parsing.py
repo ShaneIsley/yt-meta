@@ -130,7 +130,7 @@ def test_extract_videos_from_renderers_no_continuation(youtube_channel_video_ren
     videos, continuation_token = parsing.extract_videos_from_renderers(youtube_channel_video_renderers)
     assert isinstance(videos, list)
     assert len(videos) > 0
-    assert "videoId" in videos[0]
+    assert "video_id" in videos[0]
     assert continuation_token is None
 
 
@@ -144,7 +144,7 @@ def test_extract_videos_from_renderers_with_continuation(youtube_channel_initial
     videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
     assert isinstance(videos, list)
     assert len(videos) > 0
-    assert "videoId" in videos[0]
+    assert "video_id" in videos[0]
     assert continuation_token is not None
 
 
@@ -207,9 +207,10 @@ def test_extract_shorts_from_renderers():
     assert continuation_token is not None
 
     short = videos[0]
-    assert "videoId" in short
+    assert "video_id" in short
     assert "title" in short
     assert "view_count" in short
+    assert "url" in short
 
 
 def test_extract_videos_from_renderers(youtube_channel_initial_data):
@@ -222,5 +223,5 @@ def test_extract_videos_from_renderers(youtube_channel_initial_data):
     videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
     assert isinstance(videos, list)
     assert len(videos) > 0
-    assert "videoId" in videos[0]
+    assert "video_id" in videos[0]
     assert continuation_token is not None

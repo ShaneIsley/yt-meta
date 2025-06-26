@@ -201,7 +201,7 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
 
             videos.append(
                 {
-                    "videoId": video_data.get("videoId"),
+                    "video_id": video_data.get("videoId"),
                     "title": _deep_get(video_data, "title.runs.0.text"),
                     "descriptionSnippet": _deep_get(video_data, "descriptionSnippet.runs.0.text"),
                     "thumbnails": _deep_get(video_data, "thumbnail.thumbnails", []),
@@ -252,7 +252,7 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
 
             videos.append(
                 {
-                    "videoId": reel_endpoint.get("videoId"),
+                    "video_id": reel_endpoint.get("videoId"),
                     "title": _deep_get(video_data, "overlayMetadata.primaryText.content"),
                     "thumbnails": _deep_get(video_data, "thumbnail.sources", []),
                     "view_count": parse_view_count(
