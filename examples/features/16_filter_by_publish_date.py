@@ -1,5 +1,6 @@
 import itertools
 from yt_meta import YtMetaClient
+from yt_meta.date_utils import parse_relative_date_string
 
 # Example: Find videos by filtering on their publish date.
 # `publish_date` is a special filter. It can be "fast" for rough checks
@@ -12,8 +13,9 @@ from yt_meta import YtMetaClient
 if __name__ == "__main__":
     client = YtMetaClient()
     channel_url = "https://www.youtube.com/@bashbunni/videos"
+    six_months_ago = parse_relative_date_string("6 months ago")
     filters = {
-        "publish_date": {"gte": "6 months ago"}
+        "publish_date": {"gte": six_months_ago}
     }
     
     # The client will automatically set `fetch_full_metadata=True` to ensure

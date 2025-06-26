@@ -4,7 +4,7 @@ from yt_meta import YtMetaClient
 
 client = YtMetaClient()
 
-playlist_id = "PL8A8I5lXTVbMD2GDL9B0L95Q63s_w2S4n"  # Example playlist
+playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"  # Example playlist
 
 print(f"Fetching videos from playlist: {playlist_id}\n")
 videos_generator = client.get_playlist_videos(playlist_id=playlist_id)

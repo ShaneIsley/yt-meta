@@ -18,18 +18,18 @@ print("--- Example: Filtering a playlist by a date range ---")
 client = YtMetaClient()
 
 # A well-known, long-running playlist for good test data
-playlist_id = "PL_6zDbB-zRecNEf1VIkum2bpgDbOBXsI4"
+playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"
 
 # Define a date window, e.g., all of 2020
-start_date = date(2024, 1, 1)
-end_date = date(2024, 12, 31)
+start_date = date(2020, 1, 1)
+end_date = date(2020, 12, 31)
 
 # Set fetch_full_metadata=True to get the precise `publish_date`
+date_filter = {"publish_date": {"gte": start_date, "lte": end_date}}
 videos_generator = client.get_playlist_videos(
     playlist_id,
-    start_date=start_date,
-    end_date=end_date,
     fetch_full_metadata=True,
+    filters=date_filter,
 )
 
 # Use itertools.islice to get just the first 5 results for this example
@@ -38,7 +38,7 @@ filtered_videos = list(itertools.islice(videos_generator, 5))
 print(f"Found {len(filtered_videos)} videos from the playlist published in 2020 (showing first 5):")
 for video in filtered_videos:
     # Extract the date part from the ISO format datetime string
-    publish_date = video.get("publish_date", "N/A").split("T")[0]
+    publish_date = video.get("publish_date", "N/A")
     print(f"- Title: {video.get('title')}")
     print(f"  Published: {publish_date}")
     print(f"  URL: {video.get('url')}")

@@ -36,7 +36,7 @@ print("Found 5 videos with over 100K likes (showing first 5):")
 for video in videos:
     print(f"- Title: {video.get('title')}")
     print(f"  Likes: {video.get('like_count'):,}")
-    print(f"  URL: {video.get('watchUrl')}")
+    print(f"  URL: {video.get('url')}")
 
 print("\nThis demonstrates how to apply a 'slow' filter, which automatically")
 print("triggers fetching full metadata for videos.")

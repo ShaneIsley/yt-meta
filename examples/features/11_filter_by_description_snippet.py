@@ -22,7 +22,7 @@ videos_contains = client.get_channel_videos(
 )
 
 for video in itertools.islice(videos_contains, 5):
-    desc = video.get("descriptionSnippet", "")
+    desc = video.get("description_snippet", "")
     print(f"- Title: {video.get('title')}")
     print(f"  Snippet: {desc}\n")
 
@@ -42,6 +42,6 @@ videos_re = client.get_channel_videos(
 )
 
 for video in itertools.islice(videos_re, 5):
-    desc = video.get("descriptionSnippet", "")
+    desc = video.get("description_snippet", "")
     print(f"- Title: {video.get('title')}")
     print(f"  Snippet: {desc}\n") 

@@ -32,7 +32,7 @@ filtered_videos = list(itertools.islice(videos, 5))
 
 print(f"Found {len(filtered_videos)} 'Shorts' (<= 60 seconds) (showing first 5):")
 for video in filtered_videos:
-    duration = video.get('lengthSeconds')
+    duration = video.get('duration_seconds')
     print(f"- Title: {video.get('title')}")
     print(f"  Duration: {duration}s")
     print(f"  URL: {video.get('url')}")

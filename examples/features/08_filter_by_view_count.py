@@ -38,7 +38,7 @@ filtered_videos = list(itertools.islice(videos_generator, 5))
 
 print(f"Found {len(filtered_videos)} videos with over 1M views (showing first 5):")
 for video in filtered_videos:
-    view_count = video.get('viewCount')
+    view_count = video.get('view_count')
     # Format the view count with commas for readability
     formatted_views = f"{view_count:,}" if view_count is not None else "N/A"
     

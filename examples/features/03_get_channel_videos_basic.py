@@ -21,10 +21,10 @@ videos_generator = client.get_channel_videos(channel_url)
 print("--- First 10 Videos ---")
 for video in itertools.islice(videos_generator, 10):
     # The dictionary for each video contains simplified metadata.
-    video_id = video.get("videoId", "N/A")
+    video_id = video.get("video_id", "N/A")
     title = video.get("title", "No Title")
-    views = video.get("viewCount", "N/A")
-    published = video.get("publishedTimeText", "N/A")
+    views = video.get("view_count", "N/A")
+    published = video.get("published_time_text", "N/A")
 
     print(f"- Title: {title}")
     print(f"  Info: (ID: {video_id}) - Views: {views} - Published: {published}\n")
