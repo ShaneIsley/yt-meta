@@ -44,6 +44,6 @@ for video in filtered_videos:
     
     print(f"- Title: {video.get('title')}")
     print(f"  Views: {formatted_views}")
-    print(f"  URL: {video.get('watchUrl')}")
+    print(f"  URL: {video.get('url')}")
 
 print("\nThis demonstrates how to apply advanced filters without needing to fetch full video metadata.") 

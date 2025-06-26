@@ -213,7 +213,7 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
                         )
                     ),
                     "viewCount": parse_view_count(_deep_get(video_data, "viewCountText.simpleText")),
-                    "watchUrl": f"https://www.youtube.com{_deep_get(video_data, 'navigationEndpoint.commandMetadata.webCommandMetadata.url')}",  # noqa: E501
+                    "url": f"https://www.youtube.com{_deep_get(video_data, 'navigationEndpoint.commandMetadata.webCommandMetadata.url')}",  # noqa: E501
                     "isLive": is_live,
                     "isPremiere": is_premiere,
                     "isMembersOnly": is_members_only,
@@ -287,7 +287,7 @@ def parse_video_renderer(renderer: dict) -> dict:
         "thumbnails": _deep_get(renderer, "thumbnail.thumbnails", []),
         "publishedTimeText": published_time_text,
         "lengthSeconds": parse_duration(_deep_get(renderer, "lengthText.accessibility.accessibilityData.label")),
-        "watchUrl": f"https://www.youtube.com{_deep_get(renderer, 'navigationEndpoint.commandMetadata.webCommandMetadata.url')}",
+        "url": f"https://www.youtube.com{_deep_get(renderer, 'navigationEndpoint.commandMetadata.webCommandMetadata.url')}",
     }
 
 

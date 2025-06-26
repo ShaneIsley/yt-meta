@@ -41,6 +41,6 @@ for video in filtered_videos:
     publish_date = video.get("publish_date", "N/A").split("T")[0]
     print(f"- Title: {video.get('title')}")
     print(f"  Published: {publish_date}")
-    print(f"  URL: {video.get('watchUrl')}")
+    print(f"  URL: {video.get('url')}")
 
 print("\nNote: If no videos were found, it may be there are none in that date range in the first part of the playlist") 

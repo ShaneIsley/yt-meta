@@ -260,7 +260,7 @@ class YtMetaClient(YoutubeCommentDownloader):
                 # --- Stage 2: Fetch Full Metadata and Apply Slow/Precise Filters ---
                 if must_fetch_full_metadata:
                     try:
-                        full_meta = self.get_video_metadata(video["watchUrl"])
+                        full_meta = self.get_video_metadata(video["url"])
                         if full_meta:
                             merged_video = {**video, **full_meta}
                         else:
@@ -427,7 +427,7 @@ class YtMetaClient(YoutubeCommentDownloader):
                 # --- Stage 2: Fetch Full Metadata and Apply Slow/Precise Filters ---
                 if must_fetch_full_metadata:
                     try:
-                        full_meta = self.get_video_metadata(video["watchUrl"])
+                        full_meta = self.get_video_metadata(video["url"])
                         if full_meta:
                             merged_video = {**video, **full_meta}
                         else:
