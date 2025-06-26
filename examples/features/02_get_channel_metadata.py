@@ -1,9 +1,9 @@
 # examples/features/02_get_channel_metadata.py
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
 # --- 1. Initialize the client ---
-client = YtMetaClient()
+client = YtMeta()
 
 # --- 2. Define the channel URL ---
 # This can be the URL to the channel's homepage or its "Videos" tab.

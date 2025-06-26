@@ -328,6 +328,15 @@ wheels = [
 ]
 
 [[package]]
+name = "diskcache"
+version = "5.6.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/3f/21/1c1ffc1a039ddcc459db43cc108658f32c57d271d7289a2794e401d0fdb6/diskcache-5.6.3.tar.gz", hash = "sha256:2c3a3fa2743d8535d832ec61c2054a1641f41775aa7c556758a109941e33e4fc", size = 67916, upload-time = "2023-08-31T06:12:00.316Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3f/27/4570e78fc0bf5ea0ca45eb1de3818a23787af9b390c0b0a0033a1b8236f9/diskcache-5.6.3-py3-none-any.whl", hash = "sha256:5e31b2d5fbad117cc363ebaf6b689474db18a1f6438bc82358b024abd4c2ca19", size = 45550, upload-time = "2023-08-31T06:11:58.822Z" },
+]
+
+[[package]]
 name = "docutils"
 version = "0.21.2"
 source = { registry = "https://pypi.org/simple" }
@@ -910,6 +919,12 @@ wheels = [
 ]
 
 [[package]]
+name = "sqlitedict"
+version = "2.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/12/9a/7620d1e9dcb02839ed6d4b14064e609cdd7a8ae1e47289aa0456796dd9ca/sqlitedict-2.1.0.tar.gz", hash = "sha256:03d9cfb96d602996f1d4c2db2856f1224b96a9c431bdd16e78032a72940f9e8c", size = 21846, upload-time = "2022-12-03T13:39:13.102Z" }
+
+[[package]]
 name = "tomli"
 version = "2.2.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1032,7 +1047,7 @@ wheels = [
 
 [[package]]
 name = "yt-meta"
-version = "0.2.2"
+version = "0.2.3"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -1050,6 +1065,12 @@ dev = [
     { name = "pytest-mock" },
     { name = "ruff" },
 ]
+examples = [
+    { name = "sqlitedict" },
+]
+persistent-cache = [
+    { name = "diskcache" },
+]
 publish = [
     { name = "build" },
     { name = "twine" },
@@ -1059,6 +1080,7 @@ publish = [
 requires-dist = [
     { name = "beautifulsoup4", specifier = ">=4.12.3" },
     { name = "build", marker = "extra == 'publish'", specifier = ">=1.2.1" },
+    { name = "diskcache", marker = "extra == 'persistent-cache'", specifier = ">=5.6.3" },
     { name = "freezegun", marker = "extra == 'dev'", specifier = ">=1.5.1" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "loguru", specifier = ">=0.7.2" },
@@ -1067,10 +1089,11 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.14.1" },
     { name = "python-dateutil", specifier = ">=2.9.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5.5" },
+    { name = "sqlitedict", marker = "extra == 'examples'", specifier = ">=2.1.0" },
     { name = "twine", marker = "extra == 'publish'", specifier = ">=5.1.1" },
     { name = "youtube-comment-downloader", specifier = ">=0.1.76" },
 ]
-provides-extras = ["dev", "publish"]
+provides-extras = ["dev", "publish", "persistent-cache", "examples"]
 
 [[package]]
 name = "zipp"

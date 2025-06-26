@@ -1,7 +1,7 @@
 import itertools
 import logging
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
 logging.basicConfig(level=logging.INFO)
 
@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 # "YouTube Shorts" by filtering for a duration of 60 seconds or less.
 
 print("--- Example: Filtering for 'YouTube Shorts' (duration <= 60s) ---")
-client = YtMetaClient()
+client = YtMeta()
 
 # A channel known to have a mix of long videos and shorts
 channel_url = "https://www.youtube.com/@mkbhd/videos"

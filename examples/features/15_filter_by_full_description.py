@@ -1,11 +1,12 @@
 import itertools
-from yt_meta import YtMetaClient
+
+from yt_meta import YtMeta
 
 # Example: Find videos by filtering on their full description text.
 # This is a "slow" filter because the full description requires fetching
 # full metadata for each video.
 
-client = YtMetaClient()
+client = YtMeta()
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
 # Find videos where the full description contains "LangChain". This is useful

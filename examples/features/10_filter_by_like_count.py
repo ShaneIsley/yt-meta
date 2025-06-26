@@ -8,7 +8,7 @@
 import itertools
 import logging
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
 # To see the client's activity, including fetching full metadata for each video,
 # enable INFO-level logging. You will see a "Fetching video page" message for
@@ -16,7 +16,7 @@ from yt_meta import YtMetaClient
 logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
-    client = YtMetaClient()
+    client = YtMeta()
     channel_url = "https://www.youtube.com/@bashbunni/videos"
 
     # --- Example: Filtering a channel by like count > 100 ---

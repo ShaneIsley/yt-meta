@@ -1,8 +1,9 @@
-import pytest
-from yt_meta import YtMetaClient
-from yt_meta.filtering import apply_filters, partition_filters
 import logging
-from datetime import date
+
+import pytest
+
+from yt_meta import YtMeta
+from yt_meta.filtering import apply_filters, partition_filters
 
 # --- Unit Tests for apply_filters ---
 
@@ -77,7 +78,7 @@ def test_no_duration_fails(sample_video):
 # --- Integration Test ---
 
 @pytest.mark.integration
-def test_live_view_count_filter(client: YtMetaClient):
+def test_live_view_count_filter(client: YtMeta):
     """
     Tests filtering a live channel by view count.
     This test is designed to be fast by fetching a small number of videos
@@ -106,7 +107,7 @@ def test_live_view_count_filter(client: YtMetaClient):
 
 
 @pytest.mark.integration
-def test_live_duration_filter_for_shorts(client: YtMetaClient):
+def test_live_duration_filter_for_shorts(client: YtMeta):
     """
     Tests finding short videos (<= 60 seconds) from a channel.
     """

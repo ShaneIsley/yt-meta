@@ -2,14 +2,14 @@ import itertools
 import logging
 from datetime import date
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
 # Enable logging to see the process
 logging.basicConfig(level=logging.INFO)
 
 # --- Example: Get videos from a specific date window in a channel ---
 print("--- Example: Filtering a channel by a specific date range ---")
-client = YtMetaClient()
+client = YtMeta()
 
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 

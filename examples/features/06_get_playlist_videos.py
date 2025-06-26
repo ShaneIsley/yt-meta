@@ -1,8 +1,8 @@
 import itertools
 
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
-client = YtMetaClient()
+client = YtMeta()
 
 playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"  # Example playlist
 

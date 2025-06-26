@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from datetime import date, datetime, timedelta
-from typing import Optional, Union, Generator
+from typing import Optional, Union, Generator, MutableMapping
 
 import requests
 from youtube_comment_downloader.downloader import YoutubeCommentDownloader
@@ -21,7 +21,7 @@ from .utils import _deep_get
 logger = logging.getLogger(__name__)
 
 
-class YtMetaClient(YoutubeCommentDownloader):
+class YtMeta(YoutubeCommentDownloader):
     """
     A client for fetching metadata for YouTube videos, channels, and playlists.
 
@@ -34,9 +34,9 @@ class YtMetaClient(YoutubeCommentDownloader):
     for repeated requests.
     """
 
-    def __init__(self):
+    def __init__(self, cache: Optional[MutableMapping] = None):
         super().__init__()
-        self._channel_page_cache = {}
+        self.cache = {} if cache is None else cache
         self.logger = logger
 
     def clear_cache(self, channel_url: str = None):
@@ -47,32 +47,33 @@ class YtMetaClient(YoutubeCommentDownloader):
         channel is cleared. Otherwise, the entire cache is cleared.
         """
         if channel_url:
-            key = channel_url.rstrip("/")
-            if not key.endswith("/videos"):
-                key += "/videos"
-
-            if key in self._channel_page_cache:
-                del self._channel_page_cache[key]
+            key = self._get_channel_page_cache_key(channel_url)
+            if key in self.cache:
+                del self.cache[key]
                 self.logger.info(f"Cache cleared for channel: {key}")
         else:
-            self._channel_page_cache.clear()
-            self.logger.info("Entire channel page cache cleared.")
+            self.cache.clear()
+            self.logger.info("Entire cache cleared.")
+
+    def _get_channel_page_cache_key(self, channel_url: str) -> str:
+        key = channel_url.rstrip("/")
+        if not key.endswith("/videos"):
+            key += "/videos"
+        return f"channel_page:{key}"
 
     def _get_channel_page_data(self, channel_url: str, force_refresh: bool = False) -> tuple[dict, dict, str]:
         """
         Internal method to fetch, parse, and cache the initial data from a channel's "Videos" page.
         """
-        key = channel_url.rstrip("/")
-        if not key.endswith("/videos"):
-            key += "/videos"
+        key = self._get_channel_page_cache_key(channel_url)
 
-        if not force_refresh and key in self._channel_page_cache:
+        if not force_refresh and key in self.cache:
             self.logger.info(f"Using cached data for channel: {key}")
-            return self._channel_page_cache[key]
+            return self.cache[key]
 
         try:
             self.logger.info(f"Fetching channel page: {key}")
-            response = self.session.get(key, timeout=10)
+            response = self.session.get(key.replace("channel_page:", ""), timeout=10)
             response.raise_for_status()
             html = response.text
         except requests.exceptions.RequestException as e:
@@ -93,8 +94,9 @@ class YtMetaClient(YoutubeCommentDownloader):
             raise MetadataParsingError("Could not extract ytcfg from channel page.", channel_url=key)
 
         self.logger.info(f"Caching data for channel: {key}")
-        self._channel_page_cache[key] = (initial_data, ytcfg, html)
-        return initial_data, ytcfg, html
+        result = (initial_data, ytcfg, html)
+        self.cache[key] = result
+        return result
 
     def get_channel_metadata(self, channel_url: str, force_refresh: bool = False) -> dict:
         """
@@ -120,8 +122,14 @@ class YtMetaClient(YoutubeCommentDownloader):
         Returns:
             A dictionary containing detailed video metadata.
         """
+        self.logger.info(f"Fetching video page: {youtube_url}")
+        video_id = youtube_url.split("v=")[-1]
+        cache_key = f"video_meta:{video_id}"
+        if cache_key in self.cache:
+            self.logger.info(f"Cache hit for video metadata: {video_id}")
+            return self.cache[cache_key]
+
         try:
-            self.logger.info(f"Fetching video page: {youtube_url}")
             response = self.session.get(youtube_url, timeout=10)
             response.raise_for_status()
             html = response.text
@@ -133,14 +141,15 @@ class YtMetaClient(YoutubeCommentDownloader):
         initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
 
         if not player_response_data or not initial_data:
-            video_id = youtube_url.split("v=")[-1]
             logger.warning(
                 f"Could not extract metadata for video {video_id}. "
                 "The page structure may have changed or the video is unavailable. Skipping."
             )
             return None
 
-        return parsing.parse_video_metadata(player_response_data, initial_data)
+        result = parsing.parse_video_metadata(player_response_data, initial_data)
+        self.cache[cache_key] = result
+        return result
 
     def _get_videos_tab_renderer(self, initial_data: dict):
         tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
@@ -190,10 +199,6 @@ class YtMetaClient(YoutubeCommentDownloader):
     ) -> Generator[dict, None, None]:
         videos_processed = 0
         for video in video_generator:
-            if stop_at_video_id and video["video_id"] == stop_at_video_id:
-                self.logger.info("Found video %s, stopping.", stop_at_video_id)
-                return
-
             if not apply_filters(video, fast_filters):
                 continue
 
@@ -217,6 +222,11 @@ class YtMetaClient(YoutubeCommentDownloader):
 
             yield merged_video
             videos_processed += 1
+
+            if stop_at_video_id and video["video_id"] == stop_at_video_id:
+                self.logger.info("Found video %s, stopping.", stop_at_video_id)
+                return
+
             if max_videos != -1 and videos_processed >= max_videos:
                 self.logger.info("Reached max_videos limit of %s.", max_videos)
                 return
@@ -379,71 +389,57 @@ class YtMetaClient(YoutubeCommentDownloader):
     ) -> Generator[dict, None, None]:
         self.logger.info(f"Fetching videos for playlist: {playlist_id}, Filters: {filters}, Start: {start_date}, End: {end_date}")
 
-        if filters is None:
+        if not filters:
             filters = {}
-
-        publish_date_from_filter = filters.get("publish_date", {})
-        start_date_from_filter = publish_date_from_filter.get("gt") or publish_date_from_filter.get("gte")
-        end_date_from_filter = publish_date_from_filter.get("lt") or publish_date_from_filter.get("lte")
-        final_start_date = start_date or start_date_from_filter
-        final_end_date = end_date or end_date_from_filter
-
-        if isinstance(final_start_date, str):
-            final_start_date = parse_relative_date_string(final_start_date)
-        if isinstance(final_end_date, str):
-            final_end_date = parse_relative_date_string(final_end_date)
-
-        date_filter_conditions = {}
-        if final_start_date:
-            date_filter_conditions["gte"] = final_start_date
-        if final_end_date:
-            date_filter_conditions["lte"] = final_end_date
-        if date_filter_conditions:
-            filters["publish_date"] = date_filter_conditions
+        if start_date:
+            filters["publish_date"] = (">=", start_date)
+        if end_date:
+            # If a filter for publish_date already exists, combine them
+            if "publish_date" in filters:
+                existing_op, existing_date = filters["publish_date"]
+                if existing_op == ">=":
+                    filters["publish_date"] = ("between", (existing_date, end_date))
+            else:
+                filters["publish_date"] = ("<=", end_date)
 
         fast_filters, slow_filters = partition_filters(filters)
         must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
-        if slow_filters and not fetch_full_metadata:
-            self.logger.warning(f"Slow filters {list(slow_filters.keys())} provided without fetch_full_metadata=True. Full metadata will be fetched.")
 
-        raw_video_generator = self._get_raw_playlist_videos_generator(playlist_id)
-
+        video_generator = self._get_raw_playlist_videos_generator(playlist_id)
         yield from self._process_videos_generator(
-            video_generator=raw_video_generator,
-            must_fetch_full_metadata=must_fetch_full_metadata,
-            fast_filters=fast_filters,
-            slow_filters=slow_filters,
-            stop_at_video_id=stop_at_video_id,
-            max_videos=max_videos,
+            video_generator,
+            must_fetch_full_metadata,
+            fast_filters,
+            slow_filters,
+            stop_at_video_id,
+            max_videos,
         )
 
     def _get_continuation_data(self, token: str, ytcfg: dict):
-        """Fetches the next page of videos using a continuation token."""
-        try:
-            payload = {
-                "context": {
-                    "client": {
-                        "clientName": _deep_get(ytcfg, "INNERTUBE_CONTEXT.client.clientName"),
-                        "clientVersion": _deep_get(ytcfg, "INNERTUBE_CONTEXT.client.clientVersion"),
-                    },
-                    "user": {
-                        "lockedSafetyMode": _deep_get(ytcfg, "INNERTUBE_CONTEXT.user.lockedSafetyMode"),
-                    },
-                    "request": {
-                        "useSsl": _deep_get(ytcfg, "INNERTUBE_CONTEXT.request.useSsl"),
-                    },
-                },
-                "continuation": token,
-            }
-            api_key = _deep_get(ytcfg, "INNERTUBE_API_KEY")
+        """
+        Fetches the next batch of data using a continuation token.
+        Caches the result based on the token.
+        """
+        cache_key = f"continuation:{token}"
+        if cache_key in self.cache:
+            self.logger.info(f"Cache hit for continuation token: {token[:10]}...")
+            return self.cache[cache_key]
 
-            self.logger.debug("Making continuation request to youtubei/v1/browse.")
-            response = self.session.post(
-                f"https://www.youtube.com/youtubei/v1/browse?key={api_key}",
-                json=payload,
-            )
-            response.raise_for_status()
-            return response.json()
-        except (requests.exceptions.RequestException, json.JSONDecodeError) as e:
-            self.logger.error("Failed to fetch continuation data: %s", e)
-            return None
+        data = {"context": ytcfg["INNERTUBE_CONTEXT"], "continuation": token}
+        response = self.session.post(
+            f"https://www.youtube.com/youtubei/v1/browse?key={ytcfg['INNERTUBE_API_KEY']}",
+            json=data,
+            timeout=10,
+        )
+        response.raise_for_status()
+        result = response.json()
+        self.cache[cache_key] = result
+        return result
+
+    def _resolve_date(self, d: Optional[Union[str, date]]) -> Optional[date]:
+        if isinstance(d, str):
+            parsed_date = parse_relative_date_string(d)
+            if parsed_date:
+                return parsed_date.date()
+            return datetime.fromisoformat(d).date()
+        return d
