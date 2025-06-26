@@ -61,6 +61,12 @@ class YtMeta(YoutubeCommentDownloader):
             key += "/videos"
         return f"channel_page:{key}"
 
+    def _get_channel_shorts_page_cache_key(self, channel_url: str) -> str:
+        key = channel_url.rstrip("/")
+        if not key.endswith("/shorts"):
+            key += "/shorts"
+        return f"channel_shorts_page:{key}"
+
     def _get_channel_page_data(self, channel_url: str, force_refresh: bool = False) -> tuple[dict, dict, str]:
         """
         Internal method to fetch, parse, and cache the initial data from a channel's "Videos" page.
@@ -94,6 +100,43 @@ class YtMeta(YoutubeCommentDownloader):
             raise MetadataParsingError("Could not extract ytcfg from channel page.", channel_url=key)
 
         self.logger.info(f"Caching data for channel: {key}")
+        result = (initial_data, ytcfg, html)
+        self.cache[key] = result
+        return result
+
+    def _get_channel_shorts_page_data(self, channel_url: str, force_refresh: bool = False) -> tuple[dict, dict, str]:
+        """
+        Internal method to fetch, parse, and cache the initial data from a channel's "Shorts" page.
+        """
+        key = self._get_channel_shorts_page_cache_key(channel_url)
+
+        if not force_refresh and key in self.cache:
+            self.logger.info(f"Using cached data for channel shorts: {key}")
+            return self.cache[key]
+
+        try:
+            self.logger.info(f"Fetching channel shorts page: {key}")
+            response = self.session.get(key.replace("channel_shorts_page:", ""), timeout=10)
+            response.raise_for_status()
+            html = response.text
+        except requests.exceptions.RequestException as e:
+            self.logger.error(f"Request failed for channel shorts page {key}: {e}")
+            raise VideoUnavailableError(f"Could not fetch channel shorts page: {e}", channel_url=key) from e
+
+        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
+        if not initial_data:
+            self.logger.error("Failed to extract ytInitialData from channel shorts page.")
+            raise MetadataParsingError(
+                "Could not extract ytInitialData from channel shorts page.",
+                channel_url=key,
+            )
+
+        ytcfg = parsing.find_ytcfg(html)
+        if not ytcfg:
+            self.logger.error("Failed to extract ytcfg from channel shorts page.")
+            raise MetadataParsingError("Could not extract ytcfg from channel shorts page.", channel_url=key)
+
+        self.logger.info(f"Caching data for channel shorts: {key}")
         result = (initial_data, ytcfg, html)
         self.cache[key] = result
         return result
@@ -283,6 +326,44 @@ class YtMeta(YoutubeCommentDownloader):
             continuation_token = self._get_continuation_token_from_data(continuation_data)
             renderers = self._get_video_renderers_from_data(continuation_data)
 
+    def _get_raw_shorts_generator(self, channel_url: str, force_refresh: bool) -> Generator[dict, None, None]:
+        try:
+            initial_data, ytcfg, _ = self._get_channel_shorts_page_data(channel_url, force_refresh)
+        except (VideoUnavailableError, MetadataParsingError) as e:
+            self.logger.error("Could not fetch initial channel shorts page: %s", e)
+            return
+
+        tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
+        shorts_tab = None
+        for tab in tabs:
+            if _deep_get(tab, "tabRenderer.title") == "Shorts":
+                shorts_tab = tab
+                break
+
+        if not shorts_tab:
+            # If there's only one tab and it's for shorts, it might not have the title check
+            if len(tabs) == 1 and "/shorts" in _deep_get(tabs[0], "tabRenderer.endpoint.commandMetadata.webCommandMetadata.url", ""):
+                 shorts_tab = tabs[0]
+            else:
+                raise MetadataParsingError("Could not find Shorts tab renderer.", channel_url=channel_url)
+
+
+        renderers = _deep_get(shorts_tab, "tabRenderer.content.richGridRenderer.contents", [])
+
+        shorts, continuation_token = parsing.extract_shorts_from_renderers(renderers)
+        for short in shorts:
+            yield short
+
+        while continuation_token:
+            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
+            if not continuation_data:
+                break
+
+            renderers = _deep_get(continuation_data, "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems", [])
+            shorts, continuation_token = parsing.extract_shorts_from_renderers(renderers)
+            for short in shorts:
+                yield short
+
     def _get_raw_playlist_videos_generator(self, playlist_id: str) -> Generator[dict, None, None]:
         playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
         try:
@@ -405,15 +486,21 @@ class YtMeta(YoutubeCommentDownloader):
         fast_filters, slow_filters = partition_filters(filters)
         must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
 
-        video_generator = self._get_raw_playlist_videos_generator(playlist_id)
         yield from self._process_videos_generator(
-            video_generator,
-            must_fetch_full_metadata,
-            fast_filters,
-            slow_filters,
-            stop_at_video_id,
-            max_videos,
+            video_generator=self._get_raw_playlist_videos_generator(playlist_id),
+            must_fetch_full_metadata=fetch_full_metadata,
+            fast_filters=fast_filters,
+            slow_filters=slow_filters,
+            stop_at_video_id=stop_at_video_id,
+            max_videos=max_videos,
         )
+
+    def get_channel_shorts(
+        self,
+        channel_url: str,
+        force_refresh: bool = False,
+    ) -> Generator[dict, None, None]:
+        yield from self._get_raw_shorts_generator(channel_url, force_refresh)
 
     def _get_continuation_data(self, token: str, ytcfg: dict):
         """

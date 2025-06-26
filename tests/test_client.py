@@ -6,6 +6,8 @@ import requests
 
 from tests.conftest import get_fixture
 from yt_meta import MetadataParsingError, VideoUnavailableError, YtMeta
+from yt_meta.client import YtMeta
+from yt_meta.exceptions import VideoUnavailableError
 
 # Define the path to our test fixture
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "B68agR-OeJM.html"
@@ -28,6 +30,12 @@ def client_with_caching(tmp_path):
     """Provides a YtMeta instance with caching enabled in a temporary directory."""
     # cache_path = tmp_path / "yt_meta_cache"
     # This is a placeholder as file-based caching is not implemented yet in YtMeta
+    return YtMeta()
+
+
+@pytest.fixture
+def client():
+    """Provides a YtMeta client instance for testing."""
     return YtMeta()
 
 
@@ -175,3 +183,36 @@ def test_get_channel_videos_paginates_correctly(client):
         assert videos[1]["video_id"] == "video2"
         mock_get_page_data.assert_called_once_with("https://any-url.com/videos", force_refresh=False)
         mock_continuation.assert_called_once_with("initial_token", {"INNERTUBE_API_KEY": "test_key"})
+
+
+@pytest.mark.integration
+def test_get_video_metadata_integration(client):
+    # "Me at the zoo" - a very stable video
+    metadata = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
+    assert metadata["title"] == "Me at the zoo"
+    assert "view_count" in metadata
+
+
+@pytest.mark.integration
+def test_get_channel_shorts_integration(client):
+    # MrBeast channel has shorts
+    channel_url = "https://www.youtube.com/@MrBeast"
+    shorts_generator = client.get_channel_shorts(channel_url)
+    shorts = list(shorts_generator)
+    assert len(shorts) > 0, "Should find at least one short"
+    short = shorts[0]
+    assert "videoId" in short
+    assert "title" in short
+
+
+@pytest.mark.integration
+def test_get_channel_metadata_integration(client):
+    # Test with a handle URL
+    channel_url = "https://www.youtube.com/@MrBeast"
+    # ... existing code ...
+
+
+def test_clear_cache_all(mocker):
+    # Setup mock cache and client
+    mock_cache = mocker.MagicMock(spec=dict)
+    # ... existing code ...

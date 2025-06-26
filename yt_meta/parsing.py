@@ -230,6 +230,47 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
     return videos, continuation_token
 
 
+def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
+    """
+    Parses a list of short video renderers from a channel's "Shorts" tab.
+    """
+    videos = []
+    continuation_token = None
+    if not renderers:
+        return videos, continuation_token
+
+    for renderer in renderers:
+        if "richItemRenderer" in renderer:
+            video_data = _deep_get(renderer, "richItemRenderer.content.shortsLockupViewModel")
+            if not video_data:
+                continue
+
+            # The actual videoId is nested deeper in the reelWatchEndpoint
+            reel_endpoint = _deep_get(video_data, "onTap.innertubeCommand.reelWatchEndpoint")
+            if not reel_endpoint:
+                continue
+
+            videos.append(
+                {
+                    "videoId": reel_endpoint.get("videoId"),
+                    "title": _deep_get(video_data, "overlayMetadata.primaryText.content"),
+                    "thumbnails": _deep_get(video_data, "thumbnail.sources", []),
+                    "view_count": parse_view_count(
+                        _deep_get(video_data, "overlayMetadata.secondaryText.content")
+                    ),
+                    "url": f"https://www.youtube.com{_deep_get(video_data, 'onTap.innertubeCommand.commandMetadata.webCommandMetadata.url')}",
+                }
+            )
+
+        if "continuationItemRenderer" in renderer:
+            continuation_token = _deep_get(
+                renderer,
+                "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
+            )
+
+    return videos, continuation_token
+
+
 def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:
     """
     Parses a `playlistVideoListRenderer` from a playlist page.

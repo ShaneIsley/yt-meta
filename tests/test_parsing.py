@@ -2,7 +2,22 @@
 Tests for the parsing functions.
 """
 
+import json
+from contextlib import nullcontext as does_not_raise
+
+import pytest
+
 from yt_meta import parsing
+from tests.conftest import get_fixture
+from yt_meta.parsing import (
+    _regex_search,
+    extract_and_parse_json,
+    extract_videos_from_playlist_renderer,
+    extract_videos_from_renderers,
+    extract_shorts_from_renderers,
+    find_heatmap,
+    find_like_count,
+)
 
 
 def test_placeholder():
@@ -175,3 +190,37 @@ def test_parse_video_metadata(player_response_data, initial_data):
     assert isinstance(metadata["heatmap"], list)
     assert isinstance(metadata["subscriber_count_text"], str)
     assert metadata["subscriber_count_text"] == "551K subscribers"
+
+
+def test_extract_shorts_from_renderers():
+    html = get_fixture("mr_beast_shorts_page.html")
+    initial_data = extract_and_parse_json(html, "ytInitialData")
+    
+    # This is a deep path, specific to finding the shorts data
+    tabs = initial_data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
+    shorts_tab = next(tab for tab in tabs if tab.get("tabRenderer", {}).get("title") == "Shorts")
+    renderers = shorts_tab["tabRenderer"]["content"]["richGridRenderer"]["contents"]
+
+    videos, continuation_token = extract_shorts_from_renderers(renderers)
+
+    assert len(videos) > 0
+    assert continuation_token is not None
+
+    short = videos[0]
+    assert "videoId" in short
+    assert "title" in short
+    assert "view_count" in short
+
+
+def test_extract_videos_from_renderers(youtube_channel_initial_data):
+    # Load fixture and extract renderers
+    renderers = youtube_channel_initial_data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][1]["tabRenderer"]["content"][
+        "richGridRenderer"
+    ]["contents"]
+
+    # Call the function to be tested
+    videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
+    assert isinstance(videos, list)
+    assert len(videos) > 0
+    assert "videoId" in videos[0]
+    assert continuation_token is not None
