@@ -1,46 +1,39 @@
 import itertools
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 from yt_meta import YtMetaClient
 
 # Enable logging to see the process
 logging.basicConfig(level=logging.INFO)
 
-# --- Example 1: Get videos from a specific date window in a playlist ---
-
-# This example demonstrates how to fetch videos from a playlist that were
-# published within a specific date range.
-# Note: Unlike channel filtering, playlist filtering requires fetching all
-# videos first, as playlists are not guaranteed to be chronological.
-
-print("--- Example: Filtering a playlist by a date range ---")
+# --- Example: Get videos from a specific date window in a channel ---
+print("--- Example: Filtering a channel by a specific date range ---")
 client = YtMetaClient()
 
-# A well-known, long-running playlist for good test data
-playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"
+channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
-# Define a date window, e.g., all of 2020
-start_date = date(2020, 1, 1)
-end_date = date(2020, 12, 31)
+# Define a date window
+start_date = date(2025, 4, 1)
+end_date = date(2025, 6, 30)
 
-# Set fetch_full_metadata=True to get the precise `publish_date`
+# The `publish_date` filter is a 'slow' filter, but the library optimizes
+# this by first using the 'fast' `published_time_text` to narrow down
+# the search space before fetching full metadata for precise filtering.
 date_filter = {"publish_date": {"gte": start_date, "lte": end_date}}
-videos_generator = client.get_playlist_videos(
-    playlist_id,
-    fetch_full_metadata=True,
+videos_generator = client.get_channel_videos(
+    channel_url,
     filters=date_filter,
 )
 
 # Use itertools.islice to get just the first 5 results for this example
 filtered_videos = list(itertools.islice(videos_generator, 5))
 
-print(f"Found {len(filtered_videos)} videos from the playlist published in 2020 (showing first 5):")
+print(f"Found {len(filtered_videos)} videos from the channel published between {start_date} and {end_date} (showing first 5):")
 for video in filtered_videos:
-    # Extract the date part from the ISO format datetime string
     publish_date = video.get("publish_date", "N/A")
     print(f"- Title: {video.get('title')}")
     print(f"  Published: {publish_date}")
     print(f"  URL: {video.get('url')}")
 
-print("\nNote: If no videos were found, it may be there are none in that date range in the first part of the playlist") 
+print("\nNote: If no videos were found, there may be none in that date range.") 
