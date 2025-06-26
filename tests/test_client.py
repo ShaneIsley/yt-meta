@@ -171,7 +171,7 @@ def test_get_channel_videos_paginates_correctly(client):
 
         # Assertions
         assert len(videos) == 2, "Should return videos from both pages"
-        assert videos[0]["videoId"] == "video1"
-        assert videos[1]["videoId"] == "video2"
-        mock_get_page_data.assert_called_once_with("https://any-url.com", False)
+        assert videos[0]["video_id"] == "video1"
+        assert videos[1]["video_id"] == "video2"
+        mock_get_page_data.assert_called_once_with("https://any-url.com/videos", force_refresh=False)
         mock_continuation.assert_called_once_with("initial_token", {"INNERTUBE_API_KEY": "test_key"})

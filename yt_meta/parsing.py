@@ -271,29 +271,48 @@ def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | N
 
 def parse_video_renderer(renderer: dict) -> dict:
     """
-    Parses a single `playlistVideoRenderer` from a playlist page.
+    Parses a `videoRenderer` object into a simplified, flat dictionary.
     """
-    published_time_text = None
-    video_info_runs = _deep_get(renderer, "videoInfo.runs", [])
-    if video_info_runs:
-        # The text is usually in the last run, like "6 years ago"
-        text = video_info_runs[-1].get("text")
-        if text:
-            published_time_text = text
+    if not renderer or not isinstance(renderer, dict):
+        return None
+
+    video_id = renderer.get("videoId")
+    if not video_id:
+        return None
+
+    badges = _deep_get(renderer, "badges", [])
+    is_live = any("LIVE" in b.get("metadataBadgeRenderer", {}).get("label", "") for b in badges)
+    is_premiere = "PREMIERE" in _deep_get(renderer, "upcomingEventData.upcomingEventText.runs.0.text", "")
+
+    view_count_text = _deep_get(renderer, "viewCountText.simpleText")
+    if not view_count_text:
+        # Sometimes it's in a different format
+        view_count_text = _deep_get(renderer, "viewCountText.runs.0.text")
 
     return {
-        "videoId": renderer.get("videoId"),
+        "video_id": video_id,
         "title": _deep_get(renderer, "title.runs.0.text"),
+        "description_snippet": _deep_get(renderer, "descriptionSnippet.runs.0.text"),
         "thumbnails": _deep_get(renderer, "thumbnail.thumbnails", []),
-        "publishedTimeText": published_time_text,
-        "lengthSeconds": parse_duration(_deep_get(renderer, "lengthText.accessibility.accessibilityData.label")),
-        "url": f"https://www.youtube.com{_deep_get(renderer, 'navigationEndpoint.commandMetadata.webCommandMetadata.url')}",
+        "channel_name": _deep_get(renderer, "longBylineText.runs.0.text"),
+        "channel_url": _deep_get(
+            renderer,
+            "longBylineText.runs.0.navigationEndpoint.commandMetadata.webCommandMetadata.url",
+        ),
+        "duration_seconds": parse_duration(
+            _deep_get(renderer, "lengthText.accessibility.accessibilityData.label")
+        ),
+        "view_count": parse_view_count(view_count_text),
+        "published_time_text": _deep_get(renderer, "publishedTimeText.simpleText"),
+        "is_live": is_live,
+        "is_premiere": is_premiere,
+        "url": f"https://www.youtube.com/watch?v={video_id}",
     }
 
 
 def parse_channel_metadata(initial_data: dict) -> dict:
     """
-    Parses the main metadata for a channel from the `ytInitialData` object.
+    Parses the main metadata for a channel from the initial page data.
     """
     metadata_renderer = _deep_get(initial_data, "metadata.channelMetadataRenderer")
     if not metadata_renderer:

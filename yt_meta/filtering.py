@@ -145,8 +145,7 @@ def apply_filters(video: dict, filters: dict) -> bool:
     """
     for key, condition in filters.items():
         if key == "view_count":
-            # Note: The key is 'viewCount' in basic metadata, 'view_count' in full.
-            video_value = video.get("view_count") or video.get("viewCount")
+            video_value = video.get("view_count")
             if video_value is None:
                 return False  # Cannot filter if the value doesn't exist
 
@@ -154,8 +153,7 @@ def apply_filters(video: dict, filters: dict) -> bool:
                 return False
 
         elif key == "duration_seconds":
-            # Note: The key is 'lengthSeconds' in basic metadata, 'duration_seconds' in full.
-            video_value = video.get("duration_seconds") or video.get("lengthSeconds")
+            video_value = video.get("duration_seconds")
             if video_value is None:
                 return False
 
@@ -171,7 +169,7 @@ def apply_filters(video: dict, filters: dict) -> bool:
                 return False
 
         elif key == "description_snippet":
-            video_value = video.get("descriptionSnippet")
+            video_value = video.get("description_snippet")
             if video_value is None:
                 return False
 

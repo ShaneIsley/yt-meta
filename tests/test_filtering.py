@@ -10,13 +10,10 @@ from datetime import date
 def sample_video():
     """A sample video metadata object for testing filters."""
     return {
-        "videoId": "test_id_123",
+        "video_id": "test_id_123",
         "title": "A Great Video",
-        "viewCount": 15000,
-        # also testing the full metadata key
         "view_count": 15000,
-        "lengthSeconds": 300,  # 5 minutes
-        "duration_seconds": 300,
+        "duration_seconds": 300,  # 5 minutes
     }
 
 
@@ -52,7 +49,6 @@ def test_view_count_eq_fails(sample_video):
 
 def test_no_view_count_fails(sample_video):
     filters = {"view_count": {"gt": 10000}}
-    del sample_video["viewCount"]
     del sample_video["view_count"]
     assert apply_filters(sample_video, filters) is False
 
@@ -75,7 +71,6 @@ def test_duration_multiple_conditions_pass(sample_video):
 
 def test_no_duration_fails(sample_video):
     filters = {"duration_seconds": {"gt": 100}}
-    del sample_video["lengthSeconds"]
     del sample_video["duration_seconds"]
     assert apply_filters(sample_video, filters) is False
 
@@ -104,7 +99,7 @@ def test_live_view_count_filter(client: YtMetaClient):
         # Check first 5 videos that match
         if count >= 5:
             break
-        assert video["viewCount"] > 1_000_000
+        assert video["view_count"] > 1_000_000
         count += 1
     
     assert count > 0, "Should have found at least one video with over 1M views."
@@ -131,7 +126,7 @@ def test_live_duration_filter_for_shorts(client: YtMetaClient):
         # Check first 5 videos that match
         if count >= 5:
             break
-        assert video["lengthSeconds"] <= 60
+        assert video["duration_seconds"] <= 60
         count += 1
     
     assert count > 0, "Should have found at least one YouTube Short."
@@ -140,15 +135,15 @@ def test_live_duration_filter_for_shorts(client: YtMetaClient):
 def test_apply_filters_like_count():
     """Test filtering by like_count."""
     videos = [
-        {"videoId": "1", "like_count": 50},
-        {"videoId": "2", "like_count": 150},
-        {"videoId": "3", "like_count": 100},
+        {"video_id": "1", "like_count": 50},
+        {"video_id": "2", "like_count": 150},
+        {"video_id": "3", "like_count": 100},
     ]
     filters = {"like_count": {"gte": 100}}
     filtered_videos = [v for v in videos if apply_filters(v, filters)]
     assert len(filtered_videos) == 2
-    assert filtered_videos[0]["videoId"] == "2"
-    assert filtered_videos[1]["videoId"] == "3"
+    assert filtered_videos[0]["video_id"] == "2"
+    assert filtered_videos[1]["video_id"] == "3"
 
 
 def test_partition_filters():
@@ -187,7 +182,7 @@ def test_partition_filters_unrecognized_key_warning(caplog):
 
 def test_apply_filters_missing_key():
     """Test that apply_filters returns False if the video is missing a key."""
-    video_missing_likes = {"videoId": "1", "viewCount": 100}
+    video_missing_likes = {"video_id": "1", "view_count": 100}
     filters = {"like_count": {"gt": 10}}
     assert not apply_filters(video_missing_likes, filters)
 
@@ -195,16 +190,16 @@ def test_apply_filters_missing_key():
 def test_apply_filters_description_snippet():
     """Tests filtering by description snippet."""
     videos = [
-        {"descriptionSnippet": "A video about Python programming."},
-        {"descriptionSnippet": "A great video about cooking."},
-        {"descriptionSnippet": "A tutorial on pyTEst and other tools."},
+        {"description_snippet": "A video about Python programming."},
+        {"description_snippet": "A great video about cooking."},
+        {"description_snippet": "A tutorial on pyTEst and other tools."},
     ]
     
     # Test 'contains'
     filters_py = {"description_snippet": {"contains": "python"}}
     filtered_py = [v for v in videos if apply_filters(v, filters_py)]
     assert len(filtered_py) == 1
-    assert filtered_py[0]["descriptionSnippet"] == "A video about Python programming."
+    assert filtered_py[0]["description_snippet"] == "A video about Python programming."
 
     # Test 're'
     filters_re = {"description_snippet": {"re": r"pyt(hon|est)"}}
@@ -320,7 +315,7 @@ def test_filter_by_view_count_integration(client):
 
     # We expect to find at least one "short" video on the TED channel.
     assert count > 0, "Should have found at least one YouTube Short."
-    assert all(video.get("lengthSeconds", 0) <= 60 for video in shorts)
+    assert all(video.get("duration_seconds", 0) <= 60 for video in shorts)
 
 
 @pytest.mark.integration

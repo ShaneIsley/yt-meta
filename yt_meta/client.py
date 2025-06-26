@@ -142,163 +142,153 @@ class YtMetaClient(YoutubeCommentDownloader):
 
         return parsing.parse_video_metadata(player_response_data, initial_data)
 
+    def _get_videos_tab_renderer(self, initial_data: dict):
+        tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
+        for tab in tabs:
+            if _deep_get(tab, "tabRenderer.selected"):
+                return _deep_get(tab, "tabRenderer")
+        return None
+
+    def _get_video_renderers(self, tab_renderer: dict):
+        return _deep_get(tab_renderer, "content.richGridRenderer.contents", [])
+
+    def _get_continuation_token(self, tab_renderer: dict):
+        renderers = self._get_video_renderers(tab_renderer)
+        for renderer in renderers:
+            if "continuationItemRenderer" in renderer:
+                return _deep_get(
+                    renderer,
+                    "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
+                )
+        return None
+
+    def _get_video_renderers_from_data(self, continuation_data: dict):
+        return _deep_get(
+            continuation_data,
+            "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
+            [],
+        )
+
+    def _get_continuation_token_from_data(self, continuation_data: dict):
+        continuation_items = self._get_video_renderers_from_data(continuation_data)
+        for item in continuation_items:
+            if "continuationItemRenderer" in item:
+                return _deep_get(
+                    item,
+                    "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
+                )
+        return None
+
     def get_channel_videos(
         self,
         channel_url: str,
         force_refresh: bool = False,
         fetch_full_metadata: bool = False,
-        start_date: Optional[Union[str, date]] = None,
-        end_date: Optional[Union[str, date]] = None,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
+        stop_at_video_id: str | None = None,
+        max_videos: int = -1,
     ) -> Generator[dict, None, None]:
-        """
-        A generator that yields metadata for all videos on a channel's "Videos" tab.
+        if not channel_url.endswith("/videos"):
+            channel_url = f"{channel_url.rstrip('/')}/videos"
 
-        This method efficiently fetches videos page by page and can be configured
-        to stop paginating early based on date, which is useful for channels
-        with a very large number of videos.
+        self.logger.info("Fetching videos for channel: %s", channel_url)
+        self.logger.info("Fetch full metadata: %s", fetch_full_metadata)
+        self.logger.info("Filters: %s", filters)
 
-        It also supports a powerful two-stage filtering system:
-        1.  **Fast Filters**: Applied first on basic metadata (e.g., title, view count).
-        2.  **Slow Filters**: Applied on full metadata for videos that pass the first
-            stage (e.g., like count). This requires `fetch_full_metadata=True` or
-            for a slow filter to be present in the `filters` dict.
-
-        Note:
-            Using a "slow" filter (e.g., `like_count`, `publish_date`) or setting
-            `fetch_full_metadata=True` will trigger an additional network request
-            for every video that passes the initial fast filters, which can be
-            significantly slower.
-
-        Args:
-            channel_url: The URL of the channel's "Videos" tab.
-            force_refresh: If True, bypasses the cache for the initial page load.
-            fetch_full_metadata: If True, fetches the complete metadata for each video.
-                This is slower as it requires an additional request per video.
-            start_date: The earliest date for videos to include. Can be a date object
-                or a string (e.g., "1d", "2 weeks ago").
-            end_date: The latest date for videos to include. Can be a date object
-                or a string.
-            filters: A dictionary of filters to apply to the videos.
-
-        Yields:
-            Dictionaries of video metadata. The contents depend on the
-            `fetch_full_metadata` flag.
-        """
-        self.logger.info("Starting to fetch videos for channel: %s", channel_url)
-
-        if filters is None:
-            filters = {}
-
-        # --- Date Processing & Filter Setup ---
-        publish_date_from_filter = filters.get("publish_date", {})
-        
-        start_date_from_filter = publish_date_from_filter.get("gt") or publish_date_from_filter.get("gte")
-        end_date_from_filter = publish_date_from_filter.get("lt") or publish_date_from_filter.get("lte")
-
-        # Prioritize dedicated arguments and resolve to final date objects
-        final_start_date = start_date or start_date_from_filter
-        final_end_date = end_date or end_date_from_filter
-
-        if isinstance(final_start_date, str):
-            final_start_date = parse_relative_date_string(final_start_date)
-        if isinstance(final_end_date, str):
-            final_end_date = parse_relative_date_string(final_end_date)
-        
-        # 3. Create/update the 'publish_date' filter to enforce the final dates
-        date_filter_conditions = {}
-        if final_start_date:
-            date_filter_conditions["gte"] = final_start_date
-        if final_end_date:
-            date_filter_conditions["lte"] = final_end_date
-        
-        if date_filter_conditions:
-            # This ensures that start_date/end_date args are always enforced by apply_filters
-            filters["publish_date"] = date_filter_conditions
-
-        # 4. Now partition all filters
-        fast_filters, slow_filters = partition_filters(filters)
-        
-        # Use a consistent end_date for pagination logic, defaulting to today
-        pagination_end_date = final_end_date or datetime.today().date()
-
-        # Determine if we need to enter the slow path for any video
-        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
-
-        if must_fetch_full_metadata and slow_filters:
-            self.logger.info(
-                f"Slow filter(s) detected: {list(slow_filters.keys())}. "
-                "Fetching full metadata for videos, which may be slow."
+        try:
+            initial_data, ytcfg, html = self._get_channel_page_data(
+                channel_url, force_refresh=force_refresh
             )
-
-        initial_data, ytcfg, html = self._get_channel_page_data(channel_url, force_refresh)
-        if not initial_data or not ytcfg:
-            raise MetadataParsingError(
-                "Could not find initial data script in channel page",
-                channel_url=channel_url,
-            )
-
-        tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
-        videos_tab = next((tab for tab in tabs if _deep_get(tab, "tabRenderer.selected")), None)
-        if not videos_tab:
-            raise MetadataParsingError("Could not find videos tab in channel page.", channel_url=channel_url)
-
-        renderers = _deep_get(videos_tab, "tabRenderer.content.richGridRenderer.contents", [])
-        if not renderers:
-            self.logger.warning("No video renderers found on the initial channel page: %s", channel_url)
+        except VideoUnavailableError as e:
+            self.logger.error("Could not fetch initial channel page: %s", e)
             return
 
-        videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
+        if not initial_data:
+            raise MetadataParsingError("Could not find initial data script in channel page")
+
+        tab_renderer = self._get_videos_tab_renderer(initial_data)
+        if not tab_renderer:
+            raise MetadataParsingError("Could not find videos tab renderer in channel page")
+
+        fast_filters, slow_filters = partition_filters(filters)
+
+        # Determine if we need to fetch full metadata
+        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
+        if slow_filters and not fetch_full_metadata:
+            self.logger.warning(
+                "Slow filters %s provided without fetch_full_metadata=True. "
+                "Full metadata will be fetched for filtered videos, which may be slow.",
+                list(slow_filters.keys()),
+            )
+
+        continuation_token = self._get_continuation_token(tab_renderer)
+        renderers = self._get_video_renderers(tab_renderer)
+        videos_processed = 0
 
         while True:
-            # Yield videos that are within the date range
-            for video in videos:
-                # --- Stage 1: Apply Fast Filters (including estimated date) ---
+            for renderer in renderers:
+                if "richItemRenderer" not in renderer:
+                    continue
+
+                video_data = renderer["richItemRenderer"]["content"]
+                if "videoRenderer" not in video_data:
+                    continue
+
+                video = parsing.parse_video_renderer(video_data["videoRenderer"])
+                if not video:
+                    continue
+
+                if stop_at_video_id and video["video_id"] == stop_at_video_id:
+                    self.logger.info("Found video %s, stopping.", stop_at_video_id)
+                    return
+
+                # --- Apply Fast Filters ---
                 if not apply_filters(video, fast_filters):
                     continue
 
-                # --- Stage 2: Fetch Full Metadata and Apply Slow/Precise Filters ---
+                # --- Handle Full Metadata ---
+                merged_video = video
                 if must_fetch_full_metadata:
                     try:
-                        full_meta = self.get_video_metadata(video["url"])
+                        video_url = f"https://www.youtube.com/watch?v={video['video_id']}"
+                        full_meta = self.get_video_metadata(video_url)
                         if full_meta:
                             merged_video = {**video, **full_meta}
                         else:
-                            # If fetching full metadata fails, log it and skip the video
-                            # to avoid filtering on incomplete data.
                             self.logger.warning(
-                                f"Skipping video {video['videoId']} due to missing full metadata."
+                                "Could not fetch full metadata for video_id: %s", video["video_id"]
                             )
-                            continue
-                    except VideoUnavailableError as e:
-                        self.logger.warning(f"Skipping video {video['videoId']}: {e}")
+                            if slow_filters:
+                                continue
+                    except (VideoUnavailableError, MetadataParsingError) as e:
+                        self.logger.error(
+                            "Error fetching metadata for video_id %s: %s",
+                            video["video_id"],
+                            e,
+                        )
                         continue
-                else:
-                    merged_video = video
 
-                # --- Apply All Filters ---
-                if not apply_filters(merged_video, filters):
+                # --- Apply Slow Filters ---
+                if not apply_filters(merged_video, slow_filters):
                     continue
 
                 yield merged_video
+                videos_processed += 1
+                if max_videos != -1 and videos_processed >= max_videos:
+                    self.logger.info("Reached max_videos limit of %s.", max_videos)
+                    return
 
             if not continuation_token:
                 self.logger.info("Terminating video fetch loop.")
                 break
 
-            # Fetch the next page
-            self.logger.info("Fetching next page of videos with continuation token.")
             continuation_data = self._get_continuation_data(continuation_token, ytcfg)
             if not continuation_data:
-                self.logger.warning("Stopping pagination due to missing continuation data.")
+                self.logger.warning("Failed to fetch continuation data, stopping.")
                 break
 
-            renderers = _deep_get(
-                continuation_data,
-                "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
-                [],
-            )
-            videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
+            continuation_token = self._get_continuation_token_from_data(continuation_data)
+            renderers = self._get_video_renderers_from_data(continuation_data)
 
     def get_playlist_videos(
         self,
@@ -443,8 +433,13 @@ class YtMetaClient(YoutubeCommentDownloader):
                         )
                         continue
                 else:
-                    # If we passed the fast stage and don't need full metadata, yield basic video
-                    yield video
+                    merged_video = video
+
+                # --- Apply All Filters ---
+                if not apply_filters(merged_video, filters):
+                    continue
+                
+                yield merged_video
 
             if not continuation_token:
                 self.logger.info("Terminating video fetch loop.")
