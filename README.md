@@ -14,6 +14,13 @@ This project uses `uv` for package management. You can install `yt-meta` from Py
 uv pip install yt-meta
 ```
 
+To enable persistent caching, you need to install an optional dependency:
+
+```bash
+# For disk-based caching
+uv pip install "yt-meta[persistent_cache]"
+```
+
 ## Inspiration
 
 This project extends the great `youtube-comment-downloader` library, inheriting its session management while adding additional metadata capabilities.
@@ -29,9 +36,9 @@ Fetches comprehensive metadata for a specific YouTube video.
 **Example:**
 
 ```python
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
-client = YtMetaClient()
+client = YtMeta()
 video_url = "https://www.youtube.com/watch?v=B68agR-OeJM"
 metadata = client.get_video_metadata(video_url)
 print(f"Title: {metadata['title']}")
@@ -44,9 +51,9 @@ Fetches metadata for a specific YouTube channel.
 **Example:**
 
 ```python
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
-client = YtMetaClient()
+client = YtMeta()
 channel_url = "https://www.youtube.com/@samwitteveenai"
 channel_metadata = client.get_channel_metadata(channel_url)
 print(f"Channel Name: {channel_metadata['title']}")
@@ -59,9 +66,9 @@ Returns a generator that yields metadata for all videos on a channel's "Videos" 
 **Example:**
 ```python
 import itertools
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
-client = YtMetaClient()
+client = YtMeta()
 channel_url = "https://www.youtube.com/@AI-Makerspace/videos"
 videos_generator = client.get_channel_videos(channel_url)
 
@@ -77,9 +84,9 @@ Returns a generator that yields metadata for all videos in a playlist, handling 
 **Example:**
 ```python
 import itertools
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
-client = YtMetaClient()
+client = YtMeta()
 playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"
 videos_generator = client.get_playlist_videos(playlist_id)
 
@@ -87,6 +94,50 @@ videos_generator = client.get_playlist_videos(playlist_id)
 for video in itertools.islice(videos_generator, 5):
     print(f"- {video['title']} (ID: {video['video_id']})")
 ```
+
+## Caching
+
+`yt-meta` includes a flexible caching system to improve performance and avoid re-fetching data from YouTube.
+
+### Default In-Memory Cache
+
+By default, `YtMeta` uses a simple in-memory dictionary to cache results. This cache is temporary and only lasts for the lifetime of the client instance.
+
+```python
+client = YtMeta()
+# The first call will fetch from the network
+meta1 = client.get_video_metadata("some_url") 
+# This second call will be instant, served from the in-memory cache
+meta2 = client.get_video_metadata("some_url") 
+```
+
+### Persistent Caching
+
+For caching results across different runs or scripts, you can provide a **persistent, dictionary-like object** to the client. The library provides an optional `diskcache` integration for this purpose.
+
+First, install the necessary extra:
+```bash
+uv pip install "yt-meta[persistent_cache]"
+```
+
+Then, instantiate a `diskcache.Cache` object and pass it to the client:
+
+```python
+from yt_meta import YtMeta
+from diskcache import Cache
+
+# The cache object can be any dict-like object.
+# Here, we use diskcache for a persistent, file-based cache.
+persistent_cache = Cache(".my_yt_meta_cache")
+
+client = YtMeta(cache=persistent_cache)
+
+# The first time this script runs, it will be slow (fetches from network).
+# Subsequent runs will be very fast, reading directly from the disk cache.
+metadata = client.get_video_metadata("some_url")
+```
+
+Any object that implements the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) can be used as a cache. See `examples/features/19_alternative_caching_sqlite.py` for a demonstration using `sqlitedict`.
 
 ### 5. Filtering Videos
 
@@ -121,9 +172,9 @@ This example finds popular, short videos. Since both `view_count` and `duration_
 
 ```python
 import itertools
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 
-client = YtMetaClient()
+client = YtMeta()
 channel_url = "https://www.youtube.com/@TED/videos"
 
 # Find videos over 1M views AND shorter than 5 minutes (300s)
@@ -155,10 +206,10 @@ You can provide `datetime.date` objects or a relative date string (e.g., `"30d"`
 
 ```python
 from datetime import date
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 import itertools
 
-client = YtMetaClient()
+client = YtMeta()
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
 # Get videos from a specific window
@@ -179,10 +230,10 @@ for video in itertools.islice(videos, 5):
 **Using relative date strings:**
 
 ```python
-from yt_meta import YtMetaClient
+from yt_meta import YtMeta
 import itertools
 
-client = YtMetaClient()
+client = YtMeta()
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
 recent_videos = client.get_channel_videos(
@@ -215,9 +266,11 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 
 ## API Reference
 
-### `YtMetaClient()`
+### `YtMeta(cache: Optional[MutableMapping] = None)`
 
-The main client for interacting with the library. It inherits from `youtube-comment-downloader` and handles session management and caching.
+The main client for interacting with the library. It inherits from `youtube-comment-downloader` and handles session management.
+
+-   **`cache`**: An optional dictionary-like object to use for caching. If `None`, a temporary in-memory cache is used.
 
 #### `get_video_metadata(youtube_url: str) -> dict`
 Fetches comprehensive metadata for a single YouTube video.
@@ -225,10 +278,9 @@ Fetches comprehensive metadata for a single YouTube video.
 -   **Returns**: A dictionary containing metadata such as `title`, `description`, `view_count`, `like_count`, `publish_date`, `category`, and more.
 -   **Raises**: `VideoUnavailableError` if the video page cannot be fetched or the video is private/deleted.
 
-#### `get_channel_metadata(channel_url: str, force_refresh: bool = False) -> dict`
-Fetches metadata for a specific channel.
+#### `get_channel_metadata(channel_url: str) -> dict`
+Fetches metadata for a specific channel. Results are cached.
 -   **`channel_url`**: The URL of the channel.
--   **`force_refresh`**: If `True`, bypasses the in-memory cache for the channel page.
 -   **Returns**: A dictionary with channel metadata like `title`, `description`, `subscriber_count`, `vanity_url`, etc.
 -   **Raises**: `VideoUnavailableError`, `MetadataParsingError`.
 
@@ -249,6 +301,9 @@ Yields metadata for videos from a playlist.
 -   **`filters`**: A dictionary of advanced filter conditions.
 -   **`stop_at_video_id`**: Stops fetching when this video ID is found.
 -   **`max_videos`**: The maximum number of videos to return.
+
+#### `clear_cache()`
+Clears all items from the configured cache (both in-memory and persistent).
 
 ## Error Handling
 
