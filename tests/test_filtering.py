@@ -324,4 +324,19 @@ def test_combined_fast_and_slow_filters_integration(client):
             assert video["like_count"] > 10_000_000
             found_video = True
             break
-    assert found_video, "Did not find 'Me at the zoo' with combined filters." 
+    assert found_video, "Did not find 'Me at the zoo' with combined filters."
+
+
+def test_apply_filters_view_count_range():
+    """Test a numerical range filter (e.g., gt and lt)."""
+    video_in_range = {"view_count": 2000}
+    video_out_of_range = {"view_count": 5000}
+    filters = {"view_count": {"gt": 1000, "lt": 3000}}
+
+    assert apply_filters(video_in_range, filters)
+    assert not apply_filters(video_out_of_range, filters)
+
+
+def test_apply_filters_title():
+    video = {"title": "A Test Video"}
+    assert apply_filters(video, {"title": {"contains": "test"}}) 

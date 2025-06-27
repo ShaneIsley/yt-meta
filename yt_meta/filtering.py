@@ -58,7 +58,7 @@ def partition_filters(filters: dict) -> tuple[dict, dict]:
 
 def _check_numerical_condition(video_value, condition_dict) -> bool:
     """
-    Checks if a numerical video value meets the conditions in the dictionary.
+    Checks if a numerical video value meets all conditions in the dictionary.
     Supports gt, gte, lt, lte, eq.
     """
     for op, filter_value in condition_dict.items():
@@ -75,21 +75,23 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
                         return False
 
         if op == "eq":
-            return video_value == filter_value
+            if not video_value == filter_value: return False
         elif op == "gt":
-            return video_value > filter_value
+            if not video_value > filter_value: return False
         elif op == "gte":
-            return video_value >= filter_value
+            if not video_value >= filter_value: return False
         elif op == "lt":
-            return video_value < filter_value
+            if not video_value < filter_value: return False
         elif op == "lte":
-            return video_value <= filter_value
+            if not video_value <= filter_value: return False
+        else: # Should be unreachable due to validator
+            return False
     return True
 
 
 def _check_text_condition(video_value, condition_dict) -> bool:
     """
-    Checks if a text video value meets the conditions in the dictionary.
+    Checks if a text video value meets all conditions in the dictionary.
     Supports 'contains', 're', and 'eq'.
     """
     for op, filter_value in condition_dict.items():
@@ -102,6 +104,8 @@ def _check_text_condition(video_value, condition_dict) -> bool:
         elif op == "eq":
             if filter_value.lower() != video_value.lower():
                 return False
+        else: # Should be unreachable due to validator
+            return False
     return True
 
 
