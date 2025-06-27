@@ -213,38 +213,48 @@ Any object that implements the `MutableMapping` protocol (e.g., `__getitem__`, `
 
 ## Advanced Features
 
-### Filtering Videos and Shorts
+### Filtering Videos, Shorts, and Comments
 
-The library provides a powerful filtering system via the `filters` argument, available on `get_channel_videos`, `get_channel_shorts`, and `get_playlist_videos`. This allows you to find items matching specific criteria.
+The library provides a powerful filtering system via the `filters` argument, available on methods like `get_channel_videos`, `get_channel_shorts`, and `get_video_comments`. This allows you to find items matching specific criteria on the server side.
+
+#### Robust Filter Validation
+To improve the developer experience and prevent errors, `yt-meta` validates your `filters` dictionary *before* making any network requests. If you provide a filter field that doesn't exist, an invalid operator for a field, or an incorrect value type, the library will immediately raise a `ValueError` or `TypeError`.
+
+This "fail-fast" approach saves you from waiting for a long-running query to complete only to find out there was a typo in your request. See `examples/features/23_filter_validation.py` for a demonstration.
 
 #### Two-Stage Filtering: Fast vs. Slow
 
-The library uses an efficient two-stage filtering process:
+The library uses an efficient two-stage filtering process for videos and shorts:
 
 *   **Fast Filters:** Applied first, using metadata that is available on the main channel or playlist page (e.g., `title`, `view_count`). This is very efficient.
-*   **Slow Filters:** Applied second, only on videos that pass the fast filters. This requires fetching full metadata for each video individually, which is much slower.
+*   **Slow Filters:** Applied second, only on items that pass the fast filters. This requires fetching full metadata for each item individually, which is much slower.
 
 The client automatically detects when a slow filter is used and sets `fetch_full_metadata=True` for you.
 
-**Supported Fields and Operators:**
+> [!NOTE]
+> Comment filtering does not use the fast/slow system. All comment filters are applied after fetching the comment data.
 
-| Field                 | Supported Operators              | Filter Type                                                 |
-| :-------------------- | :------------------------------- | :---------------------------------------------------------- |
-| `title`               | `contains`, `re`, `eq`           | Fast                                                        |
-| `description_snippet` | `contains`, `re`, `eq`           | Fast                                                        |
-| `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast                                                        |
-| `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast                                                        |
-| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | Fast (for `get_channel_videos`), **Slow** (for `get_channel_shorts` and `get_playlist_videos`) |
-| `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | **Slow** (Automatic full metadata fetch)                    |
-| `category`            | `contains`, `re`, `eq`           | **Slow** (Automatic full metadata fetch)                    |
-| `keywords`            | `contains_any`, `contains_all` | **Slow** (Automatic full metadata fetch)                    |
-| `full_description`    | `contains`, `re`, `eq`           | **Slow** (Automatic full metadata fetch)                    |
-| `is_by_owner`         | `eq`                             | **Comment Only**                                            |
-| `is_hearted_by_owner` | `eq`                             | **Comment Only**                                            |
-| `text`                | `contains`, `re`, `eq`           | **Comment Only**                                            |
+#### Supported Fields and Operators
+
+The following table lists all supported fields and their valid operators. The validation system will enforce these rules.
+
+| Field                 | Supported Operators              | Content Type(s)                                             | Filter Speed |
+| :-------------------- | :------------------------------- | :---------------------------------------------------------- | :----------- |
+| `title`               | `contains`, `re`, `eq`           | Video, Short                                                | Fast         |
+| `description_snippet` | `contains`, `re`, `eq`           | Video                                                       | Fast         |
+| `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
+| `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
+| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | Fast (Video), **Slow** (Short, Playlist) |
+| `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | **Slow**     |
+| `category`            | `contains`, `re`, `eq`           | Video, Short                                                | **Slow**     |
+| `keywords`            | `contains_any`, `contains_all` | Video, Short                                                | **Slow**     |
+| `full_description`    | `contains`, `re`, `eq`           | Video                                                       | **Slow**     |
+| `text`                | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
+| `is_by_owner`         | `eq`                             | Comment                                                     | N/A          |
+| `is_hearted_by_owner` | `eq`                             | Comment                                                     | N/A          |
 
 > [!NOTE]
-> Comment filters (`is_by_owner`, `text`, etc.) are only valid when using the `get_video_comments` method.
+> Some fields like `publish_date` can be "fast" for channel videos but "slow" for shorts or playlists because the basic metadata is not always available on those pages.
 
 #### Example: Basic Filtering (Fast)
 
