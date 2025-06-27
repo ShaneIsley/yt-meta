@@ -89,5 +89,12 @@ CONTINUATION_GUIDE.md
 DESIGN.md
 LESSONS_LEARNED.md
 debug/
+
+# Ignore these file types...
 *.json
 *.html
+
+# ... except for in these directories
+!tests/fixtures/*.json
+!tests/fixtures/*.html
+!examples/saved_responses/*.html
