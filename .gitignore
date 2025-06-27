@@ -94,6 +94,8 @@ debug/
 .cache/
 .pytest_cache/
 .my_yt_meta_cache/
+.ruff_cache/
+.cache_test/
 cache/
 *.db
 *.db-journal
