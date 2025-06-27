@@ -1,9 +1,11 @@
 [project]
 name = "yt-meta"
-version = "0.2.8"
-description = "A lightweight YouTube metadata library."
+version = "0.3.0"
+description = "A Python library for finding video and channel metadata from YouTube."
 readme = "README.md"
-authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
+authors = [
+    { name = "Shane Isley", email = "shaneisley@gmail.com" }
+]
 license = "MIT"
 classifiers = [
     "Programming Language :: Python",
