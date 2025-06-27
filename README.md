@@ -31,7 +31,7 @@ The library offers several ways to fetch metadata.
 
 ### 1. Get Video Metadata
 
-Fetches comprehensive metadata for a specific YouTube video.
+Fetches metadata for a specific YouTube video.
 
 **Example:**
 
@@ -326,7 +326,7 @@ The main client for interacting with the library. It inherits from `youtube-comm
 -   **`cache`**: An optional dictionary-like object to use for caching. If `None`, a temporary in-memory cache is used.
 
 #### `get_video_metadata(youtube_url: str) -> dict`
-Fetches comprehensive metadata for a single YouTube video.
+Fetches metadata for a single YouTube video.
 -   **`youtube_url`**: The full URL of the YouTube video.
 -   **Returns**: A dictionary containing metadata such as `title`, `description`, `view_count`, `like_count`, `publish_date`, `category`, and more.
 -   **Raises**: `VideoUnavailableError` if the video page cannot be fetched or the video is private/deleted.
@@ -378,6 +378,3 @@ Raised when the necessary metadata (e.g., the `ytInitialData` JSON object) canno
 
 ### `VideoUnavailableError`
 Raised when a video or channel page cannot be fetched. This could be due to a network error, a deleted/private video, or an invalid URL.
-
-## Development
-# ... existing code ...
