@@ -90,6 +90,14 @@ DESIGN.md
 LESSONS_LEARNED.md
 debug/
 
+# Caching
+.cache/
+.pytest_cache/
+.my_yt_meta_cache/
+cache/
+*.db
+*.db-journal
+
 # Ignore these file types...
 *.json
 *.html
