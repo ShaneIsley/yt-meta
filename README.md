@@ -137,6 +137,36 @@ for short in itertools.islice(shorts_generator, 5):
     print(f"- {short['title']} (Likes: {likes})")
 ```
 
+### 6. Get Comments from a Video
+
+Fetches comments for a specific video, with options for sorting and filtering. This method returns a generator that yields standardized comment data.
+
+**Example:**
+
+```python
+import itertools
+from yt_meta import YtMeta, SORT_BY_POPULAR
+
+client = YtMeta()
+video_url = "https://www.youtube.com/watch?v=B68agR-OeJM"
+
+# Find the most popular comments that have been liked by the creator
+comment_filters = {
+    "is_hearted_by_owner": {"eq": True}
+}
+
+comments_generator = client.get_video_comments(
+    video_url,
+    sort_by=SORT_BY_POPULAR,
+    filters=comment_filters
+)
+
+print(f"Top 5 hearted comments for video: {video_url}")
+for comment in itertools.islice(comments_generator, 5):
+    likes = comment.get('like_count', 0)
+    print(f"- \"{comment['text']}\" (Likes: {likes})")
+```
+
 ## Caching
 
 `yt-meta` includes a flexible caching system to improve performance and avoid re-fetching data from YouTube.
@@ -374,7 +404,3 @@ The library uses custom exceptions to signal specific error conditions.
 The base exception for all errors in this library.
 
 ### `MetadataParsingError`
-Raised when the necessary metadata (e.g., the `ytInitialData` JSON object) cannot be found or parsed from the YouTube page. This can happen if YouTube changes its page structure.
-
-### `VideoUnavailableError`
-Raised when a video or channel page cannot be fetched. This could be due to a network error, a deleted/private video, or an invalid URL.

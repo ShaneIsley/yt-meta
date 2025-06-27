@@ -239,6 +239,18 @@ def apply_filters(video: dict, filters: dict) -> bool:
 def apply_comment_filters(comment: dict, filters: dict) -> bool:
     """
     Checks if a comment object meets the criteria specified in the filters dict.
+
+    Args:
+        comment: A dictionary representing the comment's metadata.
+        filters: A dictionary specifying the filter conditions.
+            Example:
+            {
+                "like_count": {"gt": 100},
+                "text": {"contains": "support"}
+            }
+
+    Returns:
+        True if the comment passes all filters, False otherwise.
     """
     for key, condition in filters.items():
         if key not in COMMENT_FILTER_KEYS:
