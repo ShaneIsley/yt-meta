@@ -53,11 +53,6 @@ def partition_filters(filters: dict) -> tuple[dict, dict]:
     fast_filters = {k: v for k, v in filters.items() if k in FAST_FILTER_KEYS}
     slow_filters = {k: v for k, v in filters.items() if k in SLOW_FILTER_KEYS}
 
-    # Log a warning for any unrecognized filter keys
-    unrecognized_keys = filters.keys() - FAST_FILTER_KEYS - SLOW_FILTER_KEYS
-    if unrecognized_keys:
-        logger.warning("Unrecognized filter keys: %s", unrecognized_keys)
-
     return fast_filters, slow_filters
 
 
@@ -81,16 +76,14 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
 
         if op == "eq":
             return video_value == filter_value
-        elif op == "gt" and not video_value > filter_value:
-            return False
-        elif op == "gte" and not video_value >= filter_value:
-            return False
-        elif op == "lt" and not video_value < filter_value:
-            return False
-        elif op == "lte" and not video_value <= filter_value:
-            return False
-        elif op not in {"gt", "gte", "lt", "lte", "eq"}:
-            logger.warning("Unrecognized operator: %s", op)
+        elif op == "gt":
+            return video_value > filter_value
+        elif op == "gte":
+            return video_value >= filter_value
+        elif op == "lt":
+            return video_value < filter_value
+        elif op == "lte":
+            return video_value <= filter_value
     return True
 
 
@@ -109,8 +102,6 @@ def _check_text_condition(video_value, condition_dict) -> bool:
         elif op == "eq":
             if filter_value.lower() != video_value.lower():
                 return False
-        elif op not in {"contains", "re", "eq"}:
-            logger.warning("Unrecognized text operator: %s", op)
     return True
 
 

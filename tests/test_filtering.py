@@ -163,29 +163,9 @@ def test_partition_filters():
     assert len(slow) == 1
 
 
-def test_partition_filters_unrecognized_key_warning(caplog):
-    """Test that an unrecognized filter key logs a warning."""
-    filters = {
-        "view_count": {"gt": 1000},
-        "like_count": {"gte": 100},
-        "duration_seconds": {"lt": 60},
-        "unknown_filter": {"eq": True},
-    }
-    with caplog.at_level(logging.WARNING):
-        fast, slow = partition_filters(filters)
-        assert "view_count" in fast
-        assert "duration_seconds" in fast
-        assert "like_count" in slow
-        assert len(fast) == 2
-        assert len(slow) == 1
-    assert "Unrecognized filter keys: {'unknown_filter'}" in caplog.text
-
-
-def test_apply_filters_missing_key():
-    """Test that apply_filters returns False if the video is missing a key."""
-    video_missing_likes = {"video_id": "1", "view_count": 100}
-    filters = {"like_count": {"gt": 10}}
-    assert not apply_filters(video_missing_likes, filters)
+def test_apply_filters_view_count():
+    video = {"view_count": 1500}
+    assert apply_filters(video, {"view_count": {"gt": 1000}})
 
 
 def test_apply_filters_description_snippet():

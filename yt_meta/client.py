@@ -18,6 +18,7 @@ from .filtering import (
     apply_comment_filters,
 )
 from .utils import _deep_get, parse_vote_count
+from .validators import validate_filters
 
 logger = logging.getLogger(__name__)
 
@@ -414,6 +415,7 @@ class YtMeta(YoutubeCommentDownloader):
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
+        validate_filters(filters)
         if not channel_url.endswith("/videos"):
             channel_url = f"{channel_url.rstrip('/')}/videos"
 
@@ -469,6 +471,7 @@ class YtMeta(YoutubeCommentDownloader):
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
+        validate_filters(filters)
         self.logger.info(f"Fetching videos for playlist: {playlist_id}, Filters: {filters}, Start: {start_date}, End: {end_date}")
 
         if not filters:
@@ -505,6 +508,7 @@ class YtMeta(YoutubeCommentDownloader):
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
+        validate_filters(filters)
         if filters is None:
             filters = {}
 
@@ -576,6 +580,7 @@ class YtMeta(YoutubeCommentDownloader):
         Yields:
             A dictionary for each comment with a standardized structure.
         """
+        validate_filters(filters)
         video_meta = self.get_video_metadata(youtube_url)
         owner_channel_id = video_meta.get("channel_id") if video_meta else None
 
