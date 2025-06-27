@@ -4,7 +4,17 @@ A Python library for finding video and channel metadata from YouTube.
 
 ## Purpose
 
-This library is designed to provide a simple and efficient way to collect metadata for YouTube videos and channels, such as titles, view counts, likes, and descriptions. It is built to support data analysis, research, or any application that needs structured information from YouTube.
+This library is designed to provide a simple and efficient way to collect metadata for YouTube videos, channels, and playlists. It simplifies the process of interacting with YouTube's data, handling complexities like network requests, data parsing, and pagination, so you can focus on your analysis.
+
+## Architecture
+
+`yt-meta` is designed around a **Facade** pattern. The main `YtMeta` class provides a simple, unified interface for all fetching operations. Internally, it delegates calls to specialized `Fetcher` classes, each responsible for a specific domain:
+
+-   **`VideoFetcher`**: Handles fetching video metadata and comments.
+-   **`ChannelFetcher`**: Manages fetching channel metadata, video lists, and shorts.
+-   **`PlaylistFetcher`**: Responsible for fetching playlist details.
+
+This architecture keeps the codebase clean, organized, and easy to maintain.
 
 ## Installation
 
@@ -20,10 +30,6 @@ To enable persistent caching, you need to install an optional dependency:
 # For disk-based caching
 uv pip install "yt-meta[persistent_cache]"
 ```
-
-## Inspiration
-
-This project extends the great `youtube-comment-downloader` library, inheriting its session management while adding additional metadata capabilities.
 
 ## Core Features
 
