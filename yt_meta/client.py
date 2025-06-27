@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional, Union, Generator, MutableMapping
 
 import requests
-from youtube_comment_downloader.downloader import YoutubeCommentDownloader
+from youtube_comment_downloader.downloader import YoutubeCommentDownloader, SORT_BY_RECENT, SORT_BY_POPULAR
 
 from . import parsing
 from .date_utils import parse_relative_date_string
@@ -15,15 +15,16 @@ from .exceptions import MetadataParsingError, VideoUnavailableError
 from .filtering import (
     apply_filters,
     partition_filters,
+    apply_comment_filters,
 )
-from .utils import _deep_get
+from .utils import _deep_get, parse_vote_count
 
 logger = logging.getLogger(__name__)
 
 
 class YtMeta(YoutubeCommentDownloader):
     """
-    A client for fetching metadata for YouTube videos, channels, and playlists.
+    A client for fetching metadata for YouTube videos, channels, playlists, and comments.
 
     This class provides methods to retrieve detailed information such as titles,
     descriptions, view counts, and publication dates. It handles the complexity
@@ -555,3 +556,55 @@ class YtMeta(YoutubeCommentDownloader):
                 return parsed_date.date()
             return datetime.fromisoformat(d).date()
         return d
+
+    def get_video_comments(
+        self,
+        youtube_url: str,
+        sort_by: int = SORT_BY_RECENT,
+        limit: int = -1,
+        filters: Optional[dict] = None,
+    ) -> Generator[dict, None, None]:
+        """
+        Fetches comments for a given YouTube video.
+
+        Args:
+            youtube_url: The full URL of the YouTube video.
+            sort_by: How to sort the comments (0 for popular, 1 for recent).
+            limit: The maximum number of comments to return (-1 for all).
+            filters: A dictionary specifying the filter conditions.
+
+        Yields:
+            A dictionary for each comment with a standardized structure.
+        """
+        video_meta = self.get_video_metadata(youtube_url)
+        owner_channel_id = video_meta.get("channel_id") if video_meta else None
+
+        raw_comments = super().get_comments_from_url(youtube_url, sort_by=sort_by)
+
+        comments_yielded = 0
+        for comment in raw_comments:
+            if limit != -1 and comments_yielded >= limit:
+                return
+
+            published_date = datetime.fromtimestamp(comment["time_parsed"]) if "time_parsed" in comment else None
+            
+            standardized_comment = {
+                "comment_id": comment.get("cid"),
+                "text": comment.get("text"),
+                "published_text": comment.get("time"),
+                "published_date": published_date,
+                "author": comment.get("author"),
+                "channel_id": comment.get("channel"),
+                "like_count": parse_vote_count(comment.get("votes")),
+                "reply_count": int(comment.get("replies") or 0),
+                "is_reply": comment.get("reply", False),
+                "is_hearted_by_owner": comment.get("heart", False),
+                "is_by_owner": owner_channel_id and comment.get("channel") == owner_channel_id,
+                "photo_url": comment.get("photo"),
+            }
+
+            if filters and not apply_comment_filters(standardized_comment, filters):
+                continue
+                
+            yield standardized_comment
+            comments_yielded += 1

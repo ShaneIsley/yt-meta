@@ -209,6 +209,12 @@ The client automatically detects when a slow filter is used and sets `fetch_full
 | `category`            | `contains`, `re`, `eq`           | **Slow** (Automatic full metadata fetch)                    |
 | `keywords`            | `contains_any`, `contains_all` | **Slow** (Automatic full metadata fetch)                    |
 | `full_description`    | `contains`, `re`, `eq`           | **Slow** (Automatic full metadata fetch)                    |
+| `is_by_owner`         | `eq`                             | **Comment Only**                                            |
+| `is_hearted_by_owner` | `eq`                             | **Comment Only**                                            |
+| `text`                | `contains`, `re`, `eq`           | **Comment Only**                                            |
+
+> [!NOTE]
+> Comment filters (`is_by_owner`, `text`, etc.) are only valid when using the `get_video_comments` method.
 
 #### Example: Basic Filtering (Fast)
 
@@ -324,6 +330,14 @@ Fetches comprehensive metadata for a single YouTube video.
 -   **`youtube_url`**: The full URL of the YouTube video.
 -   **Returns**: A dictionary containing metadata such as `title`, `description`, `view_count`, `like_count`, `publish_date`, `category`, and more.
 -   **Raises**: `VideoUnavailableError` if the video page cannot be fetched or the video is private/deleted.
+
+#### `get_video_comments(youtube_url: str, sort_by: int = SORT_BY_RECENT, limit: int = -1, filters: Optional[dict] = None) -> Generator[dict, None, None]`
+Fetches comments for a specific YouTube video. This is an "enrichment" call and is slower than fetching bulk metadata.
+-   **`youtube_url`**: The full URL of the YouTube video.
+-   **`sort_by`**: The sort order for comments. Use `SORT_BY_RECENT` (default) or `SORT_BY_POPULAR`.
+-   **`limit`**: The maximum number of comments to fetch. `-1` means no limit.
+-   **`filters`**: A dictionary of filter conditions to apply (see filter table below).
+-   **Returns**: A generator that yields a standardized dictionary for each comment.
 
 #### `get_channel_metadata(channel_url: str) -> dict`
 Fetches metadata for a specific channel. Results are cached.

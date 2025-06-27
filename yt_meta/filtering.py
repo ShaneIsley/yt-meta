@@ -32,6 +32,18 @@ SLOW_FILTER_KEYS = {
     "full_description",
 }
 
+COMMENT_FILTER_KEYS = {
+    "text",
+    "author",
+    "like_count",
+    "reply_count",
+    "publish_date",
+    "is_reply",
+    "is_hearted_by_owner",
+    "is_by_owner",
+    "channel_id",
+}
+
 
 def partition_filters(filters: dict) -> tuple[dict, dict]:
     """Separates a filter dictionary into fast and slow filters."""
@@ -221,4 +233,46 @@ def apply_filters(video: dict, filters: dict) -> bool:
                 logger.warning("Could not parse precise publish_date: %s", video_value_str)
                 return False # Fail if the date is malformed
 
-    return True 
+    return True
+
+
+def apply_comment_filters(comment: dict, filters: dict) -> bool:
+    """
+    Checks if a comment object meets the criteria specified in the filters dict.
+    """
+    for key, condition in filters.items():
+        if key not in COMMENT_FILTER_KEYS:
+            logger.warning("Unrecognized comment filter key: %s", key)
+            continue
+
+        video_value = comment.get(key)
+        if video_value is None:
+            return False
+
+        if key in {"like_count", "reply_count"}:
+            if not _check_numerical_condition(video_value, condition):
+                return False
+        elif key in {"text", "author", "channel_id"}:
+            if not _check_text_condition(video_value, condition):
+                return False
+        elif key in {"is_reply", "is_hearted_by_owner", "is_by_owner"}:
+            if not _check_boolean_condition(video_value, condition):
+                return False
+        elif key == "publish_date":
+            if not _check_numerical_condition(video_value, condition):
+                return False
+    return True
+
+
+def _check_boolean_condition(value: bool, condition_dict: dict) -> bool:
+    """
+    Checks if a boolean value meets the 'eq' condition.
+    """
+    op = next(iter(condition_dict))
+    filter_value = condition_dict[op]
+
+    if op != "eq":
+        logger.warning("Unrecognized boolean operator: %s. Only 'eq' is supported.", op)
+        return False
+    
+    return value == filter_value 

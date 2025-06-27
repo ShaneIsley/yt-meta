@@ -38,3 +38,22 @@ def _deep_get(dictionary, keys, default=None):
         else:
             return default
     return current_val
+
+
+def parse_vote_count(vote_str: str) -> int:
+    """
+    Parses a vote count string (e.g., '1.2K', '25', '1M') into an integer.
+    """
+    if not isinstance(vote_str, str):
+        return 0
+    vote_str = vote_str.strip().upper()
+    if not vote_str:
+        return 0
+    
+    if 'K' in vote_str:
+        return int(float(vote_str.replace('K', '')) * 1_000)
+    elif 'M' in vote_str:
+        return int(float(vote_str.replace('M', '')) * 1_000_000)
+    elif vote_str.isdigit():
+        return int(vote_str)
+    return 0
