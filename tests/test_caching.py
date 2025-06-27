@@ -45,9 +45,10 @@ def test_video_metadata_caching(cached_client):
     mock_response.text = make_mock_html(player_response, initial_data)
     mock_response.raise_for_status = MagicMock()
 
-    with patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get, \
-         patch("yt_meta.client.parsing.parse_video_metadata", return_value={"meta": "data"}) as mock_parse:
-
+    with (
+        patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get,
+        patch("yt_meta.client.parsing.parse_video_metadata", return_value={"meta": "data"}) as mock_parse,
+    ):
         # First call - should fetch and cache
         result1 = cached_client.get_video_metadata(video_url)
         mock_get.assert_called_once()
@@ -75,9 +76,10 @@ def test_cache_persistence(tmp_path):
     mock_response.text = make_mock_html(player_response, initial_data)
     mock_response.raise_for_status = MagicMock()
 
-    with patch("yt_meta.client.requests.Session.get", return_value=mock_response), \
-         patch("yt_meta.client.parsing.parse_video_metadata", return_value={"persistent": "data"}):
-
+    with (
+        patch("yt_meta.client.requests.Session.get", return_value=mock_response),
+        patch("yt_meta.client.parsing.parse_video_metadata", return_value={"persistent": "data"}),
+    ):
         # First client instance
         cache1 = Cache(cache_dir)
         client1 = YtMeta(cache=cache1)
@@ -85,8 +87,10 @@ def test_cache_persistence(tmp_path):
         cache1.close()
 
     # Second client instance with the same cache directory
-    with patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get, \
-         patch("yt_meta.client.parsing.parse_video_metadata") as mock_parse:
+    with (
+        patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get,
+        patch("yt_meta.client.parsing.parse_video_metadata") as mock_parse,
+    ):
         cache2 = Cache(cache_dir)
         client2 = YtMeta(cache=cache2)
         result = client2.get_video_metadata(video_url)
@@ -128,9 +132,10 @@ def test_clear_cache(cached_client):
     mock_response.text = '{"key": "value"}'
     mock_response.raise_for_status = MagicMock()
 
-    with patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get, \
-         patch("yt_meta.client.parsing.parse_video_metadata", return_value={"meta": "data"}):
-
+    with (
+        patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get,
+        patch("yt_meta.client.parsing.parse_video_metadata", return_value={"meta": "data"}),
+    ):
         # Populate the cache
         cached_client.get_video_metadata(video_url)
         assert mock_get.call_count == 1

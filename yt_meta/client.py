@@ -7,7 +7,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional, Union, Generator, MutableMapping
 
 import requests
-from youtube_comment_downloader.downloader import YoutubeCommentDownloader, SORT_BY_RECENT, SORT_BY_POPULAR
+from youtube_comment_downloader.downloader import SORT_BY_RECENT
 
 from . import parsing
 from .date_utils import parse_relative_date_string
@@ -17,29 +17,26 @@ from .filtering import (
     partition_filters,
     apply_comment_filters,
 )
+from .fetchers import VideoFetcher, ChannelFetcher, PlaylistFetcher
 from .utils import _deep_get, parse_vote_count
 from .validators import validate_filters
 
 logger = logging.getLogger(__name__)
 
 
-class YtMeta(YoutubeCommentDownloader):
+class YtMeta:
     """
     A client for fetching metadata for YouTube videos, channels, playlists, and comments.
-
-    This class provides methods to retrieve detailed information such as titles,
-    descriptions, view counts, and publication dates. It handles the complexity
-    of YouTube's internal data structures and pagination logic (continuations),
-    offering a simple interface for data collection.
-
-    It also includes an in-memory cache for channel pages to improve performance
-    for repeated requests.
+    This class acts as a Facade, delegating calls to specialized fetcher classes.
     """
 
     def __init__(self, cache: Optional[MutableMapping] = None):
-        super().__init__()
         self.cache = {} if cache is None else cache
         self.logger = logger
+        self.session = requests.Session()
+        self._video_fetcher = VideoFetcher(self.session, self.cache)
+        self._channel_fetcher = ChannelFetcher(self.session, self.cache, self._video_fetcher)
+        self._playlist_fetcher = PlaylistFetcher(self.session, self.cache, self._video_fetcher)
 
     def clear_cache(self, channel_url: str = None):
         """
@@ -49,113 +46,35 @@ class YtMeta(YoutubeCommentDownloader):
         channel is cleared. Otherwise, the entire cache is cleared.
         """
         if channel_url:
-            key = self._get_channel_page_cache_key(channel_url)
-            if key in self.cache:
-                del self.cache[key]
-                self.logger.info(f"Cache cleared for channel: {key}")
+            # This is tricky because we don't know if it's a shorts or videos page
+            # For now, we clear both possible keys
+            videos_key = self._channel_fetcher._get_channel_page_cache_key(channel_url)
+            shorts_key = self._channel_fetcher._get_channel_shorts_page_cache_key(channel_url)
+            if videos_key in self.cache:
+                del self.cache[videos_key]
+                self.logger.info(f"Cache cleared for channel: {videos_key}")
+            if shorts_key in self.cache:
+                del self.cache[shorts_key]
+                self.logger.info(f"Cache cleared for channel: {shorts_key}")
         else:
-            self.cache.clear()
-            self.logger.info("Entire cache cleared.")
-
-    def _get_channel_page_cache_key(self, channel_url: str) -> str:
-        key = channel_url.rstrip("/")
-        if not key.endswith("/videos"):
-            key += "/videos"
-        return f"channel_page:{key}"
-
-    def _get_channel_shorts_page_cache_key(self, channel_url: str) -> str:
-        key = channel_url.rstrip("/")
-        if not key.endswith("/shorts"):
-            key += "/shorts"
-        return f"channel_shorts_page:{key}"
-
-    def _get_channel_page_data(self, channel_url: str, force_refresh: bool = False) -> tuple[dict, dict, str]:
-        """
-        Internal method to fetch, parse, and cache the initial data from a channel's "Videos" page.
-        """
-        key = self._get_channel_page_cache_key(channel_url)
-
-        if not force_refresh and key in self.cache:
-            self.logger.info(f"Using cached data for channel: {key}")
-            return self.cache[key]
-
-        try:
-            self.logger.info(f"Fetching channel page: {key}")
-            response = self.session.get(key.replace("channel_page:", ""), timeout=10)
-            response.raise_for_status()
-            html = response.text
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request failed for channel page {key}: {e}")
-            raise VideoUnavailableError(f"Could not fetch channel page: {e}", channel_url=key) from e
-
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-        if not initial_data:
-            self.logger.error("Failed to extract ytInitialData from channel page.")
-            raise MetadataParsingError(
-                "Could not extract ytInitialData from channel page.",
-                channel_url=key,
-            )
-
-        ytcfg = parsing.find_ytcfg(html)
-        if not ytcfg:
-            self.logger.error("Failed to extract ytcfg from channel page.")
-            raise MetadataParsingError("Could not extract ytcfg from channel page.", channel_url=key)
-
-        self.logger.info(f"Caching data for channel: {key}")
-        result = (initial_data, ytcfg, html)
-        self.cache[key] = result
-        return result
-
-    def _get_channel_shorts_page_data(self, channel_url: str, force_refresh: bool = False) -> tuple[dict, dict, str]:
-        """
-        Internal method to fetch, parse, and cache the initial data from a channel's "Shorts" page.
-        """
-        key = self._get_channel_shorts_page_cache_key(channel_url)
-
-        if not force_refresh and key in self.cache:
-            self.logger.info(f"Using cached data for channel shorts: {key}")
-            return self.cache[key]
-
-        try:
-            self.logger.info(f"Fetching channel shorts page: {key}")
-            response = self.session.get(key.replace("channel_shorts_page:", ""), timeout=10)
-            response.raise_for_status()
-            html = response.text
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request failed for channel shorts page {key}: {e}")
-            raise VideoUnavailableError(f"Could not fetch channel shorts page: {e}", channel_url=key) from e
-
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-        if not initial_data:
-            self.logger.error("Failed to extract ytInitialData from channel shorts page.")
-            raise MetadataParsingError(
-                "Could not extract ytInitialData from channel shorts page.",
-                channel_url=key,
-            )
-
-        ytcfg = parsing.find_ytcfg(html)
-        if not ytcfg:
-            self.logger.error("Failed to extract ytcfg from channel shorts page.")
-            raise MetadataParsingError("Could not extract ytcfg from channel shorts page.", channel_url=key)
-
-        self.logger.info(f"Caching data for channel shorts: {key}")
-        result = (initial_data, ytcfg, html)
-        self.cache[key] = result
-        return result
+            # Imperfect, but we need to iterate and clear only channel/continuation keys
+            keys_to_clear = [k for k in self.cache if k.startswith("channel_") or k.startswith("continuation:")]
+            for k in keys_to_clear:
+                del self.cache[k]
+            self.logger.info("Channel and continuation cache cleared.")
 
     def get_channel_metadata(self, channel_url: str, force_refresh: bool = False) -> dict:
         """
-        Fetches and parses metadata for a given YouTube channel.
+        Fetches metadata for a YouTube channel.
 
         Args:
-            channel_url: The URL of the channel's main page or "Videos" tab.
-            force_refresh: If True, bypasses the in-memory cache.
+            channel_url: The URL of the channel page.
+            force_refresh: If True, bypasses the cache to fetch fresh data.
 
         Returns:
-            A dictionary containing channel metadata.
+            A dictionary containing the channel's metadata.
         """
-        initial_data, _, _ = self._get_channel_page_data(channel_url, force_refresh=force_refresh)
-        return parsing.parse_channel_metadata(initial_data)
+        return self._channel_fetcher.get_channel_metadata(channel_url, force_refresh)
 
     def get_video_metadata(self, youtube_url: str) -> dict:
         """
@@ -167,34 +86,130 @@ class YtMeta(YoutubeCommentDownloader):
         Returns:
             A dictionary containing detailed video metadata.
         """
-        self.logger.info(f"Fetching video page: {youtube_url}")
-        video_id = youtube_url.split("v=")[-1]
-        cache_key = f"video_meta:{video_id}"
-        if cache_key in self.cache:
-            self.logger.info(f"Cache hit for video metadata: {video_id}")
-            return self.cache[cache_key]
+        return self._video_fetcher.get_video_metadata(youtube_url)
 
-        try:
-            response = self.session.get(youtube_url, timeout=10)
-            response.raise_for_status()
-            html = response.text
-        except Exception as e:
-            self.logger.error(f"Failed to fetch video page {youtube_url}: {e}")
-            raise VideoUnavailableError(f"Failed to fetch video page: {e}", video_id=youtube_url.split("v=")[-1]) from e
+    def get_channel_videos(
+        self,
+        channel_url: str,
+        force_refresh: bool = False,
+        fetch_full_metadata: bool = False,
+        start_date: Optional[Union[str, date]] = None,
+        end_date: Optional[Union[str, date]] = None,
+        filters: Optional[dict] = None,
+        stop_at_video_id: str | None = None,
+        max_videos: int = -1,
+    ) -> Generator[dict, None, None]:
+        """
+        Fetches videos from a YouTube channel's "Videos" tab.
 
-        player_response_data = parsing.extract_and_parse_json(html, "ytInitialPlayerResponse")
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
+        This method handles pagination automatically and provides extensive filtering
+        options. It intelligently combines date parameters (`start_date`, `end_date`)
+        with any date conditions specified in the `filters` dictionary.
 
-        if not player_response_data or not initial_data:
-            logger.warning(
-                f"Could not extract metadata for video {video_id}. "
-                "The page structure may have changed or the video is unavailable. Skipping."
-            )
-            return None
+        Args:
+            channel_url: The URL of the channel.
+            force_refresh: If True, bypasses the cache for the initial page load.
+            fetch_full_metadata: If True, performs an additional request for each
+                video to get its complete metadata (e.g., likes, category). This is
+                required for "slow filters".
+            start_date: The earliest publish date for videos to include.
+                Can be a `date` object or a string (e.g., "2023-01-01", "3 weeks ago").
+            end_date: The latest publish date for videos to include.
+            filters: A dictionary of filter conditions to apply.
+            stop_at_video_id: If provided, pagination will stop once this video ID
+                is found.
+            max_videos: The maximum number of videos to return (-1 for all).
 
-        result = parsing.parse_video_metadata(player_response_data, initial_data)
-        self.cache[cache_key] = result
-        return result
+        Yields:
+            A dictionary for each video that matches the criteria.
+        """
+        return self._channel_fetcher.get_channel_videos(
+            channel_url, force_refresh, fetch_full_metadata, start_date, end_date, filters, stop_at_video_id, max_videos
+        )
+
+    def get_playlist_videos(
+        self,
+        playlist_id: str,
+        fetch_full_metadata: bool = False,
+        start_date: Optional[Union[str, date]] = None,
+        end_date: Optional[Union[str, date]] = None,
+        filters: Optional[dict] = None,
+        stop_at_video_id: str | None = None,
+        max_videos: int = -1,
+    ) -> Generator[dict, None, None]:
+        """
+        Fetches videos from a YouTube playlist.
+
+        Handles pagination and filtering. Note that date filtering for playlists
+        is a "slow" operation and will trigger a full metadata fetch for each video.
+
+        Args:
+            playlist_id: The ID of the playlist.
+            fetch_full_metadata: If True, performs an additional request for each
+                video to get its complete metadata. Required for "slow filters".
+            start_date: The earliest publish date for videos to include.
+            end_date: The latest publish date for videos to include.
+            filters: A dictionary of filter conditions to apply.
+            stop_at_video_id: If provided, pagination will stop once this video ID
+                is found.
+            max_videos: The maximum number of videos to return (-1 for all).
+
+        Yields:
+            A dictionary for each video that matches the criteria.
+        """
+        return self._playlist_fetcher.get_playlist_videos(
+            playlist_id, fetch_full_metadata, start_date, end_date, filters, stop_at_video_id, max_videos
+        )
+
+    def get_channel_shorts(
+        self,
+        channel_url: str,
+        force_refresh: bool = False,
+        fetch_full_metadata: bool = False,
+        filters: Optional[dict] = None,
+        stop_at_video_id: str | None = None,
+        max_videos: int = -1,
+    ) -> Generator[dict, None, None]:
+        """
+        Fetches shorts from a YouTube channel's shorts tab.
+
+        Args:
+            channel_url: The URL of the channel's shorts page.
+            force_refresh: Whether to bypass the cache and fetch fresh data.
+            fetch_full_metadata: Whether to fetch full metadata for each short.
+            filters: A dictionary of filter conditions.
+            stop_at_video_id: The ID of the short to stop fetching at.
+            max_videos: The maximum number of shorts to fetch (-1 for all).
+
+        Returns:
+            A generator of short dictionaries.
+        """
+        return self._channel_fetcher.get_channel_shorts(
+            channel_url, force_refresh, fetch_full_metadata, filters, stop_at_video_id, max_videos
+        )
+
+    def get_video_comments(
+        self,
+        youtube_url: str,
+        sort_by: int = SORT_BY_RECENT,
+        limit: int = -1,
+        filters: Optional[dict] = None,
+    ) -> Generator[dict, None, None]:
+        """
+        Fetches comments for a given YouTube video.
+
+        Args:
+            youtube_url: The full URL of the YouTube video.
+            sort_by: How to sort the comments (0 for popular, 1 for recent).
+            limit: The maximum number of comments to return (-1 for all).
+            filters: A dictionary specifying the filter conditions.
+
+        Yields:
+            A dictionary for each comment with a standardized structure.
+        """
+        return self._video_fetcher.get_video_comments(
+            youtube_url, sort_by=sort_by, limit=limit, filters=filters
+        )
 
     def _get_videos_tab_renderer(self, initial_data: dict):
         tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
@@ -404,134 +419,6 @@ class YtMeta(YoutubeCommentDownloader):
             renderers = _deep_get(continuation_data, "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems", [])
             videos, continuation_token = parsing.extract_videos_from_playlist_renderer({"contents": renderers})
 
-    def get_channel_videos(
-        self,
-        channel_url: str,
-        force_refresh: bool = False,
-        fetch_full_metadata: bool = False,
-        start_date: Optional[Union[str, date]] = None,
-        end_date: Optional[Union[str, date]] = None,
-        filters: Optional[dict] = None,
-        stop_at_video_id: str | None = None,
-        max_videos: int = -1,
-    ) -> Generator[dict, None, None]:
-        validate_filters(filters)
-        if not channel_url.endswith("/videos"):
-            channel_url = f"{channel_url.rstrip('/')}/videos"
-
-        self.logger.info(f"Fetching videos for channel: {channel_url}, Filters: {filters}, Start: {start_date}, End: {end_date}")
-
-        if filters is None:
-            filters = {}
-
-        publish_date_from_filter = filters.get("publish_date", {})
-        start_date_from_filter = publish_date_from_filter.get("gt") or publish_date_from_filter.get("gte")
-        end_date_from_filter = publish_date_from_filter.get("lt") or publish_date_from_filter.get("lte")
-        final_start_date = start_date or start_date_from_filter
-        final_end_date = end_date or end_date_from_filter
-
-        if isinstance(final_start_date, str):
-            final_start_date = parse_relative_date_string(final_start_date)
-        if isinstance(final_end_date, str):
-            final_end_date = parse_relative_date_string(final_end_date)
-        
-        date_filter_conditions = {}
-        if final_start_date:
-            date_filter_conditions["gte"] = final_start_date
-        if final_end_date:
-            date_filter_conditions["lte"] = final_end_date
-        if date_filter_conditions:
-            filters["publish_date"] = date_filter_conditions
-
-        fast_filters, slow_filters = partition_filters(filters)
-        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
-        if slow_filters and not fetch_full_metadata:
-            self.logger.warning(f"Slow filters {list(slow_filters.keys())} provided without fetch_full_metadata=True. Full metadata will be fetched.")
-
-        raw_video_generator = self._get_raw_channel_videos_generator(
-            channel_url, force_refresh, final_start_date
-        )
-
-        yield from self._process_videos_generator(
-            video_generator=raw_video_generator,
-            must_fetch_full_metadata=must_fetch_full_metadata,
-            fast_filters=fast_filters,
-            slow_filters=slow_filters,
-            stop_at_video_id=stop_at_video_id,
-            max_videos=max_videos,
-        )
-
-    def get_playlist_videos(
-        self,
-        playlist_id: str,
-        fetch_full_metadata: bool = False,
-        start_date: Optional[Union[str, date]] = None,
-        end_date: Optional[Union[str, date]] = None,
-        filters: Optional[dict] = None,
-        stop_at_video_id: str | None = None,
-        max_videos: int = -1,
-    ) -> Generator[dict, None, None]:
-        validate_filters(filters)
-        self.logger.info(f"Fetching videos for playlist: {playlist_id}, Filters: {filters}, Start: {start_date}, End: {end_date}")
-
-        if not filters:
-            filters = {}
-        if start_date:
-            filters["publish_date"] = (">=", start_date)
-        if end_date:
-            # If a filter for publish_date already exists, combine them
-            if "publish_date" in filters:
-                existing_op, existing_date = filters["publish_date"]
-                if existing_op == ">=":
-                    filters["publish_date"] = ("between", (existing_date, end_date))
-            else:
-                filters["publish_date"] = ("<=", end_date)
-
-        fast_filters, slow_filters = partition_filters(filters)
-        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
-
-        yield from self._process_videos_generator(
-            video_generator=self._get_raw_playlist_videos_generator(playlist_id),
-            must_fetch_full_metadata=fetch_full_metadata,
-            fast_filters=fast_filters,
-            slow_filters=slow_filters,
-            stop_at_video_id=stop_at_video_id,
-            max_videos=max_videos,
-        )
-
-    def get_channel_shorts(
-        self,
-        channel_url: str,
-        force_refresh: bool = False,
-        fetch_full_metadata: bool = False,
-        filters: Optional[dict] = None,
-        stop_at_video_id: str | None = None,
-        max_videos: int = -1,
-    ) -> Generator[dict, None, None]:
-        validate_filters(filters)
-        if filters is None:
-            filters = {}
-
-        fast_filters, slow_filters = partition_filters(filters)
-        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
-
-        if slow_filters and not fetch_full_metadata:
-            self.logger.warning(
-                f"Slow filters {list(slow_filters.keys())} provided without fetch_full_metadata=True. "
-                "Full metadata will be fetched."
-            )
-
-        raw_shorts_generator = self._get_raw_shorts_generator(channel_url, force_refresh)
-
-        yield from self._process_videos_generator(
-            video_generator=raw_shorts_generator,
-            must_fetch_full_metadata=must_fetch_full_metadata,
-            fast_filters=fast_filters,
-            slow_filters=slow_filters,
-            stop_at_video_id=stop_at_video_id,
-            max_videos=max_videos,
-        )
-
     def _get_continuation_data(self, token: str, ytcfg: dict):
         """
         Fetches the next batch of data using a continuation token.
@@ -560,56 +447,3 @@ class YtMeta(YoutubeCommentDownloader):
                 return parsed_date.date()
             return datetime.fromisoformat(d).date()
         return d
-
-    def get_video_comments(
-        self,
-        youtube_url: str,
-        sort_by: int = SORT_BY_RECENT,
-        limit: int = -1,
-        filters: Optional[dict] = None,
-    ) -> Generator[dict, None, None]:
-        """
-        Fetches comments for a given YouTube video.
-
-        Args:
-            youtube_url: The full URL of the YouTube video.
-            sort_by: How to sort the comments (0 for popular, 1 for recent).
-            limit: The maximum number of comments to return (-1 for all).
-            filters: A dictionary specifying the filter conditions.
-
-        Yields:
-            A dictionary for each comment with a standardized structure.
-        """
-        validate_filters(filters)
-        video_meta = self.get_video_metadata(youtube_url)
-        owner_channel_id = video_meta.get("channel_id") if video_meta else None
-
-        raw_comments = super().get_comments_from_url(youtube_url, sort_by=sort_by)
-
-        comments_yielded = 0
-        for comment in raw_comments:
-            if limit != -1 and comments_yielded >= limit:
-                return
-
-            published_date = datetime.fromtimestamp(comment["time_parsed"]) if "time_parsed" in comment else None
-            
-            standardized_comment = {
-                "comment_id": comment.get("cid"),
-                "text": comment.get("text"),
-                "published_text": comment.get("time"),
-                "published_date": published_date,
-                "author": comment.get("author"),
-                "channel_id": comment.get("channel"),
-                "like_count": parse_vote_count(comment.get("votes")),
-                "reply_count": int(comment.get("replies") or 0),
-                "is_reply": comment.get("reply", False),
-                "is_hearted_by_owner": comment.get("heart", False),
-                "is_by_owner": owner_channel_id and comment.get("channel") == owner_channel_id,
-                "photo_url": comment.get("photo"),
-            }
-
-            if filters and not apply_comment_filters(standardized_comment, filters):
-                continue
-                
-            yield standardized_comment
-            comments_yielded += 1

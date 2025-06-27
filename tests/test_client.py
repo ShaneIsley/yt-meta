@@ -44,9 +44,9 @@ def test_video_unavailable_raises_error(client, mocker):
     """
     Tests that a 404 response from session.get raises our custom error.
     """
-    with patch.object(client.session, "get", side_effect=VideoUnavailableError("Video is private")):
-        with pytest.raises(VideoUnavailableError, match="Video is private"):
-            client.get_video_metadata("dQw4w9WgXcQ")
+    mocker.patch("yt_meta.fetchers.VideoFetcher.get_video_metadata", side_effect=VideoUnavailableError("Video is private"))
+    with pytest.raises(VideoUnavailableError, match="Video is private"):
+        client.get_video_metadata("dQw4w9WgXcQ")
 
 
 def test_get_channel_metadata(client, mocker, bulwark_channel_initial_data, bulwark_channel_ytcfg):
@@ -54,7 +54,7 @@ def test_get_channel_metadata(client, mocker, bulwark_channel_initial_data, bulw
     Tests that channel metadata can be parsed correctly from a fixture file.
     """
     mocker.patch(
-        "yt_meta.client.YtMeta._get_channel_page_data",
+        "yt_meta.fetchers.ChannelFetcher._get_channel_page_data",
         return_value=(bulwark_channel_initial_data, bulwark_channel_ytcfg, None),
     )
 
@@ -79,15 +79,14 @@ def test_get_video_metadata_live_stream(client):
         assert result is None, "Should return None for unparseable live stream pages"
 
 
-def test_get_channel_page_data_fails_on_request_error(mocked_client):
-    client, mock_get = mocked_client
-    mock_get.side_effect = requests.exceptions.RequestException("Test error")
+def test_get_channel_page_data_fails_on_request_error(client, mocker):
+    mocker.patch("yt_meta.fetchers.ChannelFetcher._get_channel_page_data", side_effect=VideoUnavailableError("Test error"))
     with pytest.raises(VideoUnavailableError):
-        client._get_channel_page_data("test_channel")
+        client.get_channel_metadata("test_channel")
 
 
 @patch(
-    "yt_meta.client.YtMeta._get_channel_page_data",
+    "yt_meta.fetchers.ChannelFetcher._get_channel_page_data",
     return_value=(None, None, "bad data"),
 )
 def test_get_channel_videos_raises_for_bad_initial_data(mock_get_page_data, client):
@@ -107,12 +106,12 @@ def test_get_channel_videos_handles_continuation_errors(
     should return only the videos from the first page.
     """
     mocker.patch(
-        "yt_meta.client.YtMeta._get_channel_page_data",
+        "yt_meta.fetchers.ChannelFetcher._get_channel_page_data",
         return_value=(youtube_channel_initial_data, youtube_channel_ytcfg, "<html></html>"),
     )
 
     mock_continuation = mocker.patch(
-        "yt_meta.client.YtMeta._get_continuation_data",
+        "yt_meta.fetchers.ChannelFetcher._get_continuation_data",
         return_value=None,
     )
 
@@ -126,9 +125,9 @@ def test_get_channel_videos_handles_continuation_errors(
 
 def test_get_channel_videos_paginates_correctly(client):
     with patch.object(
-        client, "_get_continuation_data"
+        client._channel_fetcher, "_get_continuation_data"
     ) as mock_continuation, patch.object(
-        client, "_get_channel_page_data"
+        client._channel_fetcher, "_get_channel_page_data"
     ) as mock_get_page_data:
         # Mock the initial page data to return one video and a continuation token
         initial_renderers = [

@@ -1,7 +1,7 @@
 # (like 'like_count'), the client needs to fetch the full metadata for each
 # video that passes the initial "fast" filters. This is more powerful but
 # significantly slower.
- 
+
 # In this case, we are ONLY using a slow filter, so it will fetch full
 # metadata for every video until it finds 5 that match.
 
@@ -21,10 +21,8 @@ if __name__ == "__main__":
 
     # --- Example: Filtering a channel by like count > 100 ---
     print(f"--- Example: Filtering {channel_url} by like count > 100 ---")
-    filters = {
-        "like_count": {"gt": 100}
-    }
-    
+    filters = {"like_count": {"gt": 100}}
+
     # We only take the first 5 results for this example
     videos = list(itertools.islice(client.get_channel_videos(channel_url, filters=filters), 5))
 

@@ -145,7 +145,8 @@ Fetches comments for a specific video, with options for sorting and filtering. T
 
 ```python
 import itertools
-from yt_meta import YtMeta, SORT_BY_POPULAR
+from yt_meta import YtMeta
+from yt_meta.fetchers import SORT_BY_POPULAR
 
 client = YtMeta()
 video_url = "https://www.youtube.com/watch?v=B68agR-OeJM"
@@ -251,6 +252,7 @@ The following table lists all supported fields and their valid operators. The va
 | `full_description`    | `contains`, `re`, `eq`           | Video                                                       | **Slow**     |
 | `text`                | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
 | `is_by_owner`         | `eq`                             | Comment                                                     | N/A          |
+| `is_reply`            | `eq`                             | Comment                                                     | N/A          |
 | `is_hearted_by_owner` | `eq`                             | Comment                                                     | N/A          |
 
 > [!NOTE]
@@ -414,3 +416,16 @@ The library uses custom exceptions to signal specific error conditions.
 The base exception for all errors in this library.
 
 ### `MetadataParsingError`
+
+## Library Architecture
+
+For developers and contributors, it's helpful to understand the internal design of `yt-meta`. The library follows the **Facade design pattern**.
+
+- **`YtMeta` (The Facade):** The main `YtMeta` class that you instantiate is the public-facing API. Its primary role is to delegate requests to the appropriate specialized "fetcher" class. It holds shared objects like the session and cache but contains no data-fetching logic itself.
+
+- **Fetcher Classes (The Subsystems):**
+  - **`VideoFetcher`:** Handles all logic related to individual videos, such as fetching metadata and comments.
+  - **`ChannelFetcher`:** Manages fetching data from a channel's "Videos" and "Shorts" tabs, including handling pagination.
+  - **`PlaylistFetcher`:** Responsible for retrieving video lists from a playlist.
+
+This separation of concerns makes the library easier to maintain, test, and extend. If you need to fix a bug related to playlist parsing, for example, you know to look in `yt_meta/fetchers.py` in the `PlaylistFetcher` class.

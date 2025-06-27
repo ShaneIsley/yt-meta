@@ -21,9 +21,7 @@ channel_url = "https://www.youtube.com/@TED/videos"
 # Define a filter to find videos with over 1,000,000 views.
 # The `gt` stands for "greater than".
 # Other operators include: `lt` (less than), `gte` (>=), `lte` (<=), `eq` (==)
-filters = {
-    "view_count": {"gt": 1_000_000}
-}
+filters = {"view_count": {"gt": 1_000_000}}
 
 # No need for full metadata, as the basic info from the channel page
 # includes the view count. This makes the query very fast.
@@ -38,12 +36,12 @@ filtered_videos = list(itertools.islice(videos_generator, 5))
 
 print(f"Found {len(filtered_videos)} videos with over 1M views (showing first 5):")
 for video in filtered_videos:
-    view_count = video.get('view_count')
+    view_count = video.get("view_count")
     # Format the view count with commas for readability
     formatted_views = f"{view_count:,}" if view_count is not None else "N/A"
-    
+
     print(f"- Title: {video.get('title')}")
     print(f"  Views: {formatted_views}")
     print(f"  URL: {video.get('url')}")
 
-print("\nThis demonstrates how to apply advanced filters without needing to fetch full video metadata.") 
+print("\nThis demonstrates how to apply advanced filters without needing to fetch full video metadata.")

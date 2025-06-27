@@ -19,7 +19,7 @@ def clear_cache_directory():
 
 def main():
     """Demonstrates the performance benefits of a persistent cache."""
-    
+
     # Start with a clean slate
     clear_cache_directory()
     print("-" * 50)
@@ -31,12 +31,12 @@ def main():
     client_in_memory.get_video_metadata(VIDEO_URL)
     duration = time.perf_counter() - start_time
     print(f"-> Initial fetch took: {duration:.4f} seconds.\n")
-    
+
     print("-" * 50)
 
     # --- Step 2: First fetch with the persistent cache (populating it) ---
     print("Step 2: Running with a new client to populate the persistent disk cache.")
-    
+
     # This block ensures the cache is properly closed after use
     with Cache(CACHE_DIR) as cache1:
         client_populating = YtMeta(cache=cache1)
@@ -59,7 +59,7 @@ def main():
         print(f"-> First fetch for this new client (from disk) took: {duration_cached:.4f} seconds.\n")
 
     print("-" * 50)
-    
+
     # --- Conclusion ---
     if duration_cached > 0:
         speedup = duration / duration_cached
@@ -72,4 +72,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

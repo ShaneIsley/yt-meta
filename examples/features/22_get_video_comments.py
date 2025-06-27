@@ -5,7 +5,7 @@ import itertools
 import logging
 
 from yt_meta import YtMeta
-from yt_meta.client import SORT_BY_POPULAR
+from yt_meta.fetchers import SORT_BY_POPULAR
 
 # Configure logging to see the library's output
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

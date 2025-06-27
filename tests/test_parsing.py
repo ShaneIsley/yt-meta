@@ -195,7 +195,7 @@ def test_parse_video_metadata(player_response_data, initial_data):
 def test_extract_shorts_from_renderers():
     html = get_fixture("mr_beast_shorts_page.html")
     initial_data = extract_and_parse_json(html, "ytInitialData")
-    
+
     # This is a deep path, specific to finding the shorts data
     tabs = initial_data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
     shorts_tab = next(tab for tab in tabs if tab.get("tabRenderer", {}).get("title") == "Shorts")
@@ -215,9 +215,9 @@ def test_extract_shorts_from_renderers():
 
 def test_extract_videos_from_renderers(youtube_channel_initial_data):
     # Load fixture and extract renderers
-    renderers = youtube_channel_initial_data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][1]["tabRenderer"]["content"][
-        "richGridRenderer"
-    ]["contents"]
+    renderers = youtube_channel_initial_data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][1]["tabRenderer"][
+        "content"
+    ]["richGridRenderer"]["contents"]
 
     # Call the function to be tested
     videos, continuation_token = parsing.extract_videos_from_renderers(renderers)

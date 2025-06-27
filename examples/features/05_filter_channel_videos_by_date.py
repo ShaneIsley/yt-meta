@@ -15,9 +15,7 @@ channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 print(f"--- Fetching videos from the last 30 days from {channel_url} ---\n")
 thirty_days_ago = parse_relative_date_string("30d")
 date_filter = {"publish_date": {"gte": thirty_days_ago}}
-recent_videos_generator = client.get_channel_videos(
-    channel_url, fetch_full_metadata=True, filters=date_filter
-)
+recent_videos_generator = client.get_channel_videos(channel_url, fetch_full_metadata=True, filters=date_filter)
 
 # We'll just look at the first 5 results for this example
 for video in itertools.islice(recent_videos_generator, 5):
@@ -34,9 +32,7 @@ start_window = date.today() - timedelta(days=90)
 end_window = date.today() - timedelta(days=60)
 
 date_filter = {"publish_date": {"gte": start_window, "lte": end_window}}
-past_videos_generator = client.get_channel_videos(
-    channel_url, fetch_full_metadata=True, filters=date_filter
-)
+past_videos_generator = client.get_channel_videos(channel_url, fetch_full_metadata=True, filters=date_filter)
 
 for video in itertools.islice(past_videos_generator, 5):
     title = video.get("title", "N/A")

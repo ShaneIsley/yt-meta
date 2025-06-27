@@ -14,4 +14,4 @@ print("--- First 10 Videos ---")
 for video in itertools.islice(videos_generator, 10):
     print(f"Title: {video['title']}")
     print(f"URL: {video['url']}")
-    print("-" * 10) 
+    print("-" * 10)

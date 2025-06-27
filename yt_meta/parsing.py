@@ -199,6 +199,9 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
                 for b in _deep_get(video_data, "ownerBadges", [])
             )
 
+            url_path = "navigationEndpoint.commandMetadata.webCommandMetadata.url"
+            video_url = f"https://www.youtube.com{_deep_get(video_data, url_path)}"
+
             videos.append(
                 {
                     "video_id": video_data.get("videoId"),
@@ -213,7 +216,7 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
                         )
                     ),
                     "viewCount": parse_view_count(_deep_get(video_data, "viewCountText.simpleText")),
-                    "url": f"https://www.youtube.com{_deep_get(video_data, 'navigationEndpoint.commandMetadata.webCommandMetadata.url')}",  # noqa: E501
+                    "url": video_url,
                     "isLive": is_live,
                     "isPremiere": is_premiere,
                     "isMembersOnly": is_members_only,
@@ -245,11 +248,12 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
             if not video_data:
                 continue
 
-            # The actual videoId is nested deeper in the reelWatchEndpoint
             reel_endpoint = _deep_get(video_data, "onTap.innertubeCommand.reelWatchEndpoint")
             if not reel_endpoint:
                 continue
 
+            url_path = "onTap.innertubeCommand.commandMetadata.webCommandMetadata.url"
+            short_url = f"https://www.youtube.com{_deep_get(video_data, url_path)}"
             videos.append(
                 {
                     "video_id": reel_endpoint.get("videoId"),
@@ -258,7 +262,7 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
                     "view_count": parse_view_count(
                         _deep_get(video_data, "overlayMetadata.secondaryText.content")
                     ),
-                    "url": f"https://www.youtube.com{_deep_get(video_data, 'onTap.innertubeCommand.commandMetadata.webCommandMetadata.url')}",
+                    "url": short_url,
                 }
             )
 
@@ -330,16 +334,16 @@ def parse_video_renderer(renderer: dict) -> dict:
         # Sometimes it's in a different format
         view_count_text = _deep_get(renderer, "viewCountText.runs.0.text")
 
+    channel_url_path = (
+        "longBylineText.runs.0.navigationEndpoint.commandMetadata.webCommandMetadata.url"
+    )
     return {
         "video_id": video_id,
         "title": _deep_get(renderer, "title.runs.0.text"),
         "description_snippet": _deep_get(renderer, "descriptionSnippet.runs.0.text"),
         "thumbnails": _deep_get(renderer, "thumbnail.thumbnails", []),
         "channel_name": _deep_get(renderer, "longBylineText.runs.0.text"),
-        "channel_url": _deep_get(
-            renderer,
-            "longBylineText.runs.0.navigationEndpoint.commandMetadata.webCommandMetadata.url",
-        ),
+        "channel_url": _deep_get(renderer, channel_url_path),
         "duration_seconds": parse_duration(
             _deep_get(renderer, "lengthText.accessibility.accessibilityData.label")
         ),
@@ -361,11 +365,14 @@ def parse_channel_metadata(initial_data: dict) -> dict:
         raise MetadataParsingError("Could not find channelMetadataRenderer in page data.")
 
     vanity_url_path = (
-        "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.endpoint.browseEndpoint.canonicalBaseUrl"  # noqa: E501
+        "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.endpoint"
+        ".browseEndpoint.canonicalBaseUrl"
     )
     vanity_handle = _deep_get(initial_data, vanity_url_path)
     vanity_url = (
-        f"https://www.youtube.com{vanity_handle}" if vanity_handle else metadata_renderer.get("vanityChannelUrl")
+        f"https://www.youtube.com{vanity_handle}"
+        if vanity_handle
+        else metadata_renderer.get("vanityChannelUrl")
     )
 
     return {
@@ -423,6 +430,10 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
     video_details = _deep_get(player_response_data, "videoDetails", {})
     microformat = _deep_get(player_response_data, "microformat.playerMicroformatRenderer", {})
 
+    subscriber_path = (
+        "contents.twoColumnWatchNextResults.results.results.contents.1"
+        ".videoSecondaryInfoRenderer.owner.videoOwnerRenderer.subscriberCountText.simpleText"
+    )
     return {
         "video_id": video_details.get("videoId"),
         "title": video_details.get("title"),
@@ -439,8 +450,5 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
         "is_live": video_details.get("isLiveContent", False),
         "full_description": video_details.get("shortDescription"),
         "heatmap": find_heatmap(initial_data),
-        "subscriber_count_text": _deep_get(
-            initial_data,
-            "contents.twoColumnWatchNextResults.results.results.contents.1.videoSecondaryInfoRenderer.owner.videoOwnerRenderer.subscriberCountText.simpleText",
-        ),
+        "subscriber_count_text": _deep_get(initial_data, subscriber_path),
     }

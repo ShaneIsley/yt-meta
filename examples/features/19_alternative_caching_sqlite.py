@@ -8,7 +8,8 @@ from yt_meta import YtMeta
 # --- Configuration ---
 VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 DB_FILE = Path("alternative_cache.sqlite")
-CACHE_DIR = Path(f"{DB_FILE}.cache") # SqliteDict creates a journal/cache dir
+CACHE_DIR = Path(f"{DB_FILE}.cache")  # SqliteDict creates a journal/cache dir
+
 
 def clear_cache_files():
     """Removes the cache files if they exist to ensure a clean benchmark."""
@@ -39,7 +40,7 @@ def main():
 
     # --- Step 2: First fetch with the persistent cache (populating it) ---
     print("Step 2: Running with a new client to populate the SQLite cache.")
-    
+
     with SqliteDict(str(DB_FILE), autocommit=True) as cache1:
         client_populating = YtMeta(cache=cache1)
         start_time = time.perf_counter()
@@ -61,7 +62,7 @@ def main():
         print(f"-> First fetch for this new client (from disk) took: {duration_cached:.4f} seconds.\n")
 
     print("-" * 50)
-    
+
     # --- Conclusion ---
     if duration_cached > 0:
         speedup = duration_populating / duration_cached
@@ -74,4 +75,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

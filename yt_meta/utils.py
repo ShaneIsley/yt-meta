@@ -49,11 +49,11 @@ def parse_vote_count(vote_str: str) -> int:
     vote_str = vote_str.strip().upper()
     if not vote_str:
         return 0
-    
-    if 'K' in vote_str:
-        return int(float(vote_str.replace('K', '')) * 1_000)
-    elif 'M' in vote_str:
-        return int(float(vote_str.replace('M', '')) * 1_000_000)
+
+    if "K" in vote_str:
+        return int(float(vote_str.replace("K", "")) * 1_000)
+    elif "M" in vote_str:
+        return int(float(vote_str.replace("M", "")) * 1_000_000)
     elif vote_str.isdigit():
         return int(vote_str)
     return 0

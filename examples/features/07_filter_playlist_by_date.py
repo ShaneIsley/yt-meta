@@ -29,11 +29,13 @@ videos_generator = client.get_channel_videos(
 # Use itertools.islice to get just the first 5 results for this example
 filtered_videos = list(itertools.islice(videos_generator, 5))
 
-print(f"Found {len(filtered_videos)} videos from the channel published between {start_date} and {end_date} (showing first 5):")
+print(
+    f"Found {len(filtered_videos)} videos from the channel published between {start_date} and {end_date} (showing first 5):"
+)
 for video in filtered_videos:
     publish_date = video.get("publish_date", "N/A")
     print(f"- Title: {video.get('title')}")
     print(f"  Published: {publish_date}")
     print(f"  URL: {video.get('url')}")
 
-print("\nNote: If no videos were found, there may be none in that date range.") 
+print("\nNote: If no videos were found, there may be none in that date range.")

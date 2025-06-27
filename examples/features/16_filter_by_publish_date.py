@@ -15,16 +15,14 @@ if __name__ == "__main__":
     client = YtMeta()
     channel_url = "https://www.youtube.com/@bashbunni/videos"
     six_months_ago = parse_relative_date_string("6 months ago")
-    filters = {
-        "publish_date": {"gte": six_months_ago}
-    }
-    
+    filters = {"publish_date": {"gte": six_months_ago}}
+
     # The client will automatically set `fetch_full_metadata=True` to ensure
     # the date comparison is precise.
     print(f"Finding videos on {channel_url} published in the last 6 months...")
     videos = client.get_channel_videos(channel_url, filters=filters)
-    
+
     for video in itertools.islice(videos, 5):
-        title = video.get('title', 'N/A')
-        p_date = video.get('publish_date', 'N/A')
+        title = video.get("title", "N/A")
+        p_date = video.get("publish_date", "N/A")
         print(f"- '{title}' (Published: {p_date})")

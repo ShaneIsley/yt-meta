@@ -1,10 +1,10 @@
-import json
 from pathlib import Path
 
 import pytest
 
 from yt_meta import parsing
 from yt_meta.utils import _deep_get
+
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -28,24 +28,6 @@ def test_parse_playlist_metadata(playlist_fixture, expected_title, expected_auth
     assert metadata["playlist_id"] == expected_id
     assert "description" in metadata
     assert metadata["video_count"] > 0
-
-
-def find_keys(data, target_key):
-    """Recursively find all paths to a target key in a nested dict/list."""
-    paths = []
-    if isinstance(data, dict):
-        for key, value in data.items():
-            if key == target_key:
-                paths.append([key])
-            sub_paths = find_keys(value, target_key)
-            for sub_path in sub_paths:
-                paths.append([key] + sub_path)
-    elif isinstance(data, list):
-        for index, item in enumerate(data):
-            sub_paths = find_keys(item, target_key)
-            for sub_path in sub_paths:
-                paths.append([index] + sub_path)
-    return paths
 
 
 @pytest.mark.parametrize(
@@ -90,7 +72,7 @@ def test_get_playlist_videos_stops_at_id(client, mocker):
         yield {"video_id": "vid5", "title": "Video 5"}  # This should not be processed
 
     mocker.patch(
-        "yt_meta.client.YtMeta._get_raw_playlist_videos_generator",
+        "yt_meta.fetchers.PlaylistFetcher._get_raw_playlist_videos_generator",
         return_value=mock_video_generator(),
     )
 

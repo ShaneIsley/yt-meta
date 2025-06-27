@@ -10,17 +10,11 @@ client = YtMeta()
 channel_url = "https://www.youtube.com/@coreyms/videos"
 
 # --- Example 1: Using the 'contains' operator ---
-filters_contains = {
-    "title": {"contains": "git"}
-}
+filters_contains = {"title": {"contains": "git"}}
 
 print(f"Finding videos on {channel_url} with 'Git' in the title...")
 
-videos_contains = client.get_channel_videos(
-    channel_url,
-    filters=filters_contains,
-    fetch_full_metadata=False
-)
+videos_contains = client.get_channel_videos(channel_url, filters=filters_contains, fetch_full_metadata=False)
 
 for video in itertools.islice(videos_contains, 5):
     print(f"- {video.get('title')}")
@@ -28,17 +22,11 @@ for video in itertools.islice(videos_contains, 5):
 
 # --- Example 2: Using a regular expression ---
 # Find videos that start with "Python"
-filters_re = {
-    "title": {"re": r"^Python"}
-}
+filters_re = {"title": {"re": r"^Python"}}
 
 print(f"\nFinding videos on {channel_url} that start with 'Python'...")
 
-videos_re = client.get_channel_videos(
-    channel_url,
-    filters=filters_re,
-    fetch_full_metadata=False
-)
+videos_re = client.get_channel_videos(channel_url, filters=filters_re, fetch_full_metadata=False)
 
 for video in itertools.islice(videos_re, 5):
-    print(f"- {video.get('title')}") 
+    print(f"- {video.get('title')}")
