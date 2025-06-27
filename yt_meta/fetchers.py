@@ -65,10 +65,9 @@ class _BaseFetcher:
         self.cache[cache_key] = result
         return result
 
-class VideoFetcher(YoutubeCommentDownloader):
+class VideoFetcher:
     """Fetches data related to a single YouTube video."""
     def __init__(self, session: Client, cache: Optional[MutableMapping]):
-        super().__init__()
         self.session = session
         self.cache = cache
 
@@ -111,58 +110,14 @@ class VideoFetcher(YoutubeCommentDownloader):
         self.cache[cache_key] = result
         return result
 
-    def get_video_comments(
-        self,
-        youtube_url: str,
-        sort_by: int = SORT_BY_RECENT,
-        limit: int = -1,
-        filters: Optional[dict] = None,
-    ) -> Generator[dict, None, None]:
-        """
-        Fetches comments for a given YouTube video.
-
-        Args:
-            youtube_url: The full URL of the YouTube video.
-            sort_by: How to sort the comments (0 for popular, 1 for recent).
-            limit: The maximum number of comments to return (-1 for all).
-            filters: A dictionary specifying the filter conditions.
-
-        Yields:
-            A dictionary for each comment with a standardized structure.
-        """
-        validate_filters(filters)
-        video_meta = self.get_video_metadata(youtube_url)
-        owner_channel_id = video_meta.get("channel_id") if video_meta else None
-
-        raw_comments = super().get_comments_from_url(youtube_url, sort_by=sort_by)
-
-        comments_yielded = 0
-        for comment in raw_comments:
-            if limit != -1 and comments_yielded >= limit:
-                return
-
-            published_date = datetime.fromtimestamp(comment["time_parsed"]) if "time_parsed" in comment else None
-            
-            standardized_comment = {
-                "comment_id": comment.get("cid"),
-                "text": comment.get("text"),
-                "published_text": comment.get("time"),
-                "published_date": published_date,
-                "author": comment.get("author"),
-                "channel_id": comment.get("channel"),
-                "like_count": parse_vote_count(comment.get("votes")),
-                "reply_count": parse_vote_count(comment.get("replies")),
-                "is_reply": comment.get("reply", False),
-                "is_hearted_by_owner": comment.get("heart", False),
-                "is_by_owner": owner_channel_id and comment.get("channel") == owner_channel_id,
-                "photo_url": comment.get("photo"),
-            }
-
-            if filters and not apply_comment_filters(standardized_comment, filters):
-                continue
-                
-            yield standardized_comment
-            comments_yielded += 1
+    def get_video_id(self, youtube_url: str) -> str:
+        # Basic parsing of video ID from URL
+        if "v=" in youtube_url:
+            return youtube_url.split("v=")[1].split("&")[0]
+        # Handle shorts URLs
+        if "/shorts/" in youtube_url:
+            return youtube_url.split("/shorts/")[1].split("?")[0]
+        raise ValueError(f"Could not extract video ID from URL: {youtube_url}")
 
 class ChannelFetcher(_BaseFetcher):
     """Fetches data related to a YouTube channel's videos and shorts."""

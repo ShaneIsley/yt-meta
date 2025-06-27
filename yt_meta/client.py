@@ -18,6 +18,7 @@ from .filtering import (
     apply_comment_filters,
 )
 from .fetchers import VideoFetcher, ChannelFetcher, PlaylistFetcher
+from .comment_fetcher import CommentFetcher
 from .utils import _deep_get, parse_vote_count
 from .validators import validate_filters
 
@@ -37,6 +38,7 @@ class YtMeta:
         self._video_fetcher = VideoFetcher(self.session, self.cache)
         self._channel_fetcher = ChannelFetcher(self.session, self.cache, self._video_fetcher)
         self._playlist_fetcher = PlaylistFetcher(self.session, self.cache, self._video_fetcher)
+        self._comment_fetcher = CommentFetcher()
 
     def clear_cache(self, channel_url: str = None):
         """
@@ -191,7 +193,6 @@ class YtMeta:
     def get_video_comments(
         self,
         youtube_url: str,
-        sort_by: int = SORT_BY_RECENT,
         limit: int = -1,
         filters: Optional[dict] = None,
     ) -> Generator[dict, None, None]:
@@ -200,16 +201,28 @@ class YtMeta:
 
         Args:
             youtube_url: The full URL of the YouTube video.
-            sort_by: How to sort the comments (0 for popular, 1 for recent).
             limit: The maximum number of comments to return (-1 for all).
             filters: A dictionary specifying the filter conditions.
 
         Yields:
             A dictionary for each comment with a standardized structure.
         """
-        return self._video_fetcher.get_video_comments(
-            youtube_url, sort_by=sort_by, limit=limit, filters=filters
-        )
+        video_id = self._video_fetcher.get_video_id(youtube_url)
+        comments_generator = self._comment_fetcher.get_comments(video_id)
+        
+        # Apply filters if any
+        if filters:
+            validate_filters(filters)
+            comments_generator = apply_comment_filters(comments_generator, filters)
+
+        # Apply limit if any
+        if limit > 0:
+            for i, comment in enumerate(comments_generator):
+                if i >= limit:
+                    break
+                yield comment
+        else:
+            yield from comments_generator
 
     def _get_videos_tab_renderer(self, initial_data: dict):
         tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
