@@ -15,6 +15,13 @@ class CommentFetcher:
         self._client = httpx.Client(headers={'User-Agent': USER_AGENT})
 
     def get_comments(self, youtube_id: str, sort_by: str = "top"):
+        """
+        Fetch comments for a YouTube video.
+        
+        Args:
+            youtube_id: The YouTube video ID
+            sort_by: Comment sorting method ('top' or 'recent')
+        """
         # 1. Get initial page
         response = self._client.get(YOUTUBE_VIDEO_URL.format(youtube_id=youtube_id))
         response.raise_for_status()
@@ -30,26 +37,64 @@ class CommentFetcher:
             raise ValueError(f"Invalid sort_by value: '{sort_by}'. Available options are: {list(sort_endpoints.keys())}")
         
         continuation_endpoint = sort_endpoints[sort_by]
-        continuation_token = continuation_endpoint["continuationCommand"]["token"]
-
-        # 4. Yield initial comments
-        comments = self._parse_comments(initial_data)
-        yield from comments
-
-        # 5. Process continuations
-        while continuation_token:
+        
+        # 4. Process all continuations (including replies) using a queue
+        continuations = [continuation_endpoint]
+        
+        while continuations:
+            continuation = continuations.pop(0)  # Process in order
+            
             payload = {
                 "context": context,
-                "continuation": continuation_token
+                "continuation": continuation["continuationCommand"]["token"]
             }
+            
             response = self._client.post(f"{YOUTUBE_API_URL}?key={api_key}", json=payload)
             response.raise_for_status()
             continuation_data = response.json()
 
+            # Parse and yield comments from this response
             comments = self._parse_comments(continuation_data)
             yield from comments
 
-            continuation_token = self._find_continuation_token(continuation_data)
+            # Find all continuation endpoints in this response
+            new_continuations = self._find_all_continuation_endpoints(continuation_data)
+            continuations.extend(new_continuations)
+
+    def _find_all_continuation_endpoints(self, data: dict) -> list[dict]:
+        """
+        Find all continuation endpoints in a response, including reply continuations.
+        Based on the original youtube-comment-downloader approach.
+        """
+        continuations = []
+        
+        # Look for reloadContinuationItemsCommand and appendContinuationItemsAction
+        actions = list(self._search_dict(data, 'reloadContinuationItemsCommand')) + \
+                  list(self._search_dict(data, 'appendContinuationItemsAction'))
+        
+        for action in actions:
+            for item in action.get('continuationItems', []):
+                target_id = action.get('targetId', '')
+                
+                # Process continuations for comments and replies
+                if target_id in ['comments-section', 
+                               'engagement-panel-comments-section',
+                               'shorts-engagement-panel-comments-section']:
+                    # Find continuation endpoints in this item
+                    endpoints = list(self._search_dict(item, 'continuationEndpoint'))
+                    for endpoint in endpoints:
+                        if 'continuationCommand' in endpoint:
+                            continuations.append(endpoint)
+                
+                # Process 'Show more replies' buttons
+                if target_id.startswith('comment-replies-item') and 'continuationItemRenderer' in item:
+                    button_renderer = next(self._search_dict(item, 'buttonRenderer'), None)
+                    if button_renderer and 'command' in button_renderer:
+                        command = button_renderer['command']
+                        if 'continuationCommand' in command:
+                            continuations.append(command)
+        
+        return continuations
 
     def _regex_search(self, text, pattern, group=1, default=None):
         match = re.search(pattern, text)
