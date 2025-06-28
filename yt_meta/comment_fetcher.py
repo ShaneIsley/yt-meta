@@ -14,7 +14,7 @@ class CommentFetcher:
     def __init__(self):
         self._client = httpx.Client(headers={'User-Agent': USER_AGENT})
 
-    def get_comments(self, youtube_id: str):
+    def get_comments(self, youtube_id: str, sort_by: str = "top"):
         # 1. Get initial page
         response = self._client.get(YOUTUBE_VIDEO_URL.format(youtube_id=youtube_id))
         response.raise_for_status()
@@ -24,12 +24,19 @@ class CommentFetcher:
         api_key, context = self._find_api_key_and_context(html_content)
         initial_data = self._extract_initial_data(html_content)
         
-        # 3. Yield initial comments
+        # 3. Get the correct continuation token based on sort preference
+        sort_endpoints = self._get_sort_endpoints(initial_data)
+        if sort_by not in sort_endpoints:
+            raise ValueError(f"Invalid sort_by value: '{sort_by}'. Available options are: {list(sort_endpoints.keys())}")
+        
+        continuation_endpoint = sort_endpoints[sort_by]
+        continuation_token = continuation_endpoint["continuationCommand"]["token"]
+
+        # 4. Yield initial comments
         comments = self._parse_comments(initial_data)
         yield from comments
 
-        # 4. Process continuations
-        continuation_token = self._find_continuation_token(initial_data)
+        # 5. Process continuations
         while continuation_token:
             payload = {
                 "context": context,
@@ -74,32 +81,26 @@ class CommentFetcher:
 
     def _parse_comments(self, data: dict) -> list[dict]:
         comments = []
-        comment_renderers = self._search_dict(data, 'commentRenderer')
+        comment_payloads = self._search_dict(data, 'commentEntityPayload')
 
-        for renderer in comment_renderers:
-            text_runs = renderer.get("contentText", {}).get("runs", [])
-            text = "".join(run.get("text", "") for run in text_runs)
+        for payload in comment_payloads:
+            properties = payload.get("properties", {})
+            author = payload.get("author", {})
+            toolbar = payload.get("toolbar", {})
+
+            text = properties.get("content", {}).get("content", "")
             
-            likes_str = renderer.get("voteCount", {}).get("simpleText", "0")
-            if "K" in likes_str or "M" in likes_str:
-                likes_str = likes_str.strip().upper()
-                if likes_str.endswith("K"):
-                    likes = int(float(likes_str[:-1]) * 1000)
-                elif likes_str.endswith("M"):
-                    likes = int(float(likes_str[:-1]) * 1000000)
-                else:
-                    likes = 0
-            elif likes_str.isdigit():
-                likes = int(likes_str)
-            else: # Can be 'Like' or some other string
-                likes = 0
+            likes_str = toolbar.get("likeCountNotliked", "0").strip()
+            if not likes_str or not likes_str.isdigit():
+                likes_str = "0"
+            likes = int(likes_str)
             
             comments.append({
-                "id": renderer.get("commentId"),
+                "id": properties.get("commentId"),
                 "text": text,
-                "author": renderer.get("authorText", {}).get("simpleText"),
+                "author": author.get("displayName"),
                 "likes": likes,
-                "published_time": renderer.get("publishedTimeText", {}).get("runs", [{}])[0].get("text"),
+                "published_time": properties.get("publishedTime"),
             })
         return comments
 
@@ -115,3 +116,29 @@ class CommentFetcher:
             raise ValueError("Could not find API key or context in ytcfg")
 
         return api_key, context 
+
+    def _get_sort_endpoints(self, data: dict) -> dict:
+        """Finds the continuation endpoints for comment sorting."""
+        endpoints = {}
+        sort_menu = next(self._search_dict(data, 'sortFilterSubMenuRenderer'), None)
+        if not sort_menu:
+            # If we can't find the sort menu, we can't offer sorting.
+            # We can still find the default continuation token for the page.
+            token = self._find_continuation_token(data)
+            if token:
+                 # The structure of an endpoint is a dict containing the command and token.
+                 # We create a synthetic one here to match the expected structure.
+                endpoints['top'] = {'continuationCommand': {'token': token}}
+            return endpoints
+
+        for item in sort_menu.get('subMenuItems', []):
+            title = item.get('title', '').lower()
+            token = item.get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
+            if not token:
+                continue
+
+            if 'newest' in title:
+                endpoints['recent'] = item['serviceEndpoint']
+            elif 'top' in title:
+                endpoints['top'] = item['serviceEndpoint']
+        return endpoints 
