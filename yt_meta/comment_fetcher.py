@@ -94,12 +94,20 @@ class CommentFetcher:
             if not likes_str or not likes_str.isdigit():
                 likes_str = "0"
             likes = int(likes_str)
+
+            reply_count_str = toolbar.get("replyCount", "0").strip()
+            if not reply_count_str or not reply_count_str.isdigit():
+                reply_count_str = "0"
+            replies = int(reply_count_str)
             
             comments.append({
                 "id": properties.get("commentId"),
                 "text": text,
                 "author": author.get("displayName"),
+                "author_channel_id": author.get("channelId"),
+                "author_avatar_url": author.get("avatarThumbnailUrl"),
                 "likes": likes,
+                "reply_count": replies,
                 "published_time": properties.get("publishedTime"),
             })
         return comments

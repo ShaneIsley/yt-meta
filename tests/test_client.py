@@ -10,6 +10,8 @@ from yt_meta import MetadataParsingError, VideoUnavailableError, YtMeta
 from yt_meta.client import YtMeta
 from yt_meta.exceptions import VideoUnavailableError
 
+import httpx
+
 # Define the path to our test fixture
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "B68agR-OeJM.html"
 CHANNEL_FIXTURE_PATH = Path(__file__).parent / "fixtures"
@@ -243,3 +245,34 @@ def test_get_playlist_videos_integration(client, caplog):
     caplog.set_level(logging.INFO)
     # Playlist from The Verge, known to be stable
     # ... existing code ...
+
+
+def test_ytmeta_initialization():
+    """Test that YtMeta initializes correctly with and without a cache."""
+    # Test without a cache
+    client_no_cache = YtMeta()
+    assert client_no_cache.cache == {}
+
+    # Test with a provided cache
+    my_cache = {"key": "value"}
+    client_with_cache = YtMeta(cache=my_cache)
+    assert client_with_cache.cache is my_cache
+    assert client_with_cache.cache["key"] == "value"
+
+
+def test_clear_cache():
+    """Test the cache clearing functionality."""
+    with patch("httpx.Client") as mock_session:
+        cache = {"channel_page:some_url/videos": "data", "other_key": "other_data"}
+        client = YtMeta(cache=cache)
+
+        # Test clearing a specific channel
+        client.clear_cache(channel_url="some_url")
+        assert "channel_page:some_url/videos" not in client.cache
+        assert "other_key" in client.cache  # Should not clear other keys
+
+        # Test clearing the entire cache
+        cache = {"channel_page:another/videos": "data", "other_key": "other_data"}
+        client = YtMeta(cache=cache)
+        client.clear_cache()
+        assert not any(k.startswith("channel_") for k in client.cache)

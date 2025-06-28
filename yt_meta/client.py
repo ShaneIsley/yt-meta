@@ -6,8 +6,7 @@ import os
 from datetime import date, datetime, timedelta
 from typing import Optional, Union, Generator, MutableMapping
 
-import requests
-from youtube_comment_downloader.downloader import SORT_BY_RECENT
+import httpx
 
 from . import parsing
 from .date_utils import parse_relative_date_string
@@ -34,7 +33,7 @@ class YtMeta:
     def __init__(self, cache: Optional[MutableMapping] = None):
         self.cache = {} if cache is None else cache
         self.logger = logger
-        self.session = requests.Session()
+        self.session = httpx.Client()
         self._video_fetcher = VideoFetcher(self.session, self.cache)
         self._channel_fetcher = ChannelFetcher(self.session, self.cache, self._video_fetcher)
         self._playlist_fetcher = PlaylistFetcher(self.session, self.cache, self._video_fetcher)
@@ -193,6 +192,7 @@ class YtMeta:
     def get_video_comments(
         self,
         youtube_url: str,
+        sort_by: str = "top",
         limit: int = -1,
         filters: Optional[dict] = None,
     ) -> Generator[dict, None, None]:
@@ -201,6 +201,7 @@ class YtMeta:
 
         Args:
             youtube_url: The full URL of the YouTube video.
+            sort_by: How to sort comments. 'top' (default) or 'recent'.
             limit: The maximum number of comments to return (-1 for all).
             filters: A dictionary specifying the filter conditions.
 
@@ -208,7 +209,7 @@ class YtMeta:
             A dictionary for each comment with a standardized structure.
         """
         video_id = self._video_fetcher.get_video_id(youtube_url)
-        comments_generator = self._comment_fetcher.get_comments(video_id)
+        comments_generator = self._comment_fetcher.get_comments(video_id, sort_by=sort_by)
         
         # Apply filters if any
         if filters:
@@ -441,12 +442,11 @@ class YtMeta:
         if cache_key in self.cache:
             self.logger.info(f"Cache hit for continuation token: {token[:10]}...")
             return self.cache[cache_key]
-
         data = {"context": ytcfg["INNERTUBE_CONTEXT"], "continuation": token}
         response = self.session.post(
-            f"https://www.youtube.com/youtubei/v1/browse?key={ytcfg['INNERTUBE_API_KEY']}",
-            json=data,
-            timeout=10,
+            f"https://www.youtube.com/youtubei/v1/browse?key={ytcfg['INNERTUBE_API_KEY']}", 
+            json=data, 
+            timeout=10
         )
         response.raise_for_status()
         result = response.json()

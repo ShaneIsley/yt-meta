@@ -107,4 +107,44 @@ def test_get_comments_end_to_end(fetcher, video_page_html, continuation_json, mo
     first_post_args, first_post_kwargs = post_calls[0]
     assert "https://www.youtube.com/youtubei/v1/next?key=" in first_post_args[0]
     assert "json" in first_post_kwargs
-    assert "continuation" in first_post_kwargs["json"] 
+    assert "continuation" in first_post_kwargs["json"]
+
+def test_get_sort_endpoints(fetcher, video_page_html):
+    """
+    Tests that we can correctly extract the sorting endpoints from the initial data.
+    """
+    initial_data = fetcher._extract_initial_data(video_page_html)
+    sort_endpoints = fetcher._get_sort_endpoints(initial_data)
+
+    assert "top" in sort_endpoints
+    assert "recent" in sort_endpoints
+
+    top_token = sort_endpoints["top"]["continuationCommand"]["token"]
+    recent_token = sort_endpoints["recent"]["continuationCommand"]["token"]
+
+    assert isinstance(top_token, str) and len(top_token) > 50
+    assert isinstance(recent_token, str) and len(recent_token) > 50
+    assert top_token != recent_token
+
+def test_parse_comment_with_full_metadata(fetcher, continuation_json):
+    """
+    Tests that we can extract the full set of desired metadata from a comment.
+    """
+    comments = fetcher._parse_comments(continuation_json)
+    
+    assert len(comments) > 0
+    first_comment = comments[0]
+
+    # Assert that the new keys exist
+    assert "author_channel_id" in first_comment
+    assert "author_avatar_url" in first_comment
+    assert "reply_count" in first_comment
+
+    # Assert that the data types are correct
+    assert isinstance(first_comment["author_channel_id"], str)
+    assert isinstance(first_comment["author_avatar_url"], str)
+    assert isinstance(first_comment["reply_count"], int)
+
+    # Assert that the values are plausible
+    assert first_comment["author_channel_id"].startswith("UC")
+    assert "ggpht.com" in first_comment["author_avatar_url"] 

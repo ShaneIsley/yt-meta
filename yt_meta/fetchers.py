@@ -4,7 +4,6 @@ from datetime import datetime
 import json
 
 from httpx import Client
-from youtube_comment_downloader.downloader import YoutubeCommentDownloader, SORT_BY_RECENT, SORT_BY_POPULAR
 
 from . import parsing
 from .date_utils import parse_relative_date_string

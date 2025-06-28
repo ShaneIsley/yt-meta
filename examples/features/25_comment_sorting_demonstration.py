@@ -30,11 +30,13 @@ def demonstrate_sorting(yt_meta: YtMeta, sort_order: str):
 
     for i, comment in enumerate(comment_list):
         print(f"  Comment {i+1}:")
-        print(f"    Author: {comment['author']}")
-        print(f"    Likes: {comment['likes']}")
+        print(f"    Author: {comment['author']} (Channel ID: {comment['author_channel_id']})")
+        print(f"    Avatar: {comment['author_avatar_url']}")
+        print(f"    Likes: {comment['likes']} | Replies: {comment['reply_count']}")
         print(f"    Published: {comment['published_time']}")
         clean_text = comment['text'][:80].replace('\\n', ' ')
         print(f"    Text: '{clean_text}...'")
+        print("-" * 20)
 
     duration = end_time - start_time
     logger.info(f"Fetched {len(comment_list)} comments in {duration:.2f} seconds.")
