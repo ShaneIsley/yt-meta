@@ -73,44 +73,128 @@ class CommentFetcher:
         return json.loads(self._regex_search(html_content, YT_INITIAL_DATA_RE, default='{}'))
 
     def _find_continuation_token(self, data: dict) -> str | None:
+        # First try the engagement panels (where comments are located on initial page load)
+        engagement_panels = data.get('engagementPanels', [])
+        for panel in engagement_panels:
+            if 'engagementPanelSectionListRenderer' in panel:
+                # Check if this is the comments panel
+                header = panel['engagementPanelSectionListRenderer'].get('header', {})
+                title_header = header.get('engagementPanelTitleHeaderRenderer', {})
+                title = title_header.get('title', {}).get('runs', [{}])[0].get('text', '')
+                
+                if 'comments' in title.lower():
+                    # Look for continuation in the content
+                    content = panel['engagementPanelSectionListRenderer'].get('content', {})
+                    continuations = self._search_dict(content, 'continuationEndpoint')
+                    for continuation in continuations:
+                        if continuation:
+                            token = continuation.get("continuationCommand", {}).get("token")
+                            if token:
+                                return token
+        
+        # Check onResponseReceivedEndpoints for continuation items
+        endpoints = data.get('onResponseReceivedEndpoints', [])
+        for endpoint in endpoints:
+            # Check appendContinuationItemsAction
+            if 'appendContinuationItemsAction' in endpoint:
+                action = endpoint['appendContinuationItemsAction']
+                items = action.get('continuationItems', [])
+                for item in items:
+                    if 'continuationItemRenderer' in item:
+                        renderer = item['continuationItemRenderer']
+                        if 'continuationEndpoint' in renderer:
+                            cont_endpoint = renderer['continuationEndpoint']
+                            token = cont_endpoint.get('continuationCommand', {}).get('token')
+                            if token:
+                                return token
+            
+            # Check reloadContinuationItemsCommand
+            if 'reloadContinuationItemsCommand' in endpoint:
+                command = endpoint['reloadContinuationItemsCommand']
+                items = command.get('continuationItems', [])
+                for item in items:
+                    if 'continuationItemRenderer' in item:
+                        renderer = item['continuationItemRenderer']
+                        if 'continuationEndpoint' in renderer:
+                            cont_endpoint = renderer['continuationEndpoint']
+                            token = cont_endpoint.get('continuationCommand', {}).get('token')
+                            if token:
+                                return token
+        
+        # Fallback to the original search method for any other continuation structures
         continuations = self._search_dict(data, 'continuationEndpoint')
         for continuation in continuations:
             if continuation:
-                 return continuation.get("continuationCommand", {}).get("token")
+                 token = continuation.get("continuationCommand", {}).get("token")
+                 if token:
+                     return token
         return None
 
     def _parse_comments(self, data: dict) -> list[dict]:
         comments = []
+        
+        # Handle continuation responses - comments are in frameworkUpdates
+        framework = data.get('frameworkUpdates', {})
+        entity_batch = framework.get('entityBatchUpdate', {})
+        mutations = entity_batch.get('mutations', [])
+        
+        for mutation in mutations:
+            if 'payload' in mutation and 'commentEntityPayload' in mutation['payload']:
+                payload = mutation['payload']['commentEntityPayload']
+                comments.append(self._parse_comment_payload(payload))
+        
+        # If we found comments in frameworkUpdates, return them
+        if comments:
+            return comments
+        
+        # Fallback: search for commentEntityPayload anywhere in the data (for other structures)
         comment_payloads = self._search_dict(data, 'commentEntityPayload')
-
         for payload in comment_payloads:
-            properties = payload.get("properties", {})
-            author = payload.get("author", {})
-            toolbar = payload.get("toolbar", {})
-
-            text = properties.get("content", {}).get("content", "")
+            comments.append(self._parse_comment_payload(payload))
             
-            likes_str = toolbar.get("likeCountNotliked", "0").strip()
-            if not likes_str or not likes_str.isdigit():
-                likes_str = "0"
-            likes = int(likes_str)
-
-            reply_count_str = toolbar.get("replyCount", "0").strip()
-            if not reply_count_str or not reply_count_str.isdigit():
-                reply_count_str = "0"
-            replies = int(reply_count_str)
-            
-            comments.append({
-                "id": properties.get("commentId"),
-                "text": text,
-                "author": author.get("displayName"),
-                "author_channel_id": author.get("channelId"),
-                "author_avatar_url": author.get("avatarThumbnailUrl"),
-                "likes": likes,
-                "reply_count": replies,
-                "published_time": properties.get("publishedTime"),
-            })
         return comments
+    
+    def _parse_comment_payload(self, payload: dict) -> dict:
+        """Parse a single commentEntityPayload into our comment format."""
+        properties = payload.get("properties", {})
+        author = payload.get("author", {})
+        toolbar = payload.get("toolbar", {})
+
+        text = properties.get("content", {}).get("content", "")
+        
+        # Extract comment ID and determine parent relationship
+        comment_id = properties.get("commentId")
+        parent_id = None
+        if comment_id and '.' in comment_id:
+            parent_id = comment_id.split('.')[0]
+        
+        likes_str = toolbar.get("likeCountNotliked", "0").strip()
+        likes = 0
+        try:
+            likes = int(likes_str)
+        except (ValueError, TypeError):
+            pass
+        
+        reply_count_str = toolbar.get("replyCount", "0")
+        if isinstance(reply_count_str, int):
+            replies = reply_count_str
+        else:
+            try:
+                replies = int(str(reply_count_str).strip())
+            except (ValueError, TypeError):
+                replies = 0
+        
+        return {
+            "id": comment_id,
+            "parent_id": parent_id,
+            "text": text,
+            "author": author.get("displayName"),
+            "author_channel_id": author.get("channelId"),
+            "author_avatar_url": author.get("avatarThumbnailUrl"),
+            "likes": likes,
+            "reply_count": replies,
+            "published_time": properties.get("publishedTime"),
+        }
 
     def _find_api_key_and_context(self, html_content: str) -> tuple[str, dict]:
         ytcfg = json.loads(self._regex_search(html_content, YT_CFG_RE, default='{}'))
@@ -128,6 +212,31 @@ class CommentFetcher:
     def _get_sort_endpoints(self, data: dict) -> dict:
         """Finds the continuation endpoints for comment sorting."""
         endpoints = {}
+        
+        # Look for sort menu in engagement panels
+        engagement_panels = data.get('engagementPanels', [])
+        for panel in engagement_panels:
+            if 'engagementPanelSectionListRenderer' in panel:
+                header = panel['engagementPanelSectionListRenderer'].get('header', {})
+                title_header = header.get('engagementPanelTitleHeaderRenderer', {})
+                title = title_header.get('title', {}).get('runs', [{}])[0].get('text', '')
+                
+                if 'comments' in title.lower() and 'menu' in title_header:
+                    sort_menu = title_header['menu'].get('sortFilterSubMenuRenderer')
+                    if sort_menu:
+                        for item in sort_menu.get('subMenuItems', []):
+                            title = item.get('title', '').lower()
+                            token = item.get('serviceEndpoint', {}).get('continuationCommand', {}).get('token')
+                            if not token:
+                                continue
+
+                            if 'newest' in title:
+                                endpoints['recent'] = item['serviceEndpoint']
+                            elif 'top' in title:
+                                endpoints['top'] = item['serviceEndpoint']
+                        return endpoints
+        
+        # Fallback to generic search
         sort_menu = next(self._search_dict(data, 'sortFilterSubMenuRenderer'), None)
         if not sort_menu:
             # If we can't find the sort menu, we can't offer sorting.

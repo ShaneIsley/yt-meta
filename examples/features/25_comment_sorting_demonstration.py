@@ -28,18 +28,45 @@ def demonstrate_sorting(yt_meta: YtMeta, sort_order: str):
     comment_list = list(comments_generator)
     end_time = time.time()
 
-    for i, comment in enumerate(comment_list):
-        print(f"  Comment {i+1}:")
-        print(f"    Author: {comment['author']} (Channel ID: {comment['author_channel_id']})")
-        print(f"    Avatar: {comment['author_avatar_url']}")
-        print(f"    Likes: {comment['likes']} | Replies: {comment['reply_count']}")
-        print(f"    Published: {comment['published_time']}")
+    # Group comments by parent-child relationships
+    comments_by_id = {c['id']: c for c in comment_list}
+    top_level_comments = []
+    
+    for comment in comment_list:
+        if comment['parent_id']:
+            # This is a reply - add it to parent's replies list
+            parent = comments_by_id.get(comment['parent_id'])
+            if parent:
+                parent.setdefault('replies', []).append(comment)
+        else:
+            # This is a top-level comment
+            top_level_comments.append(comment)
+    
+    # Display hierarchical structure
+    for i, comment in enumerate(top_level_comments):
+        print(f"Comment {i+1}:")
+        print(f"  ID: {comment['id']}")
+        print(f"  Author: {comment['author']} (Channel ID: {comment['author_channel_id']})")
+        print(f"  Avatar: {comment['author_avatar_url']}")
+        print(f"  Likes: {comment['likes']} | Replies: {comment['reply_count']}")
+        print(f"  Published: {comment['published_time']}")
         clean_text = comment['text'][:80].replace('\\n', ' ')
-        print(f"    Text: '{clean_text}...'")
-        print("-" * 20)
+        print(f"  Text: '{clean_text}...'")
+        
+        # Show replies if any
+        if 'replies' in comment:
+            for r_idx, reply in enumerate(comment['replies']):
+                print(f"    ↳ Reply {r_idx+1}:")
+                print(f"      ID: {reply['id']} (Parent: {reply['parent_id']})")
+                print(f"      Author: {reply['author']}")
+                print(f"      Likes: {reply['likes']}")
+                reply_text = reply['text'][:60].replace('\\n', ' ')
+                print(f"      Text: '{reply_text}...'")
+        print("-" * 40)
 
     duration = end_time - start_time
-    logger.info(f"Fetched {len(comment_list)} comments in {duration:.2f} seconds.")
+    total_replies = sum(len(c.get('replies', [])) for c in top_level_comments)
+    logger.info(f"Fetched {len(top_level_comments)} top-level comments with {total_replies} replies ({len(comment_list)} total) in {duration:.2f} seconds.")
     print("-" * 40)
 
 
