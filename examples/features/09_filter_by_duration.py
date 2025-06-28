@@ -13,8 +13,9 @@ logging.basicConfig(level=logging.INFO)
 print("--- Example: Filtering for 'YouTube Shorts' (duration <= 60s) ---")
 client = YtMeta()
 
-# A channel known to have a mix of long videos and shorts
-channel_url = "https://www.youtube.com/@mkbhd/videos"
+# Using MrBeast channel which has a mix of long videos and some shorts
+# Note: MKBHD primarily makes longer content, so we use MrBeast instead
+channel_url = "https://www.youtube.com/@MrBeast/videos"
 
 # Find videos that are between 1 and 60 seconds long.
 shorts_filter = {"duration_seconds": {"lte": 60, "gt": 0}}
@@ -27,10 +28,12 @@ videos = client.get_channel_videos(
     fetch_full_metadata=False,
 )
 
-# Take the first 5 videos that match the filter
-filtered_videos = list(itertools.islice(videos, 5))
+# Take the first 3 videos that match the filter (reduced from 5 for faster execution)
+# Note: If the channel doesn't have many shorts, this may take some time
+# as it needs to search through many videos to find matches
+filtered_videos = list(itertools.islice(videos, 3))
 
-print(f"Found {len(filtered_videos)} 'Shorts' (<= 60 seconds) (showing first 5):")
+print(f"Found {len(filtered_videos)} 'Shorts' (<= 60 seconds) (showing first 3):")
 for video in filtered_videos:
     duration = video.get("duration_seconds")
     print(f"- Title: {video.get('title')}")
@@ -39,3 +42,4 @@ for video in filtered_videos:
 
 if not filtered_videos:
     print("No shorts found in the first batch of videos from this channel.")
+    print("This is normal for channels that primarily create longer-form content.")

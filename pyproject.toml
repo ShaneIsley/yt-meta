@@ -17,6 +17,10 @@ dependencies = [
     "dateparser",
     "pytz", # A dependency of dateparser
     "loguru",
+    "diskcache>=5.6.3",
+    "pytest-mock>=3.14.1",
+    "rich>=14.0.0",
+    "sqlitedict>=2.1.0",
 ]
 
 [project.optional-dependencies]

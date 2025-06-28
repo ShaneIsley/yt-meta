@@ -8,10 +8,12 @@ from yt_meta import YtMeta
 
 def make_mock_html(player_response, initial_data):
     """Creates a minimal HTML structure for mocking video pages."""
+    ytcfg = {"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {}}
     return f"""
     <html><body>
     <script>var ytInitialPlayerResponse = {json.dumps(player_response)};</script>
     <script>var ytInitialData = {json.dumps(initial_data)};</script>
+    <script>ytcfg.set({json.dumps(ytcfg)});</script>
     </body></html>
     """
 
@@ -46,7 +48,7 @@ def test_video_metadata_caching(cached_client):
     mock_response.raise_for_status = MagicMock()
 
     with (
-        patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get,
+        patch("httpx.Client.get", return_value=mock_response) as mock_get,
         patch("yt_meta.client.parsing.parse_video_metadata", return_value={"meta": "data"}) as mock_parse,
     ):
         # First call - should fetch and cache
@@ -77,7 +79,7 @@ def test_cache_persistence(tmp_path):
     mock_response.raise_for_status = MagicMock()
 
     with (
-        patch("yt_meta.client.requests.Session.get", return_value=mock_response),
+        patch("httpx.Client.get", return_value=mock_response),
         patch("yt_meta.client.parsing.parse_video_metadata", return_value={"persistent": "data"}),
     ):
         # First client instance
@@ -88,7 +90,7 @@ def test_cache_persistence(tmp_path):
 
     # Second client instance with the same cache directory
     with (
-        patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get,
+        patch("httpx.Client.get", return_value=mock_response) as mock_get,
         patch("yt_meta.client.parsing.parse_video_metadata") as mock_parse,
     ):
         cache2 = Cache(cache_dir)
@@ -111,7 +113,7 @@ def test_continuation_caching(cached_client):
     mock_response.json.return_value = {"data": "continuation_data"}
     mock_response.raise_for_status = MagicMock()
 
-    with patch("yt_meta.client.requests.Session.post", return_value=mock_response) as mock_post:
+    with patch("httpx.Client.post", return_value=mock_response) as mock_post:
         # First call
         result1 = cached_client._get_continuation_data(token, ytcfg)
         mock_post.assert_called_once()
@@ -133,7 +135,7 @@ def test_clear_cache(cached_client):
     mock_response.raise_for_status = MagicMock()
 
     with (
-        patch("yt_meta.client.requests.Session.get", return_value=mock_response) as mock_get,
+        patch("httpx.Client.get", return_value=mock_response) as mock_get,
         patch("yt_meta.client.parsing.parse_video_metadata", return_value={"meta": "data"}),
     ):
         # Populate the cache
@@ -154,28 +156,63 @@ def mock_response():
     response = MagicMock()
     response.status_code = 200
     response.json.return_value = {"key": "value"}
-    response.text = 'var ytInitialData = {}; var ytcfg = {"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {}}; '
+    # Create proper HTML structure with ytcfg
+    ytcfg = {"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {}}
+    initial_data = {"contents": {}}
+    response.text = f"""
+    <html><body>
+    <script>var ytInitialData = {json.dumps(initial_data)};</script>
+    <script>ytcfg.set({json.dumps(ytcfg)});</script>
+    </body></html>
+    """
     response.raise_for_status = MagicMock()
     return response
 
 
-def test_channel_page_caching(mock_response):
+def test_channel_page_caching():
     """Test that channel pages are cached correctly."""
+    # Create a proper mock response with ytcfg
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    ytcfg = {"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {}}
+    initial_data = {
+        "contents": {"twoColumnBrowseResultsRenderer": {"header": {"c4TabbedHeaderRenderer": {"title": "Test Channel"}}}},
+        "metadata": {
+            "channelMetadataRenderer": {
+                "title": "Test Channel",
+                "description": "Test Description",
+                "externalId": "UCtest123",
+                "vanityChannelUrl": "https://www.youtube.com/@testchannel",
+                "isFamilySafe": True
+            }
+        }
+    }
+    mock_response.text = f"""
+    <html><body>
+    <script>var ytInitialData = {json.dumps(initial_data)};</script>
+    <script>ytcfg.set({json.dumps(ytcfg)});</script>
+    </body></html>
+    """
+    mock_response.raise_for_status = MagicMock()
+    
     with patch("httpx.Client") as mock_client:
         mock_client.return_value.get.return_value = mock_response
         client = YtMeta()
         
         # First call should trigger a network request
-        client.get_channel_metadata("https://www.youtube.com/channel/test")
+        result1 = client.get_channel_metadata("https://www.youtube.com/channel/test")
         mock_client.return_value.get.assert_called_once()
+        assert result1 is not None
         
         # Second call should hit the cache
-        client.get_channel_metadata("https://www.youtube.com/channel/test")
+        result2 = client.get_channel_metadata("https://www.youtube.com/channel/test")
         mock_client.return_value.get.assert_called_once() # Should not be called again
+        assert result2 == result1
 
         # Third call with force_refresh should trigger another request
-        client.get_channel_metadata("https://www.youtube.com/channel/test", force_refresh=True)
+        result3 = client.get_channel_metadata("https://www.youtube.com/channel/test", force_refresh=True)
         assert mock_client.return_value.get.call_count == 2
+        assert result3 is not None
 
 
 def test_continuation_caching(mock_response):
@@ -196,16 +233,4 @@ def test_continuation_caching(mock_response):
         mock_client.return_value.post.assert_called_once() # Should not be called again
 
 
-def test_video_metadata_caching(mock_response):
-    """Test that video metadata is cached."""
-    with patch("httpx.Client") as mock_client:
-        mock_client.return_value.get.return_value = mock_response
-        client = YtMeta()
-        
-        # First call
-        client.get_video_metadata("https://www.youtube.com/watch?v=test_video")
-        mock_client.return_value.get.assert_called_once()
-        
-        # Second call (cached)
-        client.get_video_metadata("https://www.youtube.com/watch?v=test_video")
-        mock_client.return_value.get.assert_called_once()
+# Duplicate test removed - the first version is the correct one

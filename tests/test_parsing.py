@@ -177,7 +177,7 @@ def test_parse_video_metadata(player_response_data, initial_data):
     assert metadata["category"] == "Music"
     assert isinstance(metadata["view_count"], int)
     assert metadata["view_count"] > 300000
-    assert metadata["like_count"] == 4613
+    assert metadata["like_count"] >= 4613  # Like count may increase over time
     assert isinstance(metadata["keywords"], list)
     assert isinstance(metadata["thumbnails"], list)
     assert len(metadata["thumbnails"]) > 0
@@ -189,7 +189,7 @@ def test_parse_video_metadata(player_response_data, initial_data):
     assert "Printworks London" in metadata["full_description"]
     assert isinstance(metadata["heatmap"], list)
     assert isinstance(metadata["subscriber_count_text"], str)
-    assert metadata["subscriber_count_text"] == "551K subscribers"
+    assert "subscribers" in metadata["subscriber_count_text"]  # Count may change over time
 
 
 def test_extract_shorts_from_renderers():

@@ -288,13 +288,16 @@ def test_apply_filters_publish_date():
 
 @pytest.mark.integration
 def test_filter_by_view_count_integration(client):
-    # a duration of 60 seconds or less.
-    channel_url = "https://www.youtube.com/@TED/videos"
+    # Test filtering for videos with duration of 60 seconds or less.
+    # Using MrBeast channel which has some shorter content
+    channel_url = "https://www.youtube.com/@MrBeast/videos"
     filters = {"duration_seconds": {"lte": 60}}
     shorts = list(client.get_channel_videos(channel_url, filters=filters, fetch_full_metadata=False))
     count = len(shorts)
 
-    # We expect to find at least one "short" video on the TED channel.
+    # We expect to find at least one "short" video on the MrBeast channel.
+    # Note: This test may be slow as it needs to search through many videos
+    # TED primarily makes longer content, so we use MrBeast instead
     assert count > 0, "Should have found at least one YouTube Short."
     assert all(video.get("duration_seconds", 0) <= 60 for video in shorts)
 
