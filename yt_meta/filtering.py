@@ -10,6 +10,7 @@ import logging
 import re
 from datetime import date, datetime
 import dateparser
+from yt_meta.validators import FILTER_SCHEMA
 
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,32 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
     Supports gt, gte, lt, lte, eq.
     """
     for op, filter_value in condition_dict.items():
+        if op == "eq":
+            if not video_value == filter_value:
+                return False
+        elif op == "gt":
+            if not video_value > filter_value:
+                return False
+        elif op == "gte":
+            if not video_value >= filter_value:
+                return False
+        elif op == "lt":
+            if not video_value < filter_value:
+                return False
+        elif op == "lte":
+            if not video_value <= filter_value:
+                return False
+        else:  # Should be unreachable due to validator
+            return False
+    return True
+
+
+def _check_date_condition(video_value, condition_dict) -> bool:
+    """
+    Checks if a date video value meets all conditions in the dictionary.
+    Supports gt, gte, lt, lte, eq, after, before.
+    """
+    for op, filter_value in condition_dict.items():
         # If the video value is a date, ensure the filter value is also a date
         if isinstance(video_value, date):
             if isinstance(filter_value, str):
@@ -69,14 +96,22 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
                     filter_value = datetime.fromisoformat(filter_value).date()
                 except ValueError:
                     try:
-                        filter_value = datetime.strptime(filter_value, "%Y-%m-%d").date()
+                        filter_value = datetime.strptime(
+                            filter_value, "%Y-%m-%d"
+                        ).date()
                     except ValueError:
-                        logger.warning("Invalid date format for filter value: %s", filter_value)
+                        logger.warning(
+                            "Invalid date format for filter value: %s", filter_value
+                        )
                         return False
-        
+
         # Standardize to date objects for comparison if one is a datetime and the other is a date
         comp_video_value = video_value
-        if isinstance(video_value, datetime) and isinstance(filter_value, date) and not isinstance(filter_value, datetime):
+        if (
+            isinstance(video_value, datetime)
+            and isinstance(filter_value, date)
+            and not isinstance(filter_value, datetime)
+        ):
             comp_video_value = video_value.date()
 
         if op == "eq":
@@ -146,97 +181,39 @@ def _check_list_condition(video_value_list, condition_dict) -> bool:
 
 def apply_filters(video: dict, filters: dict) -> bool:
     """
-    Checks if a video object meets the criteria specified in the filters dict.
+    Checks if a video dictionary passes a set of filters.
 
     Args:
-        video: A dictionary representing the video's metadata.
-        filters: A dictionary specifying the filter conditions.
-            Example:
-            {
-                "view_count": {"gt": 1000},
-                "title": {"contains": "Python"}
-            }
+        video: The video metadata dictionary.
+        filters: The dictionary of filters to apply.
 
     Returns:
         True if the video passes all filters, False otherwise.
     """
     for key, condition in filters.items():
-        if key == "view_count":
-            video_value = video.get("view_count")
-            if video_value is None:
-                return False  # Cannot filter if the value doesn't exist
+        if video.get(key) is None:
+            return False  # If the key doesn't exist, it can't match
 
-            if not _check_numerical_condition(video_value, condition):
-                return False
+        schema_type = FILTER_SCHEMA[key]["schema_type"]
+        video_value = video.get(key)
 
-        elif key == "duration_seconds":
-            video_value = video.get("duration_seconds")
-            if video_value is None:
-                return False
+        passes = False
+        if schema_type == "numerical":
+            passes = _check_numerical_condition(video_value, condition)
+        elif schema_type == "date":
+            if isinstance(video_value, str):
+                video_value = dateparser.parse(video_value, settings={'STRICT_PARSING': True})
+            if video_value:
+                passes = _check_date_condition(video_value, condition)
+        elif schema_type == "text":
+            passes = _check_text_condition(video_value, condition)
+        elif schema_type == "list":
+            passes = _check_list_condition(video_value, condition)
+        elif schema_type == "bool":
+            passes = _check_bool_condition(video_value, condition)
 
-            if not _check_numerical_condition(video_value, condition):
-                return False
-
-        elif key == "title":
-            video_value = video.get("title")
-            if video_value is None:
-                return False
-
-            if not _check_text_condition(video_value, condition):
-                return False
-
-        elif key == "description_snippet":
-            video_value = video.get("description_snippet")
-            if video_value is None:
-                return False
-
-            if not _check_text_condition(video_value, condition):
-                return False
-
-        elif key == "like_count":
-            # This key is only available in full metadata.
-            video_value = video.get("like_count")
-            if video_value is None:
-                return False
-
-            if not _check_numerical_condition(video_value, condition):
-                return False
-
-        elif key == "category":
-            video_value = video.get("category")
-            if video_value is None:
-                return False
-            if not _check_text_condition(video_value, condition):
-                return False
-
-        elif key == "full_description":
-            video_value = video.get("full_description")
-            if video_value is None:
-                return False
-            if not _check_text_condition(video_value, condition):
-                return False
-
-        elif key == "keywords":
-            video_value = video.get("keywords")
-            if not isinstance(video_value, list):
-                return False
-            if not _check_list_condition(video_value, condition):
-                return False
-
-        elif key == "publish_date":
-            video_value_str = video.get("publish_date")
-            if not video_value_str:
-                return False
-
-            # Parse the date string (which can be absolute or relative)
-            video_date = dateparser.parse(video_value_str)
-            if not video_date:
-                return False # Cannot filter if date is unparsable
-
-            # Use the numerical condition checker, which handles date comparisons
-            # and supports gt, gte, lt, lte.
-            if not _check_numerical_condition(video_date, condition):
-                return False
+        if not passes:
+            return False
 
     return True
 
@@ -276,7 +253,7 @@ def apply_comment_filters(comment: dict, filters: dict) -> bool:
             if not _check_boolean_condition(video_value, condition):
                 return False
         elif key == "publish_date":
-            if not _check_numerical_condition(video_value, condition):
+            if not _check_date_condition(video_value, condition):
                 return False
     return True
 

@@ -338,9 +338,7 @@ def parse_video_renderer(renderer: dict) -> dict:
     published_time_text = _deep_get(renderer, "publishedTimeText.simpleText")
     publish_date = None
     if published_time_text:
-        parsed_date = dateparser.parse(published_time_text)
-        if parsed_date:
-            publish_date = parsed_date.isoformat()
+        publish_date = dateparser.parse(published_time_text, settings={'STRICT_PARSING': True})
 
     return {
         "video_id": video_id,
@@ -353,8 +351,8 @@ def parse_video_renderer(renderer: dict) -> dict:
             _deep_get(renderer, "lengthText.accessibility.accessibilityData.label")
         ),
         "view_count": parse_view_count(view_count_text),
-        "published_time_text": published_time_text,
         "publish_date": publish_date,
+        "published_time_text": published_time_text,
         "is_live": is_live,
         "is_premiere": is_premiere,
         "url": f"https://www.youtube.com/watch?v={video_id}",
