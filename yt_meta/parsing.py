@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Optional
 
+import dateparser
+
 from .exceptions import MetadataParsingError, VideoUnavailableError
 from .utils import _deep_get
 
@@ -235,16 +237,7 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
 
 def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
     """
-    Parses a list of video renderers to extract shorts data.
-    This function iterates through a list of renderers, which can be
-    `richItemRenderer` (containing `shortsLockupViewModel`) for shorts or
-    `continuationItemRenderer` for pagination.
-    Args:
-        renderers: A list of renderer dictionaries.
-    Returns:
-        A tuple containing:
-        - A list of simplified short video objects.
-        - A continuation token string, or None if not found.
+    Parses a list of short video renderers from a channel's "Shorts" tab.
     """
     shorts = []
     continuation_token = None
@@ -257,15 +250,17 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
             if not video_data:
                 continue
 
-            url_path = "onTap.innertubeCommand.commandMetadata.webCommandMetadata.url"
-            video_url = f"https://www.youtube.com{_deep_get(video_data, url_path)}"
+            video_id = _deep_get(video_data, "onTap.innertubeCommand.reelWatchEndpoint.videoId")
+            title = _deep_get(video_data, "overlayMetadata.primaryText.content")
+            view_count_text = _deep_get(video_data, "overlayMetadata.secondaryText.content")
+            url_path = _deep_get(video_data, "onTap.innertubeCommand.commandMetadata.webCommandMetadata.url")
+            video_url = f"https://www.youtube.com{url_path}" if url_path else ""
 
             shorts.append(
                 {
-                    "video_id": _deep_get(video_data, "onTap.innertubeCommand.reelWatchEndpoint.videoId"),
-                    "title": _deep_get(video_data, "overlayMetadata.primaryText.content"),
-                    "thumbnails": _deep_get(video_data, "thumbnail.sources", []),
-                    "view_count": parse_view_count(_deep_get(video_data, "overlayMetadata.secondaryText.content")),
+                    "video_id": video_id,
+                    "title": title,
+                    "view_count": parse_view_count(view_count_text),
                     "url": video_url,
                 }
             )
@@ -275,7 +270,6 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
                 renderer,
                 "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
             )
-
     return shorts, continuation_token
 
 
@@ -341,6 +335,13 @@ def parse_video_renderer(renderer: dict) -> dict:
     channel_url_path = (
         "longBylineText.runs.0.navigationEndpoint.commandMetadata.webCommandMetadata.url"
     )
+    published_time_text = _deep_get(renderer, "publishedTimeText.simpleText")
+    publish_date = None
+    if published_time_text:
+        parsed_date = dateparser.parse(published_time_text)
+        if parsed_date:
+            publish_date = parsed_date.isoformat()
+
     return {
         "video_id": video_id,
         "title": _deep_get(renderer, "title.runs.0.text"),
@@ -352,7 +353,8 @@ def parse_video_renderer(renderer: dict) -> dict:
             _deep_get(renderer, "lengthText.accessibility.accessibilityData.label")
         ),
         "view_count": parse_view_count(view_count_text),
-        "published_time_text": _deep_get(renderer, "publishedTimeText.simpleText"),
+        "published_time_text": published_time_text,
+        "publish_date": publish_date,
         "is_live": is_live,
         "is_premiere": is_premiere,
         "url": f"https://www.youtube.com/watch?v={video_id}",

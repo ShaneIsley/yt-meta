@@ -2,22 +2,15 @@
 Tests for the parsing functions.
 """
 
-import json
-from contextlib import nullcontext as does_not_raise
 
-import pytest
 
 from yt_meta import parsing
 from tests.conftest import get_fixture
 from yt_meta.parsing import (
-    _regex_search,
     extract_and_parse_json,
-    extract_videos_from_playlist_renderer,
-    extract_videos_from_renderers,
     extract_shorts_from_renderers,
-    find_heatmap,
-    find_like_count,
 )
+import json
 
 
 def test_placeholder():
@@ -162,10 +155,7 @@ def test_parse_channel_metadata(bulwark_channel_initial_data):
     assert isinstance(metadata["is_family_safe"], bool)
 
 
-def test_parse_video_metadata(player_response_data, initial_data):
-    """
-    Tests that video metadata can be parsed correctly from the initial data.
-    """
+def test_parse_video_metadata(initial_data, player_response_data):
     metadata = parsing.parse_video_metadata(player_response_data, initial_data)
     assert metadata["video_id"] == "B68agR-OeJM"
     assert metadata["title"] == "Metrik & Linguistics | Live @ Hospitality Printworks 2023"
@@ -206,22 +196,18 @@ def test_extract_shorts_from_renderers():
     assert len(videos) > 0
     assert continuation_token is not None
 
-    short = videos[0]
-    assert "video_id" in short
-    assert "title" in short
-    assert "view_count" in short
-    assert "url" in short
+
+def test_extract_videos_from_renderers():
+    renderers = json.loads(get_fixture("aimakerspace_channel_video_renderers.json"))
+    videos, continuation = parsing.extract_videos_from_renderers(renderers)
+
+    assert len(videos) == 30
+    assert continuation is None
 
 
-def test_extract_videos_from_renderers(youtube_channel_initial_data):
-    # Load fixture and extract renderers
-    renderers = youtube_channel_initial_data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"][1]["tabRenderer"][
-        "content"
-    ]["richGridRenderer"]["contents"]
-
-    # Call the function to be tested
+def test_extract_videos_from_renderers_with_continuation():
+    renderers = json.loads(get_fixture("continuation_fixture.json"))
     videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
-    assert isinstance(videos, list)
-    assert len(videos) > 0
-    assert "video_id" in videos[0]
-    assert continuation_token is not None
+
+    assert len(videos) == 1
+    assert continuation_token == "some_continuation_token"

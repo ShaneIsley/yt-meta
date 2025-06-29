@@ -4,7 +4,6 @@ Debug script to trace continuation token behavior and understand
 why we're not fetching all 36+ comments.
 """
 
-import json
 from yt_meta.comment_fetcher import CommentFetcher
 
 def debug_comment_fetching():
@@ -102,7 +101,7 @@ def debug_comment_fetching():
             search_continuations(continuation_data)
             break
     
-    print(f"\n=== FINAL RESULTS ===")
+    print("\n=== FINAL RESULTS ===")
     print(f"Total requests made: {request_count}")
     print(f"Total comments fetched: {len(all_comments)}")
     

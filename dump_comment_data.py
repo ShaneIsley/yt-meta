@@ -7,16 +7,19 @@ This will save every API response we receive so we can inspect the data structur
 import json
 import time
 from datetime import datetime
-from yt_meta import YtMeta
+import os
 
-def save_response(data, filename_prefix):
+def save_response(data, filename_prefix, output_dir="comment_responses"):
     """Save API response with timestamp"""
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{filename_prefix}_{timestamp}.json"
-    with open(filename, "w", encoding="utf-8") as f:
+    filepath = os.path.join(output_dir, filename)
+    with open(filepath, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"Saved API response to: {filename}")
-    return filename
+    print(f"Saved API response to: {filepath}")
+    return filepath
 
 def main():
     # Use the same video that works in our demo
@@ -36,7 +39,7 @@ def main():
     initial_data = fetcher._extract_initial_data(html_content)
     
     # Save initial data
-    initial_file = save_response(initial_data, "initial_data")
+    save_response(initial_data, "initial_data")
     
     # Get API key and context for continuation requests
     api_key, context = fetcher._find_api_key_and_context(html_content)

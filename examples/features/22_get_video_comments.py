@@ -22,10 +22,10 @@ if __name__ == "__main__":
     comments_generator = yt_meta.get_video_comments(
         youtube_url=VIDEO_URL,
         limit=MAX_COMMENTS
-)
+    )
 
     comment_count = 0
-for comment in comments_generator:
+    for comment in comments_generator:
         comment_count += 1
         print(f"Comment {comment_count}:")
         print(f"  Author: {comment['author']}")

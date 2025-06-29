@@ -64,10 +64,10 @@ def comprehensive_comment_fetch():
             top_level_comments.append(comment)
 
     # Display comprehensive results
-    print(f"\n=== COMPREHENSIVE COMMENT ANALYSIS ===")
+    print("\n=== COMPREHENSIVE COMMENT ANALYSIS ===")
     print(f"Video URL: {VIDEO_URL}")
     print(f"Fetch time: {end_time - start_time:.2f} seconds")
-    print(f"")
+    print("")
     print(f"TOP sorting yielded: {len(top_comments)} comments")
     print(f"RECENT sorting yielded: {len(recent_comments)} comments")
     print(f"Total unique comments: {len(all_comments)}")
@@ -77,7 +77,7 @@ def comprehensive_comment_fetch():
     
     # Show reply distribution
     if replies_by_parent:
-        print(f"\n=== REPLY THREAD ANALYSIS ===")
+        print("\n=== REPLY THREAD ANALYSIS ===")
         for parent_id, replies in replies_by_parent.items():
             parent_comment = comments_by_id.get(parent_id)
             if parent_comment:
@@ -97,7 +97,7 @@ def comprehensive_comment_fetch():
             print()
 
     # Show sample of top-level comments sorted by likes
-    print(f"\n=== TOP COMMENTS BY ENGAGEMENT ===")
+    print("\n=== TOP COMMENTS BY ENGAGEMENT ===")
     sorted_comments = sorted(top_level_comments, key=lambda x: x['likes'], reverse=True)
     for i, comment in enumerate(sorted_comments[:5]):
         print(f"#{i+1}: {comment['author']} ({comment['likes']} likes)")
@@ -106,9 +106,9 @@ def comprehensive_comment_fetch():
         print()
 
     # Show comparison with browser count
-    print(f"=== BROWSER COMPARISON ===")
+    print("=== BROWSER COMPARISON ===")
     print(f"Our fetch: {len(all_comments)} comments")
-    print(f"Browser shows: ~36 comments (as reported)")
+    print("Browser shows: ~36 comments (as reported)")
     print(f"Coverage: {len(all_comments)/36*100:.1f}% of browser-visible comments")
     
     if len(all_comments) < 36:

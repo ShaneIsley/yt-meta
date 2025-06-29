@@ -241,6 +241,7 @@ class CommentFetcher:
         return {
             "id": comment_id,
             "parent_id": parent_id,
+            "is_reply": bool(parent_id),
             "text": text,
             "author": author.get("displayName"),
             "author_channel_id": author.get("channelId"),

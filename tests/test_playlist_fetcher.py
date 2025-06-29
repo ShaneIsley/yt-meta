@@ -1,6 +1,5 @@
 import pytest
 from httpx import Client
-from unittest.mock import MagicMock, patch
 
 from yt_meta.fetchers import PlaylistFetcher, VideoFetcher
 

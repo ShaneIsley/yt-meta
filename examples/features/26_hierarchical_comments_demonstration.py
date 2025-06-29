@@ -42,7 +42,7 @@ def demonstrate_hierarchical_comments():
             top_level_comments.append(comment)
 
     # Display results
-    print(f"\n=== HIERARCHICAL COMMENT ANALYSIS ===")
+    print("\n=== HIERARCHICAL COMMENT ANALYSIS ===")
     print(f"Total comments fetched: {len(all_comments)}")
     print(f"Top-level comments: {len(top_level_comments)}")
     print(f"Reply threads: {len(replies_by_parent)}")
@@ -50,7 +50,7 @@ def demonstrate_hierarchical_comments():
     
     # Show reply distribution
     if replies_by_parent:
-        print(f"\n=== REPLY DISTRIBUTION ===")
+        print("\n=== REPLY DISTRIBUTION ===")
         for parent_id, replies in replies_by_parent.items():
             parent_comment = comments_by_id.get(parent_id)
             if parent_comment:
@@ -67,7 +67,7 @@ def demonstrate_hierarchical_comments():
             print()
 
     # Show some top-level comments
-    print(f"\n=== TOP-LEVEL COMMENTS ===")
+    print("\n=== TOP-LEVEL COMMENTS ===")
     for i, comment in enumerate(top_level_comments[:5]):
         print(f"Comment {i+1}:")
         print(f"  ID: {comment['id']}")

@@ -103,28 +103,6 @@ def test_cache_persistence(tmp_path):
         assert result == {"persistent": "data"}
 
 
-def test_continuation_caching(cached_client):
-    """
-    Tests that _get_continuation_data caches its results.
-    """
-    token = "test_token"
-    ytcfg = {"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {}}
-    mock_response = MagicMock()
-    mock_response.json.return_value = {"data": "continuation_data"}
-    mock_response.raise_for_status = MagicMock()
-
-    with patch("httpx.Client.post", return_value=mock_response) as mock_post:
-        # First call
-        result1 = cached_client._get_continuation_data(token, ytcfg)
-        mock_post.assert_called_once()
-        assert result1 == {"data": "continuation_data"}
-
-        # Second call
-        result2 = cached_client._get_continuation_data(token, ytcfg)
-        mock_post.assert_called_once()  # Should not be called again
-        assert result2 == result1
-
-
 def test_clear_cache(cached_client):
     """
     Tests that clear_cache clears the underlying cache.
@@ -231,6 +209,3 @@ def test_continuation_caching(mock_response):
         # Second call should hit the cache
         client._get_continuation_data("test_token", ytcfg)
         mock_client.return_value.post.assert_called_once() # Should not be called again
-
-
-# Duplicate test removed - the first version is the correct one

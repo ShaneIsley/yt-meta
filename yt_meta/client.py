@@ -1,9 +1,7 @@
 # yt_meta/client.py
 
-import json
 import logging
-import os
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Optional, Union, Generator, MutableMapping
 
 import httpx
@@ -13,12 +11,11 @@ from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
 from .filtering import (
     apply_filters,
-    partition_filters,
     apply_comment_filters,
 )
 from .fetchers import VideoFetcher, ChannelFetcher, PlaylistFetcher
 from .comment_fetcher import CommentFetcher
-from .utils import _deep_get, parse_vote_count
+from .utils import _deep_get
 from .validators import validate_filters
 
 logger = logging.getLogger(__name__)
@@ -39,30 +36,19 @@ class YtMeta:
         self._playlist_fetcher = PlaylistFetcher(self.session, self.cache, self._video_fetcher)
         self._comment_fetcher = CommentFetcher()
 
-    def clear_cache(self, channel_url: str = None):
+    def clear_cache(self, prefix: Optional[str] = None):
         """
-        Clears the in-memory cache for channel pages.
+        Clears the cache.
 
-        If a `channel_url` is provided, only the cache for that specific
-        channel is cleared. Otherwise, the entire cache is cleared.
+        Args:
+            prefix: If provided, only keys starting with this prefix will be removed.
         """
-        if channel_url:
-            # This is tricky because we don't know if it's a shorts or videos page
-            # For now, we clear both possible keys
-            videos_key = self._channel_fetcher._get_channel_page_cache_key(channel_url)
-            shorts_key = self._channel_fetcher._get_channel_shorts_page_cache_key(channel_url)
-            if videos_key in self.cache:
-                del self.cache[videos_key]
-                self.logger.info(f"Cache cleared for channel: {videos_key}")
-            if shorts_key in self.cache:
-                del self.cache[shorts_key]
-                self.logger.info(f"Cache cleared for channel: {shorts_key}")
-        else:
-            # Imperfect, but we need to iterate and clear only channel/continuation keys
-            keys_to_clear = [k for k in self.cache if k.startswith("channel_") or k.startswith("continuation:")]
-            for k in keys_to_clear:
+        if prefix:
+            keys_to_remove = [k for k in self.cache if k.startswith(prefix)]
+            for k in keys_to_remove:
                 del self.cache[k]
-            self.logger.info("Channel and continuation cache cleared.")
+        else:
+            self.cache.clear()
 
     def get_channel_metadata(self, channel_url: str, force_refresh: bool = False) -> dict:
         """
@@ -401,9 +387,8 @@ class YtMeta:
             response = self.session.get(playlist_url, timeout=10)
             response.raise_for_status()
             html = response.text
-        except requests.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             raise VideoUnavailableError(f"Could not fetch playlist page: {e}", playlist_id=playlist_id) from e
-
         initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
         if not initial_data:
             raise MetadataParsingError("Could not extract ytInitialData from playlist page.", playlist_id=playlist_id)

@@ -1,0 +1,20 @@
+[
+    {
+        "richItemRenderer": {
+            "content": {
+                "videoRenderer": {
+                    "videoId": "test_id_1"
+                }
+            }
+        }
+    },
+    {
+        "continuationItemRenderer": {
+            "continuationEndpoint": {
+                "continuationCommand": {
+                    "token": "some_continuation_token"
+                }
+            }
+        }
+    }
+] 

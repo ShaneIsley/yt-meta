@@ -8,9 +8,9 @@ set of specified criteria.
 """
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
+import dateparser
 
-from .date_utils import parse_relative_date_string
 
 logger = logging.getLogger(__name__)
 
@@ -73,18 +73,28 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
                     except ValueError:
                         logger.warning("Invalid date format for filter value: %s", filter_value)
                         return False
+        
+        # Standardize to date objects for comparison if one is a datetime and the other is a date
+        comp_video_value = video_value
+        if isinstance(video_value, datetime) and isinstance(filter_value, date) and not isinstance(filter_value, datetime):
+            comp_video_value = video_value.date()
 
         if op == "eq":
-            if not video_value == filter_value: return False
-        elif op == "gt":
-            if not video_value > filter_value: return False
+            if not comp_video_value == filter_value:
+                return False
+        elif op == "gt" or op == "after":
+            if not comp_video_value > filter_value:
+                return False
         elif op == "gte":
-            if not video_value >= filter_value: return False
-        elif op == "lt":
-            if not video_value < filter_value: return False
+            if not comp_video_value >= filter_value:
+                return False
+        elif op == "lt" or op == "before":
+            if not comp_video_value < filter_value:
+                return False
         elif op == "lte":
-            if not video_value <= filter_value: return False
-        else: # Should be unreachable due to validator
+            if not comp_video_value <= filter_value:
+                return False
+        else:  # Should be unreachable due to validator
             return False
     return True
 
@@ -216,17 +226,17 @@ def apply_filters(video: dict, filters: dict) -> bool:
         elif key == "publish_date":
             video_value_str = video.get("publish_date")
             if not video_value_str:
-                # If there's no precise date, we cannot apply a precise filter.
-                # The client should handle preliminary checks on 'publishedTimeText'.
                 return False
 
-            try:
-                video_date = datetime.fromisoformat(video_value_str).date()
-                if not _check_numerical_condition(video_date, condition):
-                    return False
-            except (ValueError, TypeError):
-                logger.warning("Could not parse precise publish_date: %s", video_value_str)
-                return False # Fail if the date is malformed
+            # Parse the date string (which can be absolute or relative)
+            video_date = dateparser.parse(video_value_str)
+            if not video_date:
+                return False # Cannot filter if date is unparsable
+
+            # Use the numerical condition checker, which handles date comparisons
+            # and supports gt, gte, lt, lte.
+            if not _check_numerical_condition(video_date, condition):
+                return False
 
     return True
 

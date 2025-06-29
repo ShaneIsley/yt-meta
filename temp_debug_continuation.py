@@ -1,13 +1,11 @@
-import httpx
-import json
-import os
 import sys
-
-# Add project root to sys.path to allow imports from yt_meta
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, project_root)
-
+import os
+import json
 from yt_meta.comment_fetcher import CommentFetcher
+
+# Ensure the package is in the path
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, project_root)
 
 def main():
     """

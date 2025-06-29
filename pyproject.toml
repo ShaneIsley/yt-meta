@@ -39,7 +39,7 @@ testpaths = [
     "tests",
 ]
 markers = [
-    "integration: marks tests as integration tests",
+    "integration: marks tests as integration tests (makes network requests)",
 ]
 
 [dependency-groups]

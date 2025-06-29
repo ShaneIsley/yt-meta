@@ -2,7 +2,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
 import logging
 
 from tests.conftest import get_fixture
@@ -10,10 +9,9 @@ from yt_meta import MetadataParsingError, VideoUnavailableError, YtMeta
 from yt_meta.client import YtMeta
 from yt_meta.exceptions import VideoUnavailableError
 
-import httpx
 
 # Define the path to our test fixture
-FIXTURE_PATH = Path(__file__).parent / "fixtures" / "B68agR-OeJM.html"
+FIXTURE_PATH = "tests/fixtures"
 CHANNEL_FIXTURE_PATH = Path(__file__).parent / "fixtures"
 
 
@@ -227,17 +225,60 @@ def test_get_channel_shorts_full_metadata_integration(client):
     assert "like_count" in short
 
 
-@pytest.mark.integration
 def test_get_channel_metadata_integration(client):
     # Test with a handle URL
-    channel_url = "https://www.youtube.com/@MrBeast"
-    # ... existing code ...
+    metadata = client.get_channel_metadata("https://www.youtube.com/@MrBeast")
+    assert metadata["title"] == "MrBeast"
+    assert metadata["channel_id"] == "UCX6OQ3DkcsbYNE6H8uQQuVA"
+
+    # Test with a legacy username URL
+    metadata = client.get_channel_metadata("https://www.youtube.com/user/TEDtalksDirector")
+    assert metadata["title"] == "TED"
+    assert metadata["channel_id"] == "UCAuUUnT6oDeKwE6v1NGQxug"
 
 
 def test_clear_cache_all(mocker):
     # Setup mock cache and client
-    mock_cache = mocker.MagicMock(spec=dict)
-    # ... existing code ...
+    client = YtMeta()
+
+    # Add some data to the cache
+    client.cache["key1"] = "value1"
+    client.cache["key2"] = "value2"
+    assert len(client.cache) == 2
+
+    # Clear the cache
+    client.clear_cache()
+
+    # Verify cache is empty
+    assert len(client.cache) == 0
+
+
+def test_clear_cache_prefix(mocker):
+    # Setup mock cache and client
+    client = YtMeta()
+
+    # Add some data to the cache
+    client.cache["channel:123"] = "data1"
+    client.cache["video:abc"] = "data2"
+    client.cache["channel:456"] = "data3"
+
+    # Clear only channel data
+    client.clear_cache(prefix="channel:")
+
+    # Verify only channel data is cleared
+    assert "channel:123" not in client.cache
+    assert "channel:456" not in client.cache
+    assert "video:abc" in client.cache
+    assert len(client.cache) == 1
+
+
+def test_clear_cache():
+    """Test the cache clearing functionality."""
+    cache = {"channel_page:some_url/videos": "data", "other_key": "other_data"}
+    client = YtMeta(cache=cache)
+    client.clear_cache(prefix="channel_page:")
+    assert "channel_page:some_url/videos" not in client.cache
+    assert "other_key" in client.cache
 
 
 def test_get_playlist_videos_integration(client, caplog):
@@ -257,21 +298,3 @@ def test_ytmeta_initialization():
     client_with_cache = YtMeta(cache=my_cache)
     assert client_with_cache.cache is my_cache
     assert client_with_cache.cache["key"] == "value"
-
-
-def test_clear_cache():
-    """Test the cache clearing functionality."""
-    with patch("httpx.Client") as mock_session:
-        cache = {"channel_page:some_url/videos": "data", "other_key": "other_data"}
-        client = YtMeta(cache=cache)
-
-        # Test clearing a specific channel
-        client.clear_cache(channel_url="some_url")
-        assert "channel_page:some_url/videos" not in client.cache
-        assert "other_key" in client.cache  # Should not clear other keys
-
-        # Test clearing the entire cache
-        cache = {"channel_page:another/videos": "data", "other_key": "other_data"}
-        client = YtMeta(cache=cache)
-        client.clear_cache()
-        assert not any(k.startswith("channel_") for k in client.cache)

@@ -1,15 +1,14 @@
-from typing import MutableMapping, Optional, Generator, TYPE_CHECKING
+from typing import MutableMapping, Optional, TYPE_CHECKING
 import logging
-from datetime import datetime
-import json
+import dateparser
 
 from httpx import Client
 
 from . import parsing
 from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
-from .filtering import apply_comment_filters, apply_filters, partition_filters
-from .utils import parse_vote_count, _deep_get
+from .filtering import apply_filters, partition_filters
+from .utils import _deep_get
 from .validators import validate_filters
 
 if TYPE_CHECKING:
@@ -221,17 +220,8 @@ class ChannelFetcher(_BaseFetcher):
         tab_renderer = self._get_videos_tab_renderer(initial_data)
         if not tab_renderer:
             raise MetadataParsingError("Could not find videos tab renderer in channel page")
-        
-        renderers = self._get_video_renderers(tab_renderer)
         continuation_token = self._get_continuation_token(tab_renderer)
-        
-        # If no renderers are found, it's possible they are loaded via continuation
-        if not renderers and continuation_token:
-            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            if continuation_data:
-                renderers = self._get_video_renderers_from_data(continuation_data)
-                continuation_token = self._get_continuation_token_from_data(continuation_data)
-
+        renderers = self._get_video_renderers(tab_renderer)
         while True:
             stop_pagination = False
             for renderer in renderers:
@@ -243,9 +233,11 @@ class ChannelFetcher(_BaseFetcher):
                 video = parsing.parse_video_renderer(video_data["videoRenderer"])
                 if not video:
                     continue
-                if final_start_date and video.get("publish_date") and video["publish_date"] < final_start_date:
-                    stop_pagination = True
-                    break
+                if final_start_date and video.get("publish_date"):
+                    video_publish_date = dateparser.parse(video["publish_date"])
+                    if video_publish_date and video_publish_date.date() < final_start_date:
+                        stop_pagination = True
+                        break
                 yield video
             if stop_pagination or not continuation_token:
                 break
@@ -259,47 +251,44 @@ class ChannelFetcher(_BaseFetcher):
         try:
             initial_data, ytcfg, _ = self._get_channel_shorts_page_data(channel_url, force_refresh=force_refresh)
         except VideoUnavailableError as e:
-            self.logger.error("Could not fetch initial shorts page: %s", e)
+            self.logger.error("Could not fetch initial channel shorts page: %s", e)
             return
-
         if not initial_data:
-            raise MetadataParsingError("Could not find initial data script in shorts page")
+            raise MetadataParsingError("Could not find initial data script in channel shorts page")
 
-        tab_renderer = self._get_videos_tab_renderer(initial_data)
-        if not tab_renderer:
-            raise MetadataParsingError("Could not find shorts tab renderer in shorts page")
+        tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
+        shorts_tab_renderer = None
+        for tab in tabs:
+            if _deep_get(tab, "tabRenderer.title") == "Shorts":
+                shorts_tab_renderer = _deep_get(tab, "tabRenderer")
+                break
+        if not shorts_tab_renderer:
+            raise MetadataParsingError("Could not find 'Shorts' tab renderer on the page.", channel_url=channel_url)
 
-        items = _deep_get(tab_renderer, 'content.richGridRenderer.contents')
-        if not items:
-            self.logger.warning("No shorts renderers found on the initial page.")
-            return
-
-        continuation_token = None
+        renderers = _deep_get(shorts_tab_renderer, "content.richGridRenderer.contents", [])
+        continuation_token = self._get_continuation_token(shorts_tab_renderer)
 
         while True:
-            shorts, new_token = parsing.extract_shorts_from_renderers(items)
-            for short in shorts:
-                yield short
-            
-            continuation_token = new_token
-            if not continuation_token:
-                # Fallback for when token is not in the list of renderers from the parser
-                last_item = items[-1] if items else {}
-                continuation_token = _deep_get(last_item, 'continuationItemRenderer.continuationEndpoint.continuationCommand.token')
+            stop_pagination = False
+            for renderer in renderers:
+                if "richItemRenderer" not in renderer:
+                    continue
+                video_data = _deep_get(renderer, "richItemRenderer.content.shortsLockupViewModel")
+                if not video_data:
+                    continue
+                video = parsing.extract_shorts_from_renderers([renderer])[0][0]
+                if video:
+                    yield video
 
-            if not continuation_token:
+            if stop_pagination or not continuation_token:
                 break
 
             continuation_data = self._get_continuation_data(continuation_token, ytcfg)
             if not continuation_data:
                 break
 
-            items = _deep_get(continuation_data, "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems", [])
-            if not items:
-                self.logger.info("No more continuation items found.")
-                break
-            # Reset token, it will be found in the new items if it exists
-            continuation_token = None
+            continuation_token = self._get_continuation_token_from_data(continuation_data)
+            renderers = self._get_video_renderers_from_data(continuation_data)
 
     def get_channel_videos(self, channel_url, force_refresh=False, fetch_full_metadata=False, start_date=None, end_date=None, filters=None, stop_at_video_id=None, max_videos=-1):
         """
@@ -438,10 +427,9 @@ class PlaylistFetcher(_BaseFetcher):
             else:
                 filters["publish_date"] = ("<=", end_date)
         fast_filters, slow_filters = partition_filters(filters)
-        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
         yield from self._process_videos_generator(
             video_generator=self._get_raw_playlist_videos_generator(playlist_id),
-            must_fetch_full_metadata=fetch_full_metadata,
+            must_fetch_full_metadata=fetch_full_metadata or bool(slow_filters),
             fast_filters=fast_filters,
             slow_filters=slow_filters,
             stop_at_video_id=stop_at_video_id,

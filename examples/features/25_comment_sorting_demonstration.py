@@ -1,6 +1,5 @@
 import logging
 import time
-import json
 from yt_meta import YtMeta
 
 # Configure logging

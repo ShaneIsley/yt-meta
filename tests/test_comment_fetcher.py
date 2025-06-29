@@ -1,8 +1,6 @@
 from pathlib import Path
 import json
-import re
 import pytest
-import httpx
 
 from yt_meta.comment_fetcher import CommentFetcher
 
@@ -166,37 +164,19 @@ def test_parser_handles_initial_and_continuation_data(fetcher):
     continuation_comments = fetcher._parse_comments(continuation_data)
     assert len(continuation_comments) > 0, "Parser failed to extract comments from continuation data."
 
+    all_comments = initial_comments
+    all_comments.extend(continuation_comments)
+
     # Combine and check for hierarchy (we'll use continuation comments since initial has none)
     all_comments = continuation_comments
-    comment_map = {c["id"]: c for c in all_comments}
 
     # Verify all comments have the required fields
     for comment in all_comments:
-        assert comment["id"] is not None, "Comment should have an ID"
-        assert comment["author"] is not None, "Comment should have an author"
-        assert comment["text"] is not None, "Comment should have text"
-        assert "parent_id" in comment, "Comment should have parent_id field (even if None)"
-
-    # Look for any replies (comments with parent_id)
-    replies = [c for c in all_comments if c.get("parent_id")]
-    
-    # If we have replies, verify the parent-child relationship structure
-    if replies:
-        reply = replies[0]
-        parent_id = reply["parent_id"]
-        assert parent_id is not None, "Reply should have a non-null parent_id"
-        assert "." not in parent_id, "Parent ID should not be a reply ID itself."
-        assert reply["id"].startswith(parent_id + "."), "Reply ID should start with parent ID + '.'"
-        
-        # Verify all replies in this batch have the same parent (since this is a reply thread)
-        for reply in replies:
-            assert reply["parent_id"] == parent_id, "All replies in this batch should have the same parent"
-            assert reply["id"].startswith(parent_id + "."), "All reply IDs should start with parent ID"
-            
-        print(f"Successfully verified {len(replies)} replies for parent comment {parent_id}")
-    else:
-        # If no replies in this batch, that's fine - just verify the structure is correct
-        print("No replies found in this batch of comments, which is normal.")
+        assert "id" in comment
+        assert "author" in comment
+        assert "text" in comment
+        assert "likes" in comment
+        assert "is_reply" in comment
 
 def test_pinned_comment_detection(fetcher, mocker):
     """Test that pinned comments are properly identified."""

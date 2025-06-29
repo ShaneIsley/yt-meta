@@ -39,18 +39,17 @@ def validate_filters(filters: dict):
     if not filters:
         return
 
-    for field, condition in filters.items():
+    for field, conditions in filters.items():
         if field not in FILTER_SCHEMA:
             raise ValueError(f"Unknown filter field: '{field}'")
 
         schema = FILTER_SCHEMA[field]
-        expected_type = schema["type"]
         valid_operators = schema["operators"]
 
-        if not isinstance(condition, dict):
-            raise TypeError(f"Condition for '{field}' must be a dictionary.")
+        if not isinstance(conditions, dict):
+            raise TypeError(f"Filter for '{field}' must be a dictionary.")
 
-        for op, value in condition.items():
+        for op, value in conditions.items():
             if op not in valid_operators:
                 raise ValueError(f"Invalid operator '{op}' for field '{field}'")
 
