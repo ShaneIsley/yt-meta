@@ -229,6 +229,15 @@ class CommentFetcher:
             except (ValueError, TypeError):
                 replies = 0
         
+        # Detect pinned comments
+        is_pinned = False
+        # Check for explicit isPinned flag
+        if properties.get("isPinned"):
+            is_pinned = True
+        # Check if author is creator (common indicator of pinned comments)
+        elif author.get("isCreator"):
+            is_pinned = True
+        
         return {
             "id": comment_id,
             "parent_id": parent_id,
@@ -239,6 +248,7 @@ class CommentFetcher:
             "likes": likes,
             "reply_count": replies,
             "published_time": properties.get("publishedTime"),
+            "is_pinned": is_pinned,
         }
 
     def _find_api_key_and_context(self, html_content: str) -> tuple[str, dict]:

@@ -235,12 +235,21 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
 
 def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
     """
-    Parses a list of short video renderers from a channel's "Shorts" tab.
+    Parses a list of video renderers to extract shorts data.
+    This function iterates through a list of renderers, which can be
+    `richItemRenderer` (containing `shortsLockupViewModel`) for shorts or
+    `continuationItemRenderer` for pagination.
+    Args:
+        renderers: A list of renderer dictionaries.
+    Returns:
+        A tuple containing:
+        - A list of simplified short video objects.
+        - A continuation token string, or None if not found.
     """
-    videos = []
+    shorts = []
     continuation_token = None
     if not renderers:
-        return videos, continuation_token
+        return shorts, continuation_token
 
     for renderer in renderers:
         if "richItemRenderer" in renderer:
@@ -248,21 +257,16 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
             if not video_data:
                 continue
 
-            reel_endpoint = _deep_get(video_data, "onTap.innertubeCommand.reelWatchEndpoint")
-            if not reel_endpoint:
-                continue
-
             url_path = "onTap.innertubeCommand.commandMetadata.webCommandMetadata.url"
-            short_url = f"https://www.youtube.com{_deep_get(video_data, url_path)}"
-            videos.append(
+            video_url = f"https://www.youtube.com{_deep_get(video_data, url_path)}"
+
+            shorts.append(
                 {
-                    "video_id": reel_endpoint.get("videoId"),
+                    "video_id": _deep_get(video_data, "onTap.innertubeCommand.reelWatchEndpoint.videoId"),
                     "title": _deep_get(video_data, "overlayMetadata.primaryText.content"),
                     "thumbnails": _deep_get(video_data, "thumbnail.sources", []),
-                    "view_count": parse_view_count(
-                        _deep_get(video_data, "overlayMetadata.secondaryText.content")
-                    ),
-                    "url": short_url,
+                    "view_count": parse_view_count(_deep_get(video_data, "overlayMetadata.secondaryText.content")),
+                    "url": video_url,
                 }
             )
 
@@ -272,7 +276,7 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
                 "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
             )
 
-    return videos, continuation_token
+    return shorts, continuation_token
 
 
 def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:

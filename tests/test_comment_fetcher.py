@@ -196,4 +196,103 @@ def test_parser_handles_initial_and_continuation_data(fetcher):
         print(f"Successfully verified {len(replies)} replies for parent comment {parent_id}")
     else:
         # If no replies in this batch, that's fine - just verify the structure is correct
-        print("No replies found in this batch of comments, which is normal.") 
+        print("No replies found in this batch of comments, which is normal.")
+
+def test_pinned_comment_detection(fetcher, mocker):
+    """Test that pinned comments are properly identified."""
+    # Mock the initial video page with sort endpoints
+    initial_html = """
+    <html>
+    <script>ytcfg.set({"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {"client": {"clientName": "WEB"}}});</script>
+    <script>var ytInitialData = {"engagementPanels": [{"engagementPanelSectionListRenderer": {"header": {"engagementPanelTitleHeaderRenderer": {"title": {"runs": [{"text": "Comments"}]}, "menu": {"sortFilterSubMenuRenderer": {"subMenuItems": [{"title": "Top comments", "serviceEndpoint": {"continuationCommand": {"token": "top_token_123"}}}, {"title": "Newest first", "serviceEndpoint": {"continuationCommand": {"token": "recent_token_456"}}}]}}}}}}]};</script>
+    </html>
+    """
+    
+    # Mock the continuation response with a pinned comment
+    continuation_response = {
+        "frameworkUpdates": {
+            "entityBatchUpdate": {
+                "mutations": [
+                    {
+                        "payload": {
+                            "commentEntityPayload": {
+                                "properties": {
+                                    "commentId": "UgxPinnedCommentId123",
+                                    "content": {"content": "This is a pinned comment by the creator!"},
+                                    "publishedTime": "1 day ago",
+                                    "replyLevel": 0,
+                                    "isPinned": True,  # Key indicator for pinned status
+                                    "toolbarStateKey": "toolbar_key_1"
+                                },
+                                "author": {
+                                    "displayName": "@CreatorChannel",
+                                    "channelId": "UC123CreatorChannel",
+                                    "avatarThumbnailUrl": "https://example.com/avatar1.jpg",
+                                    "isCreator": True  # Another indicator
+                                },
+                                "toolbar": {
+                                    "likeCountNotliked": "25",
+                                    "replyCount": 5
+                                }
+                            }
+                        }
+                    },
+                    {
+                        "payload": {
+                            "commentEntityPayload": {
+                                "properties": {
+                                    "commentId": "UgxRegularCommentId456",
+                                    "content": {"content": "This is a regular comment"},
+                                    "publishedTime": "2 days ago",
+                                    "replyLevel": 0,
+                                    "toolbarStateKey": "toolbar_key_2"
+                                },
+                                "author": {
+                                    "displayName": "@RegularUser",
+                                    "channelId": "UC456RegularUser",
+                                    "avatarThumbnailUrl": "https://example.com/avatar2.jpg",
+                                    "isCreator": False
+                                },
+                                "toolbar": {
+                                    "likeCountNotliked": "10",
+                                    "replyCount": 0
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    
+    # Set up mocks
+    mock_get_response = mocker.Mock()
+    mock_get_response.text = initial_html
+    mock_get_response.raise_for_status = mocker.Mock()
+
+    mock_post_response = mocker.Mock()
+    mock_post_response.json.return_value = continuation_response
+    mock_post_response.raise_for_status = mocker.Mock()
+    
+    # Mock the httpx client methods
+    mocker.patch('httpx.Client.get', return_value=mock_get_response)
+    mocker.patch('httpx.Client.post', return_value=mock_post_response)
+    
+    # Get comments
+    comments = list(fetcher.get_comments("test_video"))
+    
+    # Verify we got both comments
+    assert len(comments) == 2
+    
+    # Verify the pinned comment is properly identified
+    pinned_comment = comments[0]  # Should be first
+    regular_comment = comments[1]
+    
+    assert pinned_comment["id"] == "UgxPinnedCommentId123"
+    assert pinned_comment["is_pinned"] == True
+    assert pinned_comment["author"] == "@CreatorChannel"
+    assert pinned_comment["text"] == "This is a pinned comment by the creator!"
+    
+    assert regular_comment["id"] == "UgxRegularCommentId456"
+    assert regular_comment["is_pinned"] == False
+    assert regular_comment["author"] == "@RegularUser" 

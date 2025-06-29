@@ -16,6 +16,12 @@ def channel_fetcher():
 
 
 @pytest.fixture
+def fetcher(video_fetcher):
+    """Provides a ChannelFetcher instance for integration tests."""
+    return ChannelFetcher(session=Client(), cache={}, video_fetcher=video_fetcher)
+
+
+@pytest.fixture
 def video_fetcher():
     """Provides a real VideoFetcher instance for integration tests."""
     return VideoFetcher(session=Client(), cache={})
@@ -64,24 +70,33 @@ def test_get_channel_videos_paginates_correctly(channel_fetcher, mocker):
 
 
 @pytest.mark.integration
-def test_get_channel_shorts_integration(video_fetcher):
-    fetcher = ChannelFetcher(session=Client(), cache={}, video_fetcher=video_fetcher)
-    shorts = list(fetcher.get_channel_shorts("https://www.youtube.com/@MrBeast"))
+def test_get_channel_shorts_integration(fetcher):
+    """Verify that get_channel_shorts fetches shorts data for a channel."""
+    shorts = list(fetcher.get_channel_shorts("https://www.youtube.com/@bashbunni"))
     assert len(shorts) > 0
+    assert "video_id" in shorts[0]
 
 
 @pytest.mark.integration
-def test_get_channel_metadata_integration(video_fetcher):
-    fetcher = ChannelFetcher(session=Client(), cache={}, video_fetcher=video_fetcher)
-    metadata = fetcher.get_channel_metadata("https://www.youtube.com/@MrBeast")
-    assert metadata["title"] == "MrBeast"
+def test_get_channel_metadata_integration(fetcher):
+    """Verify that get_channel_metadata fetches the correct channel title."""
+    metadata = fetcher.get_channel_metadata("https://www.youtube.com/@bashbunni")
+    assert metadata["title"] == "bashbunni"
 
 
 @pytest.mark.integration
-def test_get_channel_shorts_with_full_metadata_integration(video_fetcher):
-    fetcher = ChannelFetcher(session=Client(), cache={}, video_fetcher=video_fetcher)
+def test_get_channel_videos_full_metadata_integration(fetcher):
+    """Verify that full metadata fetching includes 'like_count'."""
+    videos = list(fetcher.get_channel_videos(
+        "https://www.youtube.com/@bashbunni", fetch_full_metadata=True, max_videos=1
+    ))
+    assert "like_count" in videos[0]
+
+
+@pytest.mark.integration
+def test_get_channel_shorts_with_full_metadata_integration(fetcher):
     shorts_generator = fetcher.get_channel_shorts(
-        "https://www.youtube.com/@MrBeast", fetch_full_metadata=True, max_videos=1
+        "https://www.youtube.com/@bashbunni", fetch_full_metadata=True, max_videos=1
     )
     shorts = list(shorts_generator)
     assert len(shorts) > 0

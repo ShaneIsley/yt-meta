@@ -221,8 +221,17 @@ class ChannelFetcher(_BaseFetcher):
         tab_renderer = self._get_videos_tab_renderer(initial_data)
         if not tab_renderer:
             raise MetadataParsingError("Could not find videos tab renderer in channel page")
-        continuation_token = self._get_continuation_token(tab_renderer)
+        
         renderers = self._get_video_renderers(tab_renderer)
+        continuation_token = self._get_continuation_token(tab_renderer)
+        
+        # If no renderers are found, it's possible they are loaded via continuation
+        if not renderers and continuation_token:
+            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
+            if continuation_data:
+                renderers = self._get_video_renderers_from_data(continuation_data)
+                continuation_token = self._get_continuation_token_from_data(continuation_data)
+
         while True:
             stop_pagination = False
             for renderer in renderers:
@@ -248,33 +257,49 @@ class ChannelFetcher(_BaseFetcher):
 
     def _get_raw_shorts_generator(self, channel_url, force_refresh):
         try:
-            initial_data, ytcfg, _ = self._get_channel_shorts_page_data(channel_url, force_refresh)
-        except (VideoUnavailableError, MetadataParsingError) as e:
-            self.logger.error("Could not fetch initial channel shorts page: %s", e)
+            initial_data, ytcfg, _ = self._get_channel_shorts_page_data(channel_url, force_refresh=force_refresh)
+        except VideoUnavailableError as e:
+            self.logger.error("Could not fetch initial shorts page: %s", e)
             return
-        tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
-        shorts_tab = None
-        for tab in tabs:
-            if _deep_get(tab, "tabRenderer.title") == "Shorts":
-                shorts_tab = tab
+
+        if not initial_data:
+            raise MetadataParsingError("Could not find initial data script in shorts page")
+
+        tab_renderer = self._get_videos_tab_renderer(initial_data)
+        if not tab_renderer:
+            raise MetadataParsingError("Could not find shorts tab renderer in shorts page")
+
+        items = _deep_get(tab_renderer, 'content.richGridRenderer.contents')
+        if not items:
+            self.logger.warning("No shorts renderers found on the initial page.")
+            return
+
+        continuation_token = None
+
+        while True:
+            shorts, new_token = parsing.extract_shorts_from_renderers(items)
+            for short in shorts:
+                yield short
+            
+            continuation_token = new_token
+            if not continuation_token:
+                # Fallback for when token is not in the list of renderers from the parser
+                last_item = items[-1] if items else {}
+                continuation_token = _deep_get(last_item, 'continuationItemRenderer.continuationEndpoint.continuationCommand.token')
+
+            if not continuation_token:
                 break
-        if not shorts_tab:
-            if len(tabs) == 1 and "/shorts" in _deep_get(tabs[0], "tabRenderer.endpoint.commandMetadata.webCommandMetadata.url", ""):
-                 shorts_tab = tabs[0]
-            else:
-                raise MetadataParsingError("Could not find Shorts tab renderer.", channel_url=channel_url)
-        renderers = _deep_get(shorts_tab, "tabRenderer.content.richGridRenderer.contents", [])
-        shorts, continuation_token = parsing.extract_shorts_from_renderers(renderers)
-        for short in shorts:
-            yield short
-        while continuation_token:
+
             continuation_data = self._get_continuation_data(continuation_token, ytcfg)
             if not continuation_data:
                 break
-            renderers = _deep_get(continuation_data, "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems", [])
-            shorts, continuation_token = parsing.extract_shorts_from_renderers(renderers)
-            for short in shorts:
-                yield short
+
+            items = _deep_get(continuation_data, "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems", [])
+            if not items:
+                self.logger.info("No more continuation items found.")
+                break
+            # Reset token, it will be found in the new items if it exists
+            continuation_token = None
 
     def get_channel_videos(self, channel_url, force_refresh=False, fetch_full_metadata=False, start_date=None, end_date=None, filters=None, stop_at_video_id=None, max_videos=-1):
         """
