@@ -33,16 +33,37 @@ Homepage = "https://github.com/samwitteveenai/yt-meta"
 where = ["."]
 
 [tool.pytest.ini_options]
-minversion = "6.0"
-addopts = "-ra -q"
-testpaths = [
-    "tests",
-]
+testpaths = ["tests"]
+addopts = "-v"
 markers = [
     "integration: marks tests as integration tests (makes network requests)",
+]
+filterwarnings = [
+    "ignore:Parsing dates involving a day of month without a year specified is ambiguous:DeprecationWarning",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.4.1",
+]
+
+[tool.ruff]
+# Exclude a variety of commonly ignored directories.
+# ... existing code ...
+
+[tool.ruff.lint]
+# By default, ruff will lint all files in the current directory and its subdirectories
+# except for those that are excluded by .gitignore, .ignore, .ruff_ignore, or global-exclude.
+# You can override this behavior by specifying the `select` option.
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501", # Line too long, handled by black
 ]

@@ -83,55 +83,36 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
     return True
 
 
-def _check_date_condition(video_value, condition_dict) -> bool:
+def _check_date_condition(video_value, filter_value, op) -> bool:
     """
-    Checks if a date video value meets all conditions in the dictionary.
+    Checks if a date video value meets a single condition.
     Supports gt, gte, lt, lte, eq, after, before.
     """
-    for op, filter_value in condition_dict.items():
-        # If the video value is a date, ensure the filter value is also a date
-        if isinstance(video_value, date):
-            if isinstance(filter_value, str):
-                try:
-                    filter_value = datetime.fromisoformat(filter_value).date()
-                except ValueError:
-                    try:
-                        filter_value = datetime.strptime(
-                            filter_value, "%Y-%m-%d"
-                        ).date()
-                    except ValueError:
-                        logger.warning(
-                            "Invalid date format for filter value: %s", filter_value
-                        )
-                        return False
+    # Ensure both values are datetime objects before comparison
+    if isinstance(video_value, str):
+        video_value = dateparser.parse(video_value, settings={"PREFER_DATES_FROM": "past"})
+    if isinstance(filter_value, str):
+        filter_value = dateparser.parse(filter_value, settings={"PREFER_DATES_FROM": "past"})
 
-        # Standardize to date objects for comparison if one is a datetime and the other is a date
-        comp_video_value = video_value
-        if (
-            isinstance(video_value, datetime)
-            and isinstance(filter_value, date)
-            and not isinstance(filter_value, datetime)
-        ):
-            comp_video_value = video_value.date()
+    if not isinstance(video_value, (datetime, date)) or not isinstance(filter_value, (datetime, date)):
+        return False # Cannot compare if parsing failed
 
-        if op == "eq":
-            if not comp_video_value == filter_value:
-                return False
-        elif op == "gt" or op == "after":
-            if not comp_video_value > filter_value:
-                return False
-        elif op == "gte":
-            if not comp_video_value >= filter_value:
-                return False
-        elif op == "lt" or op == "before":
-            if not comp_video_value < filter_value:
-                return False
-        elif op == "lte":
-            if not comp_video_value <= filter_value:
-                return False
-        else:  # Should be unreachable due to validator
-            return False
-    return True
+    # Standardize to date objects for comparison
+    comp_video_value = video_value.date() if isinstance(video_value, datetime) else video_value
+    comp_filter_value = filter_value.date() if isinstance(filter_value, datetime) else filter_value
+
+    if op == "eq":
+        return comp_video_value == comp_filter_value
+    if op in ("gt", "after"):
+        return comp_video_value > comp_filter_value
+    if op == "gte":
+        return comp_video_value >= comp_filter_value
+    if op in ("lt", "before"):
+        return comp_video_value < comp_filter_value
+    if op == "lte":
+        return comp_video_value <= comp_filter_value
+
+    return False # Should be unreachable due to validator
 
 
 def _check_text_condition(video_value, condition_dict) -> bool:
@@ -197,14 +178,14 @@ def apply_filters(video: dict, filters: dict) -> bool:
         schema_type = FILTER_SCHEMA[key]["schema_type"]
         video_value = video.get(key)
 
-        passes = False
+        passes = True # Assume true and break on first failure
         if schema_type == "numerical":
             passes = _check_numerical_condition(video_value, condition)
         elif schema_type == "date":
-            if isinstance(video_value, str):
-                video_value = dateparser.parse(video_value, settings={'STRICT_PARSING': True})
-            if video_value:
-                passes = _check_date_condition(video_value, condition)
+            for op, condition_value in condition.items():
+                if not _check_date_condition(video_value, condition_value, op):
+                    passes = False
+                    break
         elif schema_type == "text":
             passes = _check_text_condition(video_value, condition)
         elif schema_type == "list":
@@ -239,22 +220,26 @@ def apply_comment_filters(comment: dict, filters: dict) -> bool:
             logger.warning("Unrecognized comment filter key: %s", key)
             continue
 
-        video_value = comment.get(key)
-        if video_value is None:
+        comment_value = comment.get(key)
+        if comment_value is None:
             return False
 
+        passes = True # Assume true, break on first failure
         if key in {"like_count", "reply_count"}:
-            if not _check_numerical_condition(video_value, condition):
-                return False
+            passes = _check_numerical_condition(comment_value, condition)
         elif key in {"text", "author", "channel_id"}:
-            if not _check_text_condition(video_value, condition):
-                return False
+            passes = _check_text_condition(comment_value, condition)
         elif key in {"is_reply", "is_hearted_by_owner", "is_by_owner"}:
-            if not _check_boolean_condition(video_value, condition):
-                return False
+            passes = _check_boolean_condition(comment_value, condition)
         elif key == "publish_date":
-            if not _check_date_condition(video_value, condition):
-                return False
+            for op, condition_value in condition.items():
+                if not _check_date_condition(comment_value, condition_value, op):
+                    passes = False
+                    break
+        
+        if not passes:
+            return False
+            
     return True
 
 

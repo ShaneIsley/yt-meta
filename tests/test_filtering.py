@@ -1,5 +1,5 @@
-
 import pytest
+from datetime import date
 
 from yt_meta import YtMeta
 from yt_meta.filtering import apply_filters, partition_filters
@@ -263,16 +263,15 @@ def test_apply_filters_keywords():
 def test_apply_filters_publish_date():
     """Tests filtering by publish_date."""
     videos = [
-        # Note: In a real scenario, these would be datetime objects
-        {"publish_date": "2023-01-15T12:00:00Z"},
-        {"publish_date": "2023-08-01T10:00:00Z"},
-        {"publish_date": "2022-12-25T18:00:00Z"},
+        {"publish_date": "2023-01-15T12:00:00+00:00"},
+        {"publish_date": "2023-08-01T10:00:00+00:00"},
+        {"publish_date": "2022-12-25T18:00:00+00:00"},
     ]
-    filters = {"publish_date": {"after": "2023-01-01T00:00:00Z"}}
+    filters = {"publish_date": {"after": "2023-01-01"}}
     filtered = [v for v in videos if apply_filters(v, filters)]
     assert len(filtered) == 2
 
-    filters_before = {"publish_date": {"before": "2023-01-01T00:00:00Z"}}
+    filters_before = {"publish_date": {"before": "2023-01-01"}}
     filtered_before = [v for v in videos if apply_filters(v, filters_before)]
     assert len(filtered_before) == 1
 

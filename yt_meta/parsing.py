@@ -338,7 +338,9 @@ def parse_video_renderer(renderer: dict) -> dict:
     published_time_text = _deep_get(renderer, "publishedTimeText.simpleText")
     publish_date = None
     if published_time_text:
-        publish_date = dateparser.parse(published_time_text, settings={'STRICT_PARSING': True})
+        publish_date = dateparser.parse(
+            published_time_text, settings={"PREFER_DATES_FROM": "past"}
+        )
 
     return {
         "video_id": video_id,

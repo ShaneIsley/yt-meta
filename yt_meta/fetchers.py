@@ -234,10 +234,9 @@ class ChannelFetcher(_BaseFetcher):
                 if not video:
                     continue
                 if final_start_date and video.get("publish_date"):
-                    video_publish_date = dateparser.parse(video["publish_date"])
+                    video_publish_date = video["publish_date"]
                     if video_publish_date and video_publish_date.date() < final_start_date:
                         stop_pagination = True
-                        break
                 yield video
             if stop_pagination or not continuation_token:
                 break

@@ -7,24 +7,24 @@ BOOL_OPERATORS = {"eq"}
 
 FILTER_SCHEMA = {
     # Video/Shorts Filters
-    "view_count":          {"type": int, "operators": NUMERIC_OPERATORS},
-    "duration_seconds":    {"type": int, "operators": NUMERIC_OPERATORS},
-    "like_count":          {"type": int, "operators": NUMERIC_OPERATORS},
-    "title":               {"type": str, "operators": TEXT_OPERATORS},
-    "description_snippet": {"type": str, "operators": TEXT_OPERATORS},
-    "full_description":    {"type": str, "operators": TEXT_OPERATORS},
-    "category":            {"type": str, "operators": TEXT_OPERATORS},
-    "keywords":            {"type": list, "operators": LIST_OPERATORS},
-    "publish_date":        {"type": (str, date, datetime), "operators": NUMERIC_OPERATORS},
+    "view_count":          {"type": int, "operators": NUMERIC_OPERATORS, "schema_type": "numerical"},
+    "duration_seconds":    {"type": int, "operators": NUMERIC_OPERATORS, "schema_type": "numerical"},
+    "like_count":          {"type": int, "operators": NUMERIC_OPERATORS, "schema_type": "numerical"},
+    "title":               {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
+    "description_snippet": {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
+    "full_description":    {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
+    "category":            {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
+    "keywords":            {"type": list, "operators": LIST_OPERATORS, "schema_type": "list"},
+    "publish_date":        {"type": (str, date, datetime), "operators": NUMERIC_OPERATORS, "schema_type": "date"},
 
     # Comment Filters
-    "reply_count":         {"type": int, "operators": NUMERIC_OPERATORS},
-    "author":              {"type": str, "operators": TEXT_OPERATORS},
-    "text":                {"type": str, "operators": TEXT_OPERATORS},
-    "channel_id":          {"type": str, "operators": TEXT_OPERATORS},
-    "is_reply":            {"type": bool, "operators": BOOL_OPERATORS},
-    "is_hearted_by_owner": {"type": bool, "operators": BOOL_OPERATORS},
-    "is_by_owner":         {"type": bool, "operators": BOOL_OPERATORS},
+    "reply_count":         {"type": int, "operators": NUMERIC_OPERATORS, "schema_type": "numerical"},
+    "author":              {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
+    "text":                {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
+    "channel_id":          {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
+    "is_reply":            {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
+    "is_hearted_by_owner": {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
+    "is_by_owner":         {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
 }
 
 
