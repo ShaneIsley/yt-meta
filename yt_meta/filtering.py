@@ -191,7 +191,7 @@ def apply_filters(video: dict, filters: dict) -> bool:
         elif schema_type == "list":
             passes = _check_list_condition(video_value, condition)
         elif schema_type == "bool":
-            passes = _check_bool_condition(video_value, condition)
+            passes = _check_boolean_condition(video_value, condition)
 
         if not passes:
             return False
