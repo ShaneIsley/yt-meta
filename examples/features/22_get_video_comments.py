@@ -17,21 +17,39 @@ MAX_COMMENTS = 50
 if __name__ == "__main__":
     yt_meta = YtMeta()
 
-    logger.info(f"Fetching up to {MAX_COMMENTS} comments for video: {VIDEO_URL}")
-
-    # The sort_by parameter is no longer supported in this implementation
-    comments_generator = yt_meta.get_video_comments(
+    logger.info(f"Fetching up to {MAX_COMMENTS} comments for video: {VIDEO_URL} (sorted by 'top')")
+    comments_generator_top = yt_meta.get_video_comments(
         youtube_url=VIDEO_URL,
+        sort_by='top',
         limit=MAX_COMMENTS
     )
 
     comment_count = 0
-    for comment in comments_generator:
+    for comment in comments_generator_top:
         comment_count += 1
         print(f"Comment {comment_count}:")
         print(f"  Author: {comment['author']}")
-        print(f"  Text: '{comment['text'][:100]}...'") # Truncate for readability
+        print(f"  Text: '{comment['text'][:100]}...'")
         print(f"  Likes: {comment['likes']}")
         print("-" * 20)
 
-    logger.info(f"Finished fetching {comment_count} comments.")
+    logger.info(f"Finished fetching {comment_count} 'top' comments.")
+    print("\n" + "="*40 + "\n")
+
+    logger.info(f"Fetching up to {MAX_COMMENTS} comments for video: {VIDEO_URL} (sorted by 'recent')")
+    comments_generator_recent = yt_meta.get_video_comments(
+        youtube_url=VIDEO_URL,
+        sort_by='recent',
+        limit=MAX_COMMENTS
+    )
+
+    comment_count = 0
+    for comment in comments_generator_recent:
+        comment_count += 1
+        print(f"Comment {comment_count}:")
+        print(f"  Author: {comment['author']}")
+        print(f"  Text: '{comment['text'][:100]}...'")
+        print(f"  Likes: {comment['likes']}")
+        print("-" * 20)
+
+    logger.info(f"Finished fetching {comment_count} 'recent' comments.")

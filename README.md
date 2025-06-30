@@ -170,35 +170,38 @@ for short in itertools.islice(shorts_generator, 5):
     print(f"- {short['title']} (Likes: {likes})")
 ```
 
-### 6. Get Comments from a Video
+### 6. Get Video Comments
 
-Fetches comments for a specific video, with options for sorting and filtering. This method returns a generator that yields standardized comment data.
+Fetches comments for a given video. The method can retrieve comments sorted by **"Top comments"** (default) or by **"Most Recent"**. It returns a generator that yields standardized comment data.
 
 **Example:**
 
 ```python
 import itertools
 from yt_meta import YtMeta
-from yt_meta.fetchers import SORT_BY_POPULAR
 
 client = YtMeta()
 video_url = "https://www.youtube.com/watch?v=B68agR-OeJM"
 
-# Find the most popular comments that have been liked by the creator
-comment_filters = {
-    "is_hearted_by_owner": {"eq": True}
-}
-
-comments_generator = client.get_video_comments(
+# Fetch the 5 most recent comments
+print("--- Most Recent Comments ---")
+recent_comments = client.get_video_comments(
     video_url,
-    sort_by=SORT_BY_POPULAR,
-    filters=comment_filters
+    sort_by='recent', # or 'top'
+    limit=5
 )
+for comment in recent_comments:
+    print(f"- {comment['text'][:80]}... (Author: {comment['author']})")
 
-print(f"Top 5 hearted comments for video: {video_url}")
-for comment in itertools.islice(comments_generator, 5):
-    likes = comment.get('like_count', 0)
-    print(f"- \"{comment['text']}\" (Likes: {likes})")
+# Fetch the 5 top comments
+print("\n--- Top Comments ---")
+top_comments = client.get_video_comments(
+    video_url,
+    sort_by='top',
+    limit=5
+)
+for comment in top_comments:
+    print(f"- {comment['text'][:80]}... (Likes: {comment['likes']})")
 ```
 
 ## Caching

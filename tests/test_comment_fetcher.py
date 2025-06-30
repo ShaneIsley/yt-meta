@@ -117,6 +117,47 @@ def test_get_sort_endpoints(fetcher, video_page_html):
     assert isinstance(top_token, str) and len(top_token) > 50
     assert isinstance(recent_token, str) and len(recent_token) > 50
     assert top_token != recent_token
+    assert "token" in sort_endpoints["recent"]["continuationCommand"]
+
+def test_get_comments_sorted_by_recent(fetcher, video_page_html, mocker):
+    """
+    Verify that calling get_comments with sort_by='recent' uses the correct
+    continuation token for the initial POST request.
+    """
+    # We need the real initial_data to find the correct "recent" token
+    initial_data = fetcher._extract_initial_data(video_page_html)
+    sort_endpoints = fetcher._get_sort_endpoints(initial_data)
+    recent_token = sort_endpoints["recent"]["continuationCommand"]["token"]
+
+    # Mock dependencies
+    mocker.patch.object(fetcher, "_extract_initial_data", return_value=initial_data)
+    mocker.patch.object(
+        fetcher, "_find_api_key_and_context", return_value=("test_api_key", {"context": "test"})
+    )
+    # The 'get' request is implicitly mocked by not calling it and instead feeding
+    # the initial data directly. We only need to mock the subsequent 'post' call.
+    mock_post = mocker.patch(
+        "httpx.Client.post",
+        return_value=mocker.Mock(
+            **{
+                "raise_for_status.return_value": None,
+                "json.return_value": {"frameworkUpdates": {"entityBatchUpdate": {"mutations": []}}},
+            }
+        ),
+    )
+
+    # We need to mock the initial GET request since the method under test makes it.
+    mocker.patch("httpx.Client.get", return_value=mocker.Mock(text=video_page_html))
+
+
+    # Call the method with sort_by='recent'
+    list(fetcher.get_comments("B68agR-OeJM", sort_by="recent"))
+
+    # Assert that the first call to post used the 'recent' token
+    assert mock_post.call_count > 0
+    first_call_args, first_call_kwargs = mock_post.call_args_list[0]
+    sent_payload = first_call_kwargs["json"]
+    assert sent_payload["continuation"] == recent_token
 
 def test_parse_comment_with_full_metadata(fetcher, continuation_json):
     """
