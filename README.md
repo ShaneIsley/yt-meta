@@ -191,7 +191,9 @@ recent_comments = client.get_video_comments(
     limit=5
 )
 for comment in recent_comments:
-    print(f"- {comment['text'][:80]}... (Author: {comment['author']})")
+    print(f"- Text: '{comment['text'][:80]}...'")
+    print(f"  - Author: {comment['author']} (Channel ID: {comment['author_channel_id']})")
+    print(f"  - Replies: {comment['reply_count']}")
 
 # Fetch the 5 top comments
 print("\n--- Top Comments ---")
@@ -201,7 +203,9 @@ top_comments = client.get_video_comments(
     limit=5
 )
 for comment in top_comments:
-    print(f"- {comment['text'][:80]}... (Likes: {comment['likes']})")
+    print(f"- Text: '{comment['text'][:80]}...'")
+    print(f"  - Author: {comment['author']} (Likes: {comment['likes']})")
+    print(f"  - Replies: {comment['reply_count']}")
 ```
 
 ## Caching

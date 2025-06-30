@@ -41,7 +41,7 @@ The "Ranked Feature Implementation Plan" provided is an accurate and well-struct
 
 #### Priority 1: Foundational Parity (Confirmed Gaps)
 1.  **Restore Comment Sorting:** ✅ **Completed.** Further investigation revealed this feature was already implemented and working correctly. The gap was in documentation and testing. We have since added an explicit test case to verify the `sort_by='recent'` parameter and updated the example script to reflect this capability.
-2.  **Add Missing Metadata:** Confirmed. The current comment parser only extracts author, text, and likes. It is missing `author_channel_id`, `author_avatar_url`, and `reply_count`.
+2.  **Add Missing Metadata:** ✅ **Completed.** Similar to sorting, the core logic to parse `author_channel_id`, `author_avatar_url`, and `reply_count` was already present. This has been verified with tests, and the documentation will be updated to reflect this.
 3.  **Distinguish Comments/Replies:** Confirmed. There is no `is_reply` flag, making it difficult to analyze comment threads hierarchically.
 
 #### Priority 2: Architectural Leap (Confirmed Opportunity)
