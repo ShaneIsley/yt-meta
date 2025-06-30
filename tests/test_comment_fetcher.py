@@ -382,3 +382,26 @@ def test_comment_author_badge_extraction(fetcher):
     assert "author_badges" in parsed_comment_no_badge
     assert isinstance(parsed_comment_no_badge["author_badges"], list)
     assert len(parsed_comment_no_badge["author_badges"]) == 0
+
+def test_is_reply_flag(fetcher):
+    """
+    Tests that the `is_reply` flag is correctly set based on `replyLevel`.
+    """
+    # Simulate a top-level comment payload
+    top_level_payload = {
+        "properties": {"commentId": "1", "content": {"content": "top"}, "replyLevel": 0},
+        "author": {},
+        "toolbar": {}
+    }
+    # Simulate a reply comment payload
+    reply_payload = {
+        "properties": {"commentId": "2", "content": {"content": "reply"}, "replyLevel": 1},
+        "author": {},
+        "toolbar": {}
+    }
+
+    top_level_comment = fetcher._parse_comment_payload(top_level_payload)
+    reply_comment = fetcher._parse_comment_payload(reply_payload)
+
+    assert not top_level_comment["is_reply"]
+    assert reply_comment["is_reply"]
