@@ -239,6 +239,19 @@ class CommentFetcher:
 
         text = properties.get("content", {}).get("content", "")
 
+        author_badges = []
+        if 'authorBadges' in author:
+            for badge in author['authorBadges']:
+                if 'channelRenderer' in badge['authorBadge']['badgeRenderer']['navigationEndpoint']['browseEndpoint']:
+                    author_badges.append(badge['authorBadge']['badgeRenderer']['icon']['iconType'])
+        elif 'ownerBadges' in author:
+            for badge in author['ownerBadges']:
+                author_badges.append(badge['metadataBadgeRenderer']['icon']['iconType'])
+        elif 'isVerified' in author and author['isVerified']:
+            author_badges.append('VERIFIED')
+        elif 'isCreator' in author and author['isCreator']:
+            author_badges.append('CREATOR')
+
         # Extract comment ID and determine parent relationship
         comment_id = properties.get("commentId")
         parent_id = None
@@ -282,6 +295,7 @@ class CommentFetcher:
             "reply_count": replies,
             "published_time": properties.get("publishedTime"),
             "is_pinned": is_pinned,
+            "author_badges": author_badges,
         }
 
     def _find_api_key_and_context(self, html_content: str) -> tuple[str, dict]:

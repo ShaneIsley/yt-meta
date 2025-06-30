@@ -277,3 +277,67 @@ def test_pinned_comment_detection(fetcher, mocker):
     assert regular_comment["id"] == "UgxRegularCommentId456"
     assert not regular_comment["is_pinned"]
     assert regular_comment["author"] == "@RegularUser"
+
+def test_comment_author_badge_extraction(fetcher):
+    """Tests that author badges are extracted from comments."""
+    comment_payload_with_badge = {
+        "properties": {
+            "commentId": "UgxCommentIdWithBadge123",
+            "content": {"content": "This is a comment from a verified user!"},
+            "publishedTime": "3 days ago",
+            "replyLevel": 0,
+            "toolbarStateKey": "toolbar_key_3"
+        },
+        "author": {
+            "displayName": "@VerifiedUser",
+            "channelId": "UC123VerifiedChannel",
+            "avatarThumbnailUrl": "https://example.com/avatar_verified.jpg",
+            "ownerBadges": [
+                {
+                    "metadataBadgeRenderer": {
+                        "icon": {
+                            "iconType": "VERIFIED"
+                        },
+                        "style": "BADGE_STYLE_TYPE_VERIFIED",
+                        "tooltip": "Verified"
+                    }
+                }
+            ]
+        },
+        "toolbar": {
+            "likeCountNotliked": "50",
+            "replyCount": 2
+        }
+    }
+
+    parsed_comment = fetcher._parse_comment_payload(comment_payload_with_badge)
+
+    assert "author_badges" in parsed_comment
+    assert isinstance(parsed_comment["author_badges"], list)
+    assert len(parsed_comment["author_badges"]) == 1
+    assert parsed_comment["author_badges"][0] == "VERIFIED"
+
+    # Test a comment with no badges
+    comment_payload_no_badge = {
+        "properties": {
+            "commentId": "UgxCommentIdNoBadge456",
+            "content": {"content": "This is a comment from a regular user."},
+            "publishedTime": "4 days ago",
+            "replyLevel": 0,
+            "toolbarStateKey": "toolbar_key_4"
+        },
+        "author": {
+            "displayName": "@RegularUser",
+            "channelId": "UC456RegularUser",
+            "avatarThumbnailUrl": "https://example.com/avatar_regular.jpg"
+        },
+        "toolbar": {
+            "likeCountNotliked": "5",
+            "replyCount": 0
+        }
+    }
+
+    parsed_comment_no_badge = fetcher._parse_comment_payload(comment_payload_no_badge)
+    assert "author_badges" in parsed_comment_no_badge
+    assert isinstance(parsed_comment_no_badge["author_badges"], list)
+    assert len(parsed_comment_no_badge["author_badges"]) == 0

@@ -8,7 +8,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 # --- Configuration ---
-VIDEO_URL = "https://www.youtube.com/watch?v=feT7_wVmgv0"
+VIDEO_ID = "hbRQ59R6-b8" # Last Team Standing Wins $250000
+VIDEO_URL = f"https://www.youtube.com/watch?v={VIDEO_ID}"
 MAX_COMMENTS = 200  # High limit to ensure we get all available
 
 def comprehensive_comment_fetch():
@@ -101,10 +102,20 @@ def comprehensive_comment_fetch():
     print("\n=== TOP COMMENTS BY ENGAGEMENT ===")
     sorted_comments = sorted(top_level_comments, key=lambda x: x['likes'], reverse=True)
     for i, comment in enumerate(sorted_comments[:5]):
-        print(f"#{i+1}: {comment['author']} ({comment['likes']} likes)")
-        print(f"  {comment['text'][:80]}...")
+        badges_str = f" (Badges: {', '.join(comment['author_badges'])})" if comment['author_badges'] else ""
+        print(f"#{i+1}: @{comment['author']}{badges_str} ({comment['likes']} likes)")
+        print(f"  {comment['text'].strip()}")
         print(f"  Replies: {comment['reply_count']} | Published: {comment['published_time']}")
-        print()
+        print("")
+
+    print("\nLAST 5 TOP COMMENTS (with badges if present):")
+    last_five_comments = sorted_comments[-5:] if len(sorted_comments) > 5 else sorted_comments
+    for i, comment in enumerate(last_five_comments):
+        badges_str = f" (Badges: {', '.join(comment['author_badges'])})" if comment['author_badges'] else ""
+        print(f"#{len(sorted_comments) - len(last_five_comments) + i + 1}: @{comment['author']}{badges_str} ({comment['likes']} likes)")
+        print(f"  {comment['text'].strip()}")
+        print(f"  Replies: {comment['reply_count']} | Published: {comment['published_time']}")
+        print("")
 
     # Show comparison with browser count
     print("=== BROWSER COMPARISON ===")
