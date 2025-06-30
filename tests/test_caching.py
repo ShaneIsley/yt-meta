@@ -1,7 +1,8 @@
+import json
+from unittest.mock import MagicMock, patch
+
 import pytest
 from diskcache import Cache
-from unittest.mock import patch, MagicMock
-import json
 
 from yt_meta import YtMeta
 
@@ -172,16 +173,16 @@ def test_channel_page_caching():
     </body></html>
     """
     mock_response.raise_for_status = MagicMock()
-    
+
     with patch("httpx.Client") as mock_client:
         mock_client.return_value.get.return_value = mock_response
         client = YtMeta()
-        
+
         # First call should trigger a network request
         result1 = client.get_channel_metadata("https://www.youtube.com/channel/test")
         mock_client.return_value.get.assert_called_once()
         assert result1 is not None
-        
+
         # Second call should hit the cache
         result2 = client.get_channel_metadata("https://www.youtube.com/channel/test")
         mock_client.return_value.get.assert_called_once() # Should not be called again
@@ -201,11 +202,11 @@ def test_continuation_caching(mock_response):
 
         # Mock the initial data needed for continuation
         ytcfg = {"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {}}
-        
+
         # First call should trigger a POST
         client._get_continuation_data("test_token", ytcfg)
         mock_client.return_value.post.assert_called_once()
-        
+
         # Second call should hit the cache
         client._get_continuation_data("test_token", ytcfg)
         mock_client.return_value.post.assert_called_once() # Should not be called again

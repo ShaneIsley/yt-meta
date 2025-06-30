@@ -56,11 +56,11 @@ def validate_filters(filters: dict):
             # Type check the value
             value_type_valid = False
             if field == "publish_date":
-                if isinstance(value, (str, date, datetime)):
+                if isinstance(value, str | date | datetime):
                     value_type_valid = True
             elif op in TEXT_OPERATORS and isinstance(value, str):
                 value_type_valid = True
-            elif op in NUMERIC_OPERATORS and isinstance(value, (int, float)):
+            elif op in NUMERIC_OPERATORS and isinstance(value, int | float):
                 value_type_valid = True
             elif op in LIST_OPERATORS and isinstance(value, list):
                 value_type_valid = True
@@ -71,4 +71,4 @@ def validate_filters(filters: dict):
                 raise TypeError(
                     f"Invalid value type for '{field}' filter. "
                     f"Expected {schema['type']}, got {type(value)}"
-                ) 
+                )

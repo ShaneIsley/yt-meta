@@ -1,6 +1,7 @@
-import sys
-import os
 import json
+import os
+import sys
+
 from yt_meta.comment_fetcher import CommentFetcher
 
 # Ensure the package is in the path
@@ -13,10 +14,10 @@ def main():
     This is a debugging script to inspect the live API structure.
     """
     video_url = "https://www.youtube.com/watch?v=feT7_wVmgv0"
-    
+
     # We need to access the raw response, so we'll temporarily modify the fetcher
     original_fetch_continuation = CommentFetcher._fetch_continuation
-    
+
     continuation_data_holder = {}
 
     def new_fetch_continuation(self, token, key, context):
@@ -27,12 +28,12 @@ def main():
         return {"frameworkUpdates": {}}
 
     CommentFetcher._fetch_continuation = new_fetch_continuation
-    
+
     fetcher = CommentFetcher()
 
     print("--- Calling get_comments to trigger the fetch ---")
     # Fetch just enough to trigger one continuation call
-    comments_generator = fetcher.get_comments(video_url, limit=25) 
+    comments_generator = fetcher.get_comments(video_url, limit=25)
     try:
         for _ in comments_generator:
             pass
@@ -44,10 +45,10 @@ def main():
         print(json.dumps(continuation_data_holder['data'], indent=2))
     else:
         print("Failed to capture continuation data.")
-    
+
     # Restore original method
     CommentFetcher._fetch_continuation = original_fetch_continuation
 
 
 if __name__ == "__main__":
-    main() 
+    main()

@@ -1,14 +1,12 @@
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-import logging
 
 from tests.conftest import get_fixture
-from yt_meta import MetadataParsingError, VideoUnavailableError, YtMeta
 from yt_meta.client import YtMeta
-from yt_meta.exceptions import VideoUnavailableError
-
+from yt_meta.exceptions import MetadataParsingError, VideoUnavailableError
 
 # Define the path to our test fixture
 FIXTURE_PATH = "tests/fixtures"

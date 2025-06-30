@@ -5,7 +5,6 @@ import pytest
 from yt_meta import parsing
 from yt_meta.utils import _deep_get
 
-
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
@@ -51,7 +50,7 @@ def test_extract_videos_from_playlist(playlist_fixture, expected_video_count, ex
             initial_data,
             "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.playlistVideoListRenderer",
         )
-    
+
     videos, continuation_token = parsing.extract_videos_from_playlist_renderer(renderer)
 
     assert len(videos) == expected_video_count
@@ -84,4 +83,4 @@ def test_get_playlist_videos_stops_at_id(client, mocker):
     assert len(videos) == 3
     assert videos[0]["video_id"] == "vid1"
     assert videos[1]["video_id"] == "vid2"
-    assert videos[2]["video_id"] == "vid3" 
+    assert videos[2]["video_id"] == "vid3"

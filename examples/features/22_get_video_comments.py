@@ -2,6 +2,7 @@
 Example: Fetching and filtering video comments.
 """
 import logging
+
 from yt_meta import YtMeta
 
 # Configure logging
@@ -9,13 +10,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 # --- Configuration ---
-VIDEO_URL = "https://www.youtube.com/watch?v=B68agR-OeJM" 
+VIDEO_URL = "https://www.youtube.com/watch?v=B68agR-OeJM"
 MAX_COMMENTS = 50
 
 # --- Script ---
 if __name__ == "__main__":
     yt_meta = YtMeta()
-    
+
     logger.info(f"Fetching up to {MAX_COMMENTS} comments for video: {VIDEO_URL}")
 
     # The sort_by parameter is no longer supported in this implementation
@@ -33,4 +34,4 @@ if __name__ == "__main__":
         print(f"  Likes: {comment['likes']}")
         print("-" * 20)
 
-    logger.info(f"Finished fetching {comment_count} comments.") 
+    logger.info(f"Finished fetching {comment_count} comments.")

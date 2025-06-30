@@ -1,5 +1,6 @@
 import logging
 import time
+
 from yt_meta import YtMeta
 
 # Configure logging
@@ -29,7 +30,7 @@ def demonstrate_hierarchical_comments():
     comments_by_id = {c['id']: c for c in all_comments}
     top_level_comments = []
     replies_by_parent = {}
-    
+
     for comment in all_comments:
         if comment['parent_id']:
             # This is a reply
@@ -47,7 +48,7 @@ def demonstrate_hierarchical_comments():
     print(f"Top-level comments: {len(top_level_comments)}")
     print(f"Reply threads: {len(replies_by_parent)}")
     print(f"Total replies: {sum(len(replies) for replies in replies_by_parent.values())}")
-    
+
     # Show reply distribution
     if replies_by_parent:
         print("\n=== REPLY DISTRIBUTION ===")
@@ -58,7 +59,7 @@ def demonstrate_hierarchical_comments():
                 print(f"  Text: {parent_comment['text'][:60]}...")
             else:
                 print(f"Parent ID: {parent_id} ({len(replies)} replies) - Parent not in this batch")
-            
+
             for i, reply in enumerate(replies[:3]):  # Show first 3 replies
                 print(f"  ↳ Reply {i+1}: {reply['author']}")
                 print(f"    Text: {reply['text'][:50]}...")
@@ -80,4 +81,4 @@ def demonstrate_hierarchical_comments():
     logger.info(f"Completed hierarchical comment analysis in {duration:.2f} seconds.")
 
 if __name__ == "__main__":
-    demonstrate_hierarchical_comments() 
+    demonstrate_hierarchical_comments()

@@ -1,7 +1,8 @@
 # examples/features/01_get_video_metadata.py
 
-from yt_meta import YtMeta
 from rich.pretty import pprint
+
+from yt_meta import YtMeta
 
 # --- 1. Initialize the client ---
 # You only need to create one instance of the client for your application.

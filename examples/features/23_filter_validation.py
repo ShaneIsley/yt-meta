@@ -51,4 +51,4 @@ except TypeError as e:
     print(f"Successfully caught expected error: {e}\n")
 
 
-print("Filter validation demonstration complete.") 
+print("Filter validation demonstration complete.")

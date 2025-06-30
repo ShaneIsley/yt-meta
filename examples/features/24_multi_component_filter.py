@@ -7,6 +7,7 @@ will ensure that all of them are met for an item to be included in the
 results.
 """
 import itertools
+
 from yt_meta import YtMeta
 
 client = YtMeta()
@@ -34,4 +35,4 @@ for video in itertools.islice(videos_generator, 5):
     views = video.get('view_count', 0)
     print(f"- '{video.get('title')}' ({views:,} views)")
 
-print("\nMulti-component filter demonstration complete.") 
+print("\nMulti-component filter demonstration complete.")

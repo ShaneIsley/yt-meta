@@ -1,10 +1,11 @@
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 import pytest
 import requests
 from httpx import Client
 
-from yt_meta.fetchers import ChannelFetcher, VideoFetcher
 from yt_meta.exceptions import MetadataParsingError, VideoUnavailableError
+from yt_meta.fetchers import ChannelFetcher, VideoFetcher
 
 
 @pytest.fixture
@@ -102,4 +103,4 @@ def test_get_channel_shorts_with_full_metadata_integration(fetcher):
     assert len(shorts) > 0
     short = shorts[0]
     assert "view_count" in short
-    assert "publish_date" in short 
+    assert "publish_date" in short

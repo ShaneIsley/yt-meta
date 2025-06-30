@@ -1,20 +1,20 @@
 # yt_meta/client.py
 
 import logging
+from collections.abc import Generator, MutableMapping
 from datetime import date, datetime
-from typing import Optional, Union, Generator, MutableMapping
 
 import httpx
 
 from . import parsing
+from .comment_fetcher import CommentFetcher
 from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
+from .fetchers import ChannelFetcher, PlaylistFetcher, VideoFetcher
 from .filtering import (
-    apply_filters,
     apply_comment_filters,
+    apply_filters,
 )
-from .fetchers import VideoFetcher, ChannelFetcher, PlaylistFetcher
-from .comment_fetcher import CommentFetcher
 from .utils import _deep_get
 from .validators import validate_filters
 
@@ -27,7 +27,7 @@ class YtMeta:
     This class acts as a Facade, delegating calls to specialized fetcher classes.
     """
 
-    def __init__(self, cache: Optional[MutableMapping] = None):
+    def __init__(self, cache: MutableMapping | None = None):
         self.cache = {} if cache is None else cache
         self.logger = logger
         self.session = httpx.Client()
@@ -36,7 +36,7 @@ class YtMeta:
         self._playlist_fetcher = PlaylistFetcher(self.session, self.cache, self._video_fetcher)
         self._comment_fetcher = CommentFetcher()
 
-    def clear_cache(self, prefix: Optional[str] = None):
+    def clear_cache(self, prefix: str | None = None):
         """
         Clears the cache.
 
@@ -80,9 +80,9 @@ class YtMeta:
         channel_url: str,
         force_refresh: bool = False,
         fetch_full_metadata: bool = False,
-        start_date: Optional[Union[str, date]] = None,
-        end_date: Optional[Union[str, date]] = None,
-        filters: Optional[dict] = None,
+        start_date: str | date | None = None,
+        end_date: str | date | None = None,
+        filters: dict | None = None,
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
@@ -118,9 +118,9 @@ class YtMeta:
         self,
         playlist_id: str,
         fetch_full_metadata: bool = False,
-        start_date: Optional[Union[str, date]] = None,
-        end_date: Optional[Union[str, date]] = None,
-        filters: Optional[dict] = None,
+        start_date: str | date | None = None,
+        end_date: str | date | None = None,
+        filters: dict | None = None,
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
@@ -153,7 +153,7 @@ class YtMeta:
         channel_url: str,
         force_refresh: bool = False,
         fetch_full_metadata: bool = False,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
@@ -180,7 +180,7 @@ class YtMeta:
         youtube_url: str,
         sort_by: str = "top",
         limit: int = -1,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> Generator[dict, None, None]:
         """
         Fetches comments for a given YouTube video.
@@ -196,7 +196,7 @@ class YtMeta:
         """
         video_id = self._video_fetcher.get_video_id(youtube_url)
         comments_generator = self._comment_fetcher.get_comments(video_id, sort_by=sort_by)
-        
+
         # Apply filters if any
         if filters:
             validate_filters(filters)
@@ -295,7 +295,7 @@ class YtMeta:
         self,
         channel_url: str,
         force_refresh: bool,
-        final_start_date: Optional[date],
+        final_start_date: date | None,
     ) -> Generator[dict, None, None]:
         try:
             initial_data, ytcfg, _ = self._get_channel_page_data(
@@ -429,8 +429,8 @@ class YtMeta:
             return self.cache[cache_key]
         data = {"context": ytcfg["INNERTUBE_CONTEXT"], "continuation": token}
         response = self.session.post(
-            f"https://www.youtube.com/youtubei/v1/browse?key={ytcfg['INNERTUBE_API_KEY']}", 
-            json=data, 
+            f"https://www.youtube.com/youtubei/v1/browse?key={ytcfg['INNERTUBE_API_KEY']}",
+            json=data,
             timeout=10
         )
         response.raise_for_status()
@@ -438,7 +438,7 @@ class YtMeta:
         self.cache[cache_key] = result
         return result
 
-    def _resolve_date(self, d: Optional[Union[str, date]]) -> Optional[date]:
+    def _resolve_date(self, d: str | date | None) -> date | None:
         if isinstance(d, str):
             parsed_date = parse_relative_date_string(d)
             if parsed_date:

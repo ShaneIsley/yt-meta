@@ -1,6 +1,6 @@
-from typing import MutableMapping, Optional, TYPE_CHECKING
 import logging
-import dateparser
+from collections.abc import MutableMapping
+from typing import TYPE_CHECKING
 
 from httpx import Client
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class _BaseFetcher:
     """A base class for fetchers that process lists of videos."""
-    def __init__(self, session: Client, cache: Optional[MutableMapping], video_fetcher: "VideoFetcher"):
+    def __init__(self, session: Client, cache: MutableMapping | None, video_fetcher: "VideoFetcher"):
         self.session = session
         self.cache = cache
         self.video_fetcher = video_fetcher
@@ -65,7 +65,7 @@ class _BaseFetcher:
 
 class VideoFetcher:
     """Fetches data related to a single YouTube video."""
-    def __init__(self, session: Client, cache: Optional[MutableMapping]):
+    def __init__(self, session: Client, cache: MutableMapping | None):
         self.session = session
         self.cache = cache
 
@@ -119,7 +119,7 @@ class VideoFetcher:
 
 class ChannelFetcher(_BaseFetcher):
     """Fetches data related to a YouTube channel's videos and shorts."""
-    def __init__(self, session: Client, cache: Optional[MutableMapping], video_fetcher: VideoFetcher):
+    def __init__(self, session: Client, cache: MutableMapping | None, video_fetcher: VideoFetcher):
         super().__init__(session, cache, video_fetcher)
 
     def _get_channel_page_cache_key(self, channel_url: str) -> str:
@@ -361,7 +361,7 @@ class ChannelFetcher(_BaseFetcher):
 
 class PlaylistFetcher(_BaseFetcher):
     """Fetches data related to a YouTube playlist."""
-    def __init__(self, session: Client, cache: Optional[MutableMapping], video_fetcher: VideoFetcher):
+    def __init__(self, session: Client, cache: MutableMapping | None, video_fetcher: VideoFetcher):
         super().__init__(session, cache, video_fetcher)
 
     def _get_raw_playlist_videos_generator(self, playlist_id: str):
@@ -433,4 +433,4 @@ class PlaylistFetcher(_BaseFetcher):
             slow_filters=slow_filters,
             stop_at_video_id=stop_at_video_id,
             max_videos=max_videos,
-        ) 
+        )

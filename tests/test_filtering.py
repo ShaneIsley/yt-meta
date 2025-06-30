@@ -1,5 +1,5 @@
+
 import pytest
-from datetime import date
 
 from yt_meta import YtMeta
 from yt_meta.filtering import apply_filters, partition_filters
@@ -106,7 +106,7 @@ def test_live_duration_filter_for_shorts(client: YtMeta):
     """
     # Use bashbunni as it has shorts content
     channel_url = "https://www.youtube.com/@bashbunni"
-    
+
     filters = {"duration_seconds": {"lte": 60, "gt": 0}}
 
     try:
@@ -177,7 +177,7 @@ def test_apply_filters_description_snippet():
         {"description_snippet": "A great video about cooking."},
         {"description_snippet": "A tutorial on pyTEst and other tools."},
     ]
-    
+
     # Test 'contains'
     filters_py = {"description_snippet": {"contains": "python"}}
     filtered_py = [v for v in videos if apply_filters(v, filters_py)]

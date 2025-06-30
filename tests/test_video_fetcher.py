@@ -3,9 +3,9 @@ from unittest.mock import patch
 import pytest
 from httpx import Client
 
-from yt_meta.fetchers import VideoFetcher
 from yt_meta.comment_fetcher import CommentFetcher
 from yt_meta.exceptions import VideoUnavailableError
+from yt_meta.fetchers import VideoFetcher
 
 
 @pytest.fixture
@@ -45,4 +45,4 @@ def test_get_video_comments_integration():
     assert len(comment_list) > 0
     assert "text" in comment_list[0]
     assert "author" in comment_list[0]
-    assert "likes" in comment_list[0] 
+    assert "likes" in comment_list[0]

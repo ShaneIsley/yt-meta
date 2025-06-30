@@ -1,5 +1,6 @@
-import pytest
 from datetime import date
+
+import pytest
 
 from yt_meta.validators import validate_filters
 
@@ -54,4 +55,4 @@ def test_validate_filters_valid_filters():
     try:
         validate_filters(filters)
     except (ValueError, TypeError) as e:
-        pytest.fail(f"Valid filters raised an unexpected exception: {e}") 
+        pytest.fail(f"Valid filters raised an unexpected exception: {e}")

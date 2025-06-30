@@ -9,9 +9,10 @@ set of specified criteria.
 import logging
 import re
 from datetime import date, datetime
-import dateparser
-from yt_meta.validators import FILTER_SCHEMA
 
+import dateparser
+
+from yt_meta.validators import FILTER_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def _check_date_condition(video_value, filter_value, op) -> bool:
     if isinstance(filter_value, str):
         filter_value = dateparser.parse(filter_value, settings={"PREFER_DATES_FROM": "past"})
 
-    if not isinstance(video_value, (datetime, date)) or not isinstance(filter_value, (datetime, date)):
+    if not isinstance(video_value, datetime | date) or not isinstance(filter_value, datetime | date):
         return False # Cannot compare if parsing failed
 
     # Standardize to date objects for comparison
@@ -236,10 +237,10 @@ def apply_comment_filters(comment: dict, filters: dict) -> bool:
                 if not _check_date_condition(comment_value, condition_value, op):
                     passes = False
                     break
-        
+
         if not passes:
             return False
-            
+
     return True
 
 
@@ -247,11 +248,4 @@ def _check_boolean_condition(value: bool, condition_dict: dict) -> bool:
     """
     Checks if a boolean value meets the 'eq' condition.
     """
-    op = next(iter(condition_dict))
-    filter_value = condition_dict[op]
-
-    if op != "eq":
-        logger.warning("Unrecognized boolean operator: %s. Only 'eq' is supported.", op)
-        return False
-    
-    return value == filter_value 
+    return value == condition_dict.get("eq")

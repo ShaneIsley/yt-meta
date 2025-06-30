@@ -1,5 +1,6 @@
 import logging
 import time
+
 from yt_meta import YtMeta
 
 # Configure logging
@@ -30,7 +31,7 @@ def demonstrate_sorting(yt_meta: YtMeta, sort_order: str):
     # Group comments by parent-child relationships
     comments_by_id = {c['id']: c for c in comment_list}
     top_level_comments = []
-    
+
     for comment in comment_list:
         if comment['parent_id']:
             # This is a reply - add it to parent's replies list
@@ -40,7 +41,7 @@ def demonstrate_sorting(yt_meta: YtMeta, sort_order: str):
         else:
             # This is a top-level comment
             top_level_comments.append(comment)
-    
+
     # Display hierarchical structure
     for i, comment in enumerate(top_level_comments):
         print(f"Comment {i+1}:")
@@ -51,7 +52,7 @@ def demonstrate_sorting(yt_meta: YtMeta, sort_order: str):
         print(f"  Published: {comment['published_time']}")
         clean_text = comment['text'][:80].replace('\\n', ' ')
         print(f"  Text: '{clean_text}...'")
-        
+
         # Show replies if any
         if 'replies' in comment:
             for r_idx, reply in enumerate(comment['replies']):
@@ -71,9 +72,9 @@ def demonstrate_sorting(yt_meta: YtMeta, sort_order: str):
 
 if __name__ == "__main__":
     yt_meta = YtMeta()
-    
+
     # Demonstrate fetching recent comments (chronological order)
     demonstrate_sorting(yt_meta, sort_order="recent")
 
     # Demonstrate fetching top comments (popularity order)
-    demonstrate_sorting(yt_meta, sort_order="top") 
+    demonstrate_sorting(yt_meta, sort_order="top")

@@ -5,7 +5,6 @@ This module contains pure functions for parsing data from YouTube's HTML and JSO
 import json
 import logging
 import re
-from typing import Optional
 
 import dateparser
 
@@ -27,7 +26,7 @@ def _regex_search(text: str, pattern: str, default: str = "", flags: int = 0) ->
     return match.group(1) if match else default
 
 
-def find_ytcfg(html: str) -> Optional[dict]:
+def find_ytcfg(html: str) -> dict | None:
     """
     Finds and parses the `ytcfg` data from a page's HTML source.
 
@@ -45,7 +44,7 @@ def find_ytcfg(html: str) -> Optional[dict]:
     return None
 
 
-def extract_and_parse_json(html_content: str, variable_name: str) -> Optional[dict]:
+def extract_and_parse_json(html_content: str, variable_name: str) -> dict | None:
     """
     Extracts and parses a JSON object assigned to a JavaScript variable in HTML content.
     """
