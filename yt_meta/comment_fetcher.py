@@ -1,6 +1,7 @@
 import json
 import re
 from collections.abc import Callable
+from datetime import date
 
 import httpx
 
@@ -24,7 +25,8 @@ class CommentFetcher:
         sort_by: str = "top",
         limit: int = 100,
         progress_callback: Callable[[int], None] | None = None,
-        include_reply_continuation: bool = False
+        include_reply_continuation: bool = False,
+        since_date: date | None = None,
     ):
         """
         Fetch comments for a YouTube video.
@@ -35,10 +37,15 @@ class CommentFetcher:
             limit: The maximum number of comments to fetch
             progress_callback: A function to be called with the number of comments fetched
             include_reply_continuation: If True, include reply continuation tokens in comment data
+            since_date: If provided, only fetch comments published on or after this date.
+                        This requires `sort_by` to be 'recent'.
 
         Yields:
             dict: A dictionary representing a single comment.
         """
+        if since_date and sort_by != 'recent':
+            raise ValueError("Filtering with 'since_date' requires 'sort_by' to be 'recent'.")
+
         # 1. Get initial page
         response = self._client.get(const.YOUTUBE_VIDEO_URL.format(youtube_id=youtube_id))
         response.raise_for_status()
@@ -74,6 +81,11 @@ class CommentFetcher:
 
             # Parse and yield comments from the current page
             comments = self._parse_comments(continuation_data)
+            if not comments:
+                break # No more comments on this page
+
+            last_comment_date = comments[-1].get('publish_date')
+            stop_pagination = since_date and last_comment_date and last_comment_date < since_date
 
             # If requested, collect reply continuation tokens for each comment
             if include_reply_continuation:
@@ -81,6 +93,10 @@ class CommentFetcher:
                 reply_continuation_map.update(thread_reply_map)
 
             for comment in comments:
+                if since_date and comment.get('publish_date') and comment['publish_date'] < since_date:
+                    stop_pagination = True
+                    break # Stop processing comments on this page
+
                 if fetched_count < limit:
                     # Add reply continuation token if requested and available
                     if include_reply_continuation and comment['id'] in reply_continuation_map:
@@ -93,9 +109,12 @@ class CommentFetcher:
 
             if progress_callback:
                 progress_callback(fetched_count)
-
-            # Find continuation for the next page of main comments
+            
+            # Find continuation for the next page of main comments BEFORE checking to stop
             current_continuation = self._find_comment_page_continuation(continuation_data)
+
+            if stop_pagination:
+                break
 
             # Collect any 'show replies' continuations to process later (only if not including reply continuations separately)
             if not include_reply_continuation:

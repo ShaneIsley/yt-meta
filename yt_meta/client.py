@@ -178,7 +178,8 @@ class YtMeta:
         youtube_url: str,
         limit: int = 100,
         sort_by: str = "top",
-        progress_callback: Callable[[int], None] | None = None
+        progress_callback: Callable[[int], None] | None = None,
+        since_date: date | str | None = None,
     ):
         """
         Get comments for a specific YouTube video.
@@ -189,16 +190,20 @@ class YtMeta:
             sort_by (str, optional): The order to sort comments by. Can be 'top' or 'recent'. Defaults to "top".
             progress_callback (Callable[[int], None], optional): A function to be called
                 with the number of comments fetched so far. Defaults to None.
+            since_date (date | str | None, optional): The date from which to fetch comments.
+                Can be a date object, a string in the format "YYYY-MM-DD", or None for no filter.
 
         Yields:
             dict: A dictionary representing a single comment.
         """
+        resolved_date = self._resolve_date(since_date)
         video_id = self._video_fetcher.get_video_id(youtube_url)
         comments_generator = self._comment_fetcher.get_comments(
             video_id,
             limit=limit,
             sort_by=sort_by,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            since_date=resolved_date,
         )
 
         yield from comments_generator

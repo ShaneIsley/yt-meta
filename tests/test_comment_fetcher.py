@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from datetime import date
 
 import pytest
 
@@ -527,3 +528,63 @@ def test_get_comment_replies(fetcher, continuation_json, mocker):
     call_args = fetcher._client.post.call_args
     payload = call_args[1]['json']
     assert payload['continuation'] == "fake_reply_token"
+
+def test_get_comments_since_date_requires_recent_sort(fetcher):
+    """
+    Verify that using since_date without sort_by='recent' raises a ValueError.
+    """
+    with pytest.raises(ValueError, match="requires 'sort_by' to be 'recent'"):
+        list(fetcher.get_comments("any_id", sort_by="top", since_date=date(2024, 1, 1)))
+
+
+def test_get_comments_since_date_stops_pagination(fetcher, mocker):
+    """
+    Verify that pagination stops when a comment older than since_date is found.
+    """
+    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={"recent": {"continuationCommand": {"token": "fake_token"}}})
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value={})
+    mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
+
+    # Mock two pages of comments, where the second page contains a comment older than the target date.
+    page1_comments = [
+        {"id": "1", "publish_date": date(2024, 7, 15)},
+        {"id": "2", "publish_date": date(2024, 7, 14)},
+    ]
+    page2_comments = [
+        {"id": "3", "publish_date": date(2024, 7, 13)}, # The target date
+        {"id": "4", "publish_date": date(2024, 7, 12)}, # This should cause pagination to stop
+    ]
+
+    mock_post = mocker.patch.object(fetcher._client, 'post')
+    # We only expect two POST calls. The loop should break before a third.
+    mock_post.side_effect = [
+        mocker.Mock(status_code=200, json=lambda: {"response": "page1"}),
+        mocker.Mock(status_code=200, json=lambda: {"response": "page2"}),
+    ]
+
+    mock_parse = mocker.patch.object(fetcher, '_parse_comments')
+    mock_parse.side_effect = [page1_comments, page2_comments]
+    
+    # The continuation token should be found for the first page, but the loop should exit before using the second.
+    mock_find_continuation = mocker.patch.object(fetcher, '_find_comment_page_continuation')
+    mock_find_continuation.side_effect = [
+        {"continuationCommand": {"token": "next_page_token"}},
+        {"continuationCommand": {"token": "third_page_token"}}, # This will be found, but not used
+    ]
+
+    # Run the generator
+    comments = list(fetcher.get_comments(
+        "any_id",
+        sort_by="recent",
+        since_date=date(2024, 7, 13)
+    ))
+
+    # Assertions
+    assert len(comments) == 3, "Should yield the 3 comments on or after the since_date"
+    assert [c['id'] for c in comments] == ["1", "2", "3"]
+    
+    # Crucially, we should only have called the 'post' method twice.
+    # The third page should never be requested.
+    assert mock_post.call_count == 2, "Should stop fetching after the second page"
+    assert mock_parse.call_count == 2
+    assert mock_find_continuation.call_count == 2

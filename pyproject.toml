@@ -49,6 +49,7 @@ filterwarnings = [
 [dependency-groups]
 dev = [
     "pytest>=8.4.1",
+    "tqdm>=4.67.1",
 ]
 
 [tool.ruff]
