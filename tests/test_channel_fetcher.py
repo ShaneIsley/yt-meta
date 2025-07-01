@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
-import requests
 from httpx import Client
+import httpx
 
 from yt_meta.exceptions import MetadataParsingError, VideoUnavailableError
 from yt_meta.fetchers import ChannelFetcher, VideoFetcher
@@ -35,10 +35,13 @@ def test_get_channel_metadata(channel_fetcher, mocker, bulwark_channel_initial_d
     assert metadata["title"] == "The Bulwark"
 
 
-def test_get_channel_page_data_fails_on_request_error(channel_fetcher):
-    channel_fetcher.session.get.side_effect = requests.exceptions.RequestException("Test error")
+def test_get_channel_metadata_fails_on_request_error(fetcher, mocker):
+    """
+    Test that get_channel_metadata raises VideoUnavailableError on a request error.
+    """
+    mocker.patch.object(fetcher.session, 'get', side_effect=httpx.RequestError("mock error"))
     with pytest.raises(VideoUnavailableError):
-        channel_fetcher._get_channel_page_data("test_channel")
+        fetcher.get_channel_metadata("any_url")
 
 
 @patch("yt_meta.fetchers.ChannelFetcher._get_channel_page_data", return_value=(None, None, "bad data"))
