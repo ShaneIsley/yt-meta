@@ -50,13 +50,14 @@ The "Ranked Feature Implementation Plan" has been fully executed with excellent 
     - `get_comment_replies()` - Fetch replies for specific comments
     - Comprehensive test coverage and example script
     - Enables efficient, hierarchical comment handling
+6.  **Efficient Date Filtering**: ✅ **Completed.** Implemented `since_date` parameter in `get_video_comments` with smart pagination to fetch comments efficiently since a specific date.
 
 #### Advanced Features ✅ **COMPLETE**
-6.  **Pinned Comment Detection:** ✅ **Already Complete.** The `is_pinned` flag was already implemented and tested.
-7.  **Author Badges:** ✅ **Already Complete.** The `author_badges` list was already implemented and tested.
+7.  **Pinned Comment Detection:** ✅ **Already Complete.** The `is_pinned` flag was already implemented and tested.
+8.  **Author Badges:** ✅ **Already Complete.** The `author_badges` list was already implemented and tested.
 
 #### Priority 2: Architectural Improvements 🔵 **DEFERRED**
-8.  **Implement Asynchronous API:** 🔵 **Deferred to future branch.** Will be addressed separately to maintain focus.
+9.  **Implement Asynchronous API:** 🔵 **Deferred to future branch.** Will be addressed separately to maintain focus.
 
 ### 5. Current Backlog and Recommendations
 

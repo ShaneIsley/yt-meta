@@ -208,6 +208,32 @@ for comment in top_comments:
     print(f\"  - Replies: {comment['reply_count']} | Is Reply: {comment['is_reply']}\")
 ```
 
+#### Fetching Comments Since a Specific Date
+
+You can efficiently fetch comments posted since a specific date by providing the `since_date` parameter. This feature **requires `sort_by='recent'`** to work efficiently. The library will fetch pages of comments until it finds a comment older than the target date, at which point it stops to minimize network requests.
+
+**Example:**
+```python
+from datetime import date, timedelta
+from yt_meta import YtMeta
+
+client = YtMeta()
+video_url = "https://www.youtube.com/watch?v=B68agR-OeJM"
+
+# Get comments from the last 30 days
+thirty_days_ago = date.today() - timedelta(days=30)
+
+recent_comments = client.get_video_comments(
+    video_url,
+    sort_by='recent',
+    since_date=thirty_days_ago,
+    limit=500 # The fetch will stop before this if all recent comments are found
+)
+
+for comment in recent_comments:
+    print(f"- {comment['publish_date']}: {comment['text'][:80]}...")
+```
+
 ## Caching
 
 `yt-meta` includes a flexible caching system to improve performance and avoid re-fetching data from YouTube.
