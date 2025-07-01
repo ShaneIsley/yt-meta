@@ -6,6 +6,7 @@ from datetime import date
 import httpx
 
 from . import constants as const
+from yt_meta import date_utils
 
 YT_CFG_RE = r'ytcfg\.set\s*\(\s*({.+?})\s*\)\s*;'
 YT_INITIAL_DATA_RE = r'(?:window\s*\[\s*["\']ytInitialData["\']\s*\]|ytInitialData)\s*=\s*({.+?})\s*;\s*(?:var\s+meta|</script|\n)'
@@ -398,21 +399,21 @@ class CommentFetcher:
         reply_count_str = str(toolbar.get(const.KEY_REPLY_COUNT, 0))
         replies = int(reply_count_str) if reply_count_str.isdigit() else 0
 
-        return {
-            "id": properties.get("commentId"),
-            "text": text,
-            "author": author.get(const.KEY_DISPLAY_NAME),
-            "author_channel_id": author.get(const.KEY_CHANNEL_ID),
-            "author_avatar_url": author.get(const.KEY_AVATAR_THUMBNAIL_URL),
-            "likes": likes,
-            "is_reply": properties.get("replyLevel", 0) > 0,
-            "is_by_owner": is_by_owner,
-            "is_pinned": properties.get(const.KEY_IS_PINNED, False),
-            "is_hearted_by_owner": toolbar.get("heartIsActive", False),
-            "reply_count": replies,
-            "published_time": properties.get(const.KEY_PUBLISHED_TIME, ""),
-            "author_badges": author_badges,
+        comment_data = {
+            "id": payload.get("commentId"),
+            "text": "".join(run.get("text") for run in payload.get("properties", {}).get("content", {}).get("runs", [])),
+            "author": payload.get("authorName"),
+            "author_channel_id": payload.get("authorChannelId"),
+            "author_avatar_url": payload.get("authorPhoto", {}).get("url"),
+            "publish_date": date_utils.parse_relative_date_string(payload.get("publishedTime")),
+            "like_count": int(payload.get("voteCount", 0)),
+            "is_reply": payload.get("isReply", False),
+            "reply_count": int(payload.get("replyCount", 0)),
+            "parent_id": payload.get("parentId"),
+            "is_pinned": payload.get("pinned"),
+            "author_badges": [badge.get("iconType") for badge in payload.get("authorBadges", []) if "iconType" in badge],
         }
+        return comment_data
 
     def _find_api_key_and_context(self, html_content: str) -> tuple[str, dict]:
         """Extracts the API key and Innertube context from the page source."""

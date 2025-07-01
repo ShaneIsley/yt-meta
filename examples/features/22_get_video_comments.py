@@ -30,7 +30,7 @@ if __name__ == "__main__":
         print(f"Comment {comment_count}:")
         print(f"  Author: {comment['author']} (Channel: {comment['author_channel_id']})")
         print(f"  Text: '{comment['text'][:100]}...'")
-        print(f"  Likes: {comment['likes']} | Replies: {comment['reply_count']} | Is a Reply: {comment['is_reply']}")
+        print(f"  Likes: {comment['like_count']} | Replies: {comment['reply_count']} | Is a Reply: {comment['is_reply']}")
         print("-" * 20)
 
     logger.info(f"Finished fetching {comment_count} 'top' comments.")
@@ -49,7 +49,7 @@ if __name__ == "__main__":
         print(f"Comment {comment_count}:")
         print(f"  Author: {comment['author']} (Channel: {comment['author_channel_id']})")
         print(f"  Text: '{comment['text'][:100]}...'")
-        print(f"  Likes: {comment['likes']} | Replies: {comment['reply_count']} | Is a Reply: {comment['is_reply']}")
+        print(f"  Likes: {comment['like_count']} | Replies: {comment['reply_count']} | Is a Reply: {comment['is_reply']}")
         print("-" * 20)
 
     logger.info(f"Finished fetching {comment_count} 'recent' comments.")

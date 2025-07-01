@@ -48,8 +48,8 @@ def demonstrate_sorting(yt_meta: YtMeta, sort_order: str):
         print(f"  ID: {comment['id']}")
         print(f"  Author: {comment['author']} (Channel ID: {comment['author_channel_id']})")
         print(f"  Avatar: {comment['author_avatar_url']}")
-        print(f"  Likes: {comment['likes']} | Replies: {comment['reply_count']}")
-        print(f"  Published: {comment['published_time']}")
+        print(f"  Likes: {comment['like_count']} | Replies: {comment['reply_count']}")
+        print(f"  Published: {comment['publish_date']}")
         clean_text = comment['text'][:80].replace('\\n', ' ')
         print(f"  Text: '{clean_text}...'")
 

@@ -100,21 +100,21 @@ def comprehensive_comment_fetch():
 
     # Show sample of top-level comments sorted by likes
     print("\n=== TOP COMMENTS BY ENGAGEMENT ===")
-    sorted_comments = sorted(top_level_comments, key=lambda x: x['likes'], reverse=True)
+    sorted_comments = sorted(top_level_comments, key=lambda x: x['like_count'], reverse=True)
     for i, comment in enumerate(sorted_comments[:5]):
         badges_str = f" (Badges: {', '.join(comment['author_badges'])})" if comment['author_badges'] else ""
-        print(f"#{i+1}: @{comment['author']}{badges_str} ({comment['likes']} likes)")
+        print(f"#{i+1}: @{comment['author']}{badges_str} ({comment['like_count']} likes)")
         print(f"  {comment['text'].strip()}")
-        print(f"  Replies: {comment['reply_count']} | Published: {comment['published_time']}")
+        print(f"  Replies: {comment['reply_count']} | Published: {comment['publish_date']}")
         print("")
 
     print("\nLAST 5 TOP COMMENTS (with badges if present):")
     last_five_comments = sorted_comments[-5:] if len(sorted_comments) > 5 else sorted_comments
     for i, comment in enumerate(last_five_comments):
         badges_str = f" (Badges: {', '.join(comment['author_badges'])})" if comment['author_badges'] else ""
-        print(f"#{len(sorted_comments) - len(last_five_comments) + i + 1}: @{comment['author']}{badges_str} ({comment['likes']} likes)")
+        print(f"#{len(sorted_comments) - len(last_five_comments) + i + 1}: @{comment['author']}{badges_str} ({comment['like_count']} likes)")
         print(f"  {comment['text'].strip()}")
-        print(f"  Replies: {comment['reply_count']} | Published: {comment['published_time']}")
+        print(f"  Replies: {comment['reply_count']} | Published: {comment['publish_date']}")
         print("")
 
     # Show comparison with browser count

@@ -73,7 +73,7 @@ def demonstrate_hierarchical_comments():
         print(f"Comment {i+1}:")
         print(f"  ID: {comment['id']}")
         print(f"  Author: {comment['author']}")
-        print(f"  Likes: {comment['likes']} | Replies: {comment['reply_count']}")
+        print(f"  Likes: {comment['like_count']} | Replies: {comment['reply_count']}")
         print(f"  Text: {comment['text'][:80]}...")
         print()
 
