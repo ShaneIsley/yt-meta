@@ -296,3 +296,64 @@ def test_ytmeta_initialization():
     client_with_cache = YtMeta(cache=my_cache)
     assert client_with_cache.cache is my_cache
     assert client_with_cache.cache["key"] == "value"
+
+
+def test_get_video_comments_with_reply_tokens(client, mocker):
+    """Test getting video comments with reply continuation tokens."""
+    mock_generator = iter([
+        {"id": "comment1", "text": "Test comment 1", "reply_continuation_token": "token1"},
+        {"id": "comment2", "text": "Test comment 2"},
+        {"id": "comment3", "text": "Test comment 3", "reply_continuation_token": "token3"}
+    ])
+
+    mocker.patch.object(client._video_fetcher, 'get_video_id', return_value='test_id')
+    mocker.patch.object(client._comment_fetcher, 'get_comments', return_value=mock_generator)
+
+    comments = list(client.get_video_comments_with_reply_tokens("https://youtube.com/watch?v=test"))
+
+    assert len(comments) == 3
+    assert comments[0]["reply_continuation_token"] == "token1"
+    assert "reply_continuation_token" not in comments[1]
+    assert comments[2]["reply_continuation_token"] == "token3"
+
+    # Verify the comment fetcher was called with the correct parameters
+    client._comment_fetcher.get_comments.assert_called_once_with(
+        'test_id',
+        limit=100,
+        sort_by="top",
+        progress_callback=None,
+        include_reply_continuation=True
+    )
+
+
+def test_get_comment_replies(client, mocker):
+    """Test getting replies for a specific comment."""
+    mock_generator = iter([
+        {"id": "reply1", "text": "Reply 1", "is_reply": True},
+        {"id": "reply2", "text": "Reply 2", "is_reply": True}
+    ])
+
+    mocker.patch.object(client._video_fetcher, 'get_video_id', return_value='test_id')
+    mocker.patch.object(client._comment_fetcher, 'get_comment_replies', return_value=mock_generator)
+
+    replies = list(client.get_comment_replies(
+        "https://youtube.com/watch?v=test",
+        "fake_reply_token",
+        limit=50
+    ))
+
+    assert len(replies) == 2
+    assert all(reply["is_reply"] for reply in replies)
+
+    # Verify the comment fetcher was called with the correct parameters
+    client._comment_fetcher.get_comment_replies.assert_called_once_with(
+        'test_id',
+        reply_continuation_token="fake_reply_token",
+        limit=50,
+        progress_callback=None
+    )
+
+
+def test_get_channel_videos_basic(client, mocker):
+    """Test basic channel video fetching functionality."""
+    pass

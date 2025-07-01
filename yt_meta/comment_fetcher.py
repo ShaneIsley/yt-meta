@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Callable
+from collections.abc import Callable
 
 import httpx
 
@@ -19,11 +19,12 @@ class CommentFetcher:
         self._client = httpx.Client(headers={'User-Agent': const.USER_AGENT})
 
     def get_comments(
-        self, 
-        youtube_id: str, 
+        self,
+        youtube_id: str,
         sort_by: str = "top",
         limit: int = 100,
-        progress_callback: Callable[[int], None] | None = None
+        progress_callback: Callable[[int], None] | None = None,
+        include_reply_continuation: bool = False
     ):
         """
         Fetch comments for a YouTube video.
@@ -33,6 +34,10 @@ class CommentFetcher:
             sort_by: Comment sorting method ('top' or 'recent')
             limit: The maximum number of comments to fetch
             progress_callback: A function to be called with the number of comments fetched
+            include_reply_continuation: If True, include reply continuation tokens in comment data
+
+        Yields:
+            dict: A dictionary representing a single comment.
         """
         # 1. Get initial page
         response = self._client.get(const.YOUTUBE_VIDEO_URL.format(youtube_id=youtube_id))
@@ -54,6 +59,7 @@ class CommentFetcher:
 
         # 4. Use separate queues for comment pages and reply threads
         reply_continuations_queue = []
+        reply_continuation_map = {}  # Maps comment IDs to their reply continuation tokens
 
         # 5. Fetch all pages of the main, sorted comment thread
         while current_continuation and fetched_count < limit:
@@ -68,48 +74,122 @@ class CommentFetcher:
 
             # Parse and yield comments from the current page
             comments = self._parse_comments(continuation_data)
-            
+
+            # If requested, collect reply continuation tokens for each comment
+            if include_reply_continuation:
+                thread_reply_map = self._extract_reply_continuations_for_comments(continuation_data)
+                reply_continuation_map.update(thread_reply_map)
+
             for comment in comments:
                 if fetched_count < limit:
+                    # Add reply continuation token if requested and available
+                    if include_reply_continuation and comment['id'] in reply_continuation_map:
+                        comment['reply_continuation_token'] = reply_continuation_map[comment['id']]
+
                     yield comment
                     fetched_count += 1
                 else:
                     break
-            
+
             if progress_callback:
                 progress_callback(fetched_count)
 
             # Find continuation for the next page of main comments
             current_continuation = self._find_comment_page_continuation(continuation_data)
 
-            # Collect any 'show replies' continuations to process later
-            reply_continuations_queue.extend(self._find_reply_thread_continuations(continuation_data))
+            # Collect any 'show replies' continuations to process later (only if not including reply continuations separately)
+            if not include_reply_continuation:
+                reply_continuations_queue.extend(self._find_reply_thread_continuations(continuation_data))
 
-        # 6. After fetching all main comments, fetch all replies for all threads
-        processed_reply_tokens = set()
+        # 6. After fetching all main comments, fetch all replies for all threads (only if not including reply continuations separately)
+        if not include_reply_continuation:
+            processed_reply_tokens = set()
 
-        while reply_continuations_queue and fetched_count < limit:
-            current_continuation = reply_continuations_queue.pop(0)
-            token = current_continuation[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN]
+            while reply_continuations_queue and fetched_count < limit:
+                current_continuation = reply_continuations_queue.pop(0)
+                token = current_continuation[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN]
 
-            if token in processed_reply_tokens:
-                continue
-            processed_reply_tokens.add(token)
+                if token in processed_reply_tokens:
+                    continue
+                processed_reply_tokens.add(token)
+
+                payload = {
+                    const.KEY_CONTEXT: context,
+                    const.KEY_CONTINUATION: token
+                }
+
+                response = self._client.post(f"{const.YOUTUBE_API_URL}?key={api_key}", json=payload)
+                response.raise_for_status()
+                reply_data = response.json()
+
+                comments = self._parse_comments(reply_data)
+
+                for comment in comments:
+                    if fetched_count < limit:
+                        yield comment
+                        fetched_count += 1
+                    else:
+                        break
+
+                if progress_callback:
+                    progress_callback(fetched_count)
+
+                # A reply thread itself can be paginated, so add its continuation back to the queue
+                next_reply_page_continuation = self._find_comment_page_continuation(reply_data)
+                if next_reply_page_continuation:
+                    reply_continuations_queue.append(next_reply_page_continuation)
+
+    def get_comment_replies(
+        self,
+        youtube_id: str,
+        reply_continuation_token: str,
+        limit: int = 100,
+        progress_callback: Callable[[int], None] | None = None
+    ):
+        """
+        Fetch replies for a specific comment thread.
+
+        Args:
+            youtube_id: The YouTube video ID
+            reply_continuation_token: The continuation token for the specific reply thread
+            limit: The maximum number of replies to fetch
+            progress_callback: A function to be called with the number of replies fetched
+
+        Yields:
+            dict: A dictionary representing a single reply comment.
+        """
+        # Get initial page to extract API key and context
+        response = self._client.get(const.YOUTUBE_VIDEO_URL.format(youtube_id=youtube_id))
+        response.raise_for_status()
+        html_content = response.text
+
+        api_key, context = self._find_api_key_and_context(html_content)
+
+        fetched_count = 0
+        current_token = reply_continuation_token
+        processed_tokens = set()
+
+        # Fetch all pages of replies for this specific thread
+        while current_token and fetched_count < limit:
+            if current_token in processed_tokens:
+                break
+            processed_tokens.add(current_token)
 
             payload = {
                 const.KEY_CONTEXT: context,
-                const.KEY_CONTINUATION: token
+                const.KEY_CONTINUATION: current_token
             }
 
             response = self._client.post(f"{const.YOUTUBE_API_URL}?key={api_key}", json=payload)
             response.raise_for_status()
             reply_data = response.json()
 
-            comments = self._parse_comments(reply_data)
-            
-            for comment in comments:
+            # Parse and yield replies from the current page
+            replies = self._parse_comments(reply_data)
+
+            for reply in replies:
                 if fetched_count < limit:
-                    yield comment
+                    yield reply
                     fetched_count += 1
                 else:
                     break
@@ -117,10 +197,9 @@ class CommentFetcher:
             if progress_callback:
                 progress_callback(fetched_count)
 
-            # A reply thread itself can be paginated, so add its continuation back to the queue
-            next_reply_page_continuation = self._find_comment_page_continuation(reply_data)
-            if next_reply_page_continuation:
-                reply_continuations_queue.append(next_reply_page_continuation)
+            # Find continuation for the next page of replies in this thread
+            next_continuation = self._find_comment_page_continuation(reply_data)
+            current_token = next_continuation[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN] if next_continuation else None
 
     def _find_comment_page_continuation(self, data: dict) -> dict | None:
         """Finds the continuation for the next page of main comments."""
@@ -355,8 +434,39 @@ class CommentFetcher:
                 endpoints["top"] = endpoint
             elif "newest" in title:
                 endpoints["recent"] = endpoint
-        
+
         if not endpoints:
              raise ValueError("Could not find sort endpoints in initial data.")
-        
+
         return endpoints
+
+    def _extract_reply_continuations_for_comments(self, data: dict) -> dict:
+        """
+        Extract reply continuation tokens and map them to their parent comment IDs.
+        """
+        reply_continuation_map = {}
+
+        # Look for commentThreadRenderers, which contain comments and their reply buttons
+        thread_renderers = self._search_dict(data, const.KEY_COMMENT_THREAD_RENDERER)
+        for thread in thread_renderers:
+            # Extract the parent comment ID from the thread
+            comment_id = None
+            if 'comment' in thread:
+                comment_renderer = thread['comment'].get('commentRenderer', {})
+                if 'commentId' in comment_renderer:
+                    comment_id = comment_renderer['commentId']
+
+            # If we found a parent comment and it has replies
+            if comment_id and const.KEY_REPLIES in thread:
+                replies_renderer = thread[const.KEY_REPLIES].get(const.KEY_COMMENT_REPLIES_RENDERER)
+                if replies_renderer and const.KEY_CONTENTS in replies_renderer:
+                    for item in replies_renderer[const.KEY_CONTENTS]:
+                        continuation_item = item.get(const.KEY_CONTINUATION_ITEM_RENDERER)
+                        if continuation_item:
+                            endpoint = continuation_item.get(const.KEY_CONTINUATION_ENDPOINT)
+                            if endpoint and const.KEY_CONTINUATION_COMMAND in endpoint:
+                                token = endpoint[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN]
+                                reply_continuation_map[comment_id] = token
+                                break  # Only need the first continuation token for this comment
+
+        return reply_continuation_map

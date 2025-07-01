@@ -1,9 +1,8 @@
 # yt_meta/client.py
 
 import logging
-from collections.abc import Generator, MutableMapping
+from collections.abc import Callable, Generator, MutableMapping
 from datetime import date, datetime
-from typing import Callable
 
 import httpx
 
@@ -13,11 +12,9 @@ from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
 from .fetchers import ChannelFetcher, PlaylistFetcher, VideoFetcher
 from .filtering import (
-    apply_comment_filters,
     apply_filters,
 )
 from .utils import _deep_get
-from .validators import validate_filters
 
 logger = logging.getLogger(__name__)
 
@@ -190,7 +187,7 @@ class YtMeta:
             youtube_url (str): The full URL of the YouTube video.
             limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
             sort_by (str, optional): The order to sort comments by. Can be 'top' or 'recent'. Defaults to "top".
-            progress_callback (Callable[[int], None], optional): A function to be called 
+            progress_callback (Callable[[int], None], optional): A function to be called
                 with the number of comments fetched so far. Defaults to None.
 
         Yields:
@@ -205,6 +202,68 @@ class YtMeta:
         )
 
         yield from comments_generator
+
+    def get_video_comments_with_reply_tokens(
+        self,
+        youtube_url: str,
+        limit: int = 100,
+        sort_by: str = "top",
+        progress_callback: Callable[[int], None] | None = None
+    ):
+        """
+        Get comments for a specific YouTube video, including reply continuation tokens.
+
+        Args:
+            youtube_url (str): The full URL of the YouTube video.
+            limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
+            sort_by (str, optional): The order to sort comments by. Can be 'top' or 'recent'. Defaults to "top".
+            progress_callback (Callable[[int], None], optional): A function to be called
+                with the number of comments fetched so far. Defaults to None.
+
+        Yields:
+            dict: A dictionary representing a single comment, including 'reply_continuation_token'
+                  field for comments that have replies.
+        """
+        video_id = self._video_fetcher.get_video_id(youtube_url)
+        comments_generator = self._comment_fetcher.get_comments(
+            video_id,
+            limit=limit,
+            sort_by=sort_by,
+            progress_callback=progress_callback,
+            include_reply_continuation=True
+        )
+
+        yield from comments_generator
+
+    def get_comment_replies(
+        self,
+        youtube_url: str,
+        reply_continuation_token: str,
+        limit: int = 100,
+        progress_callback: Callable[[int], None] | None = None
+    ):
+        """
+        Get replies for a specific comment.
+
+        Args:
+            youtube_url (str): The full URL of the YouTube video.
+            reply_continuation_token (str): The continuation token for the specific reply thread.
+            limit (int, optional): The maximum number of replies to fetch. Defaults to 100.
+            progress_callback (Callable[[int], None], optional): A function to be called
+                with the number of replies fetched so far. Defaults to None.
+
+        Yields:
+            dict: A dictionary representing a single reply comment.
+        """
+        video_id = self._video_fetcher.get_video_id(youtube_url)
+        replies_generator = self._comment_fetcher.get_comment_replies(
+            video_id,
+            reply_continuation_token=reply_continuation_token,
+            limit=limit,
+            progress_callback=progress_callback
+        )
+
+        yield from replies_generator
 
     def _get_videos_tab_renderer(self, initial_data: dict):
         tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])

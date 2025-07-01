@@ -78,4 +78,4 @@ KEY_ENGAGEMENT_PANEL_SECTION_LIST_RENDERER = "engagementPanelSectionListRenderer
 KEY_HEADER = "header"
 KEY_ENGAGEMENT_PANEL_TITLE_HEADER_RENDERER = "engagementPanelTitleHeaderRenderer"
 KEY_CONTENTS = "contents"
-KEY_MENU = "menu" 
+KEY_MENU = "menu"

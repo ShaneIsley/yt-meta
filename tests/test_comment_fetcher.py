@@ -422,7 +422,7 @@ def test_progress_callback_is_called(fetcher, video_page_html, continuation_json
 
     # Mock the POST requests to return a known continuation response
     mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(
-        status_code=200, 
+        status_code=200,
         json=lambda: continuation_json
     ))
 
@@ -445,3 +445,85 @@ def test_progress_callback_is_called(fetcher, video_page_html, continuation_json
     # Page 3: 50 comments (hits the limit)
     mock_callback.assert_called_with(50)
     assert mock_callback.call_count == 3
+
+def test_get_comments_with_reply_tokens(fetcher, video_page_html, continuation_json, mocker):
+    """
+    Verify that get_comments with include_reply_continuation=True includes reply tokens.
+    """
+    # Mock the sort endpoints to prevent the initial real network call
+    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={
+        "top": {"continuationCommand": {"token": "fake_token"}}
+    })
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value={})
+    mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
+
+    # Mock the reply continuation extraction to return a fake mapping
+    mocker.patch.object(fetcher, '_extract_reply_continuations_for_comments', return_value={
+        "comment_1": "reply_token_1",
+        "comment_2": "reply_token_2"
+    })
+
+    # Mock the POST requests to return a known continuation response
+    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(
+        status_code=200,
+        json=lambda: continuation_json
+    ))
+
+    # Call get_comments with include_reply_continuation=True
+    comments_generator = fetcher.get_comments(
+        "test_video_id",
+        limit=5,
+        include_reply_continuation=True
+    )
+
+    comments_list = list(comments_generator)
+
+    # Verify that comments have reply continuation tokens where expected
+    assert len(comments_list) == 5
+
+    # Check that comments with IDs matching our mock have reply tokens
+    for comment in comments_list:
+        if comment['id'] in ["comment_1", "comment_2"]:
+            assert 'reply_continuation_token' in comment
+            assert comment['reply_continuation_token'] in ["reply_token_1", "reply_token_2"]
+
+
+def test_get_comment_replies(fetcher, continuation_json, mocker):
+    """
+    Verify that get_comment_replies fetches replies for a specific comment thread.
+    """
+    # Mock the initial GET request
+    mocker.patch.object(fetcher._client, 'get', return_value=mocker.Mock(
+        status_code=200,
+        text="<html>fake</html>"
+    ))
+
+    # Mock API key and context extraction
+    mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
+
+    # Mock the POST request to return replies
+    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(
+        status_code=200,
+        json=lambda: continuation_json
+    ))
+
+    # Mock _find_comment_page_continuation to return None (no more pages)
+    mocker.patch.object(fetcher, '_find_comment_page_continuation', return_value=None)
+
+    # Call get_comment_replies
+    replies_generator = fetcher.get_comment_replies(
+        "test_video_id",
+        "fake_reply_token",
+        limit=10
+    )
+
+    replies_list = list(replies_generator)
+
+    # Verify that replies were fetched
+    assert len(replies_list) > 0
+
+    # Verify the POST request was made with the correct token
+    fetcher._client.post.assert_called_once()
+    call_args = fetcher._client.post.call_args
+    payload = call_args[1]['json']
+    assert payload['continuation'] == "fake_reply_token"
