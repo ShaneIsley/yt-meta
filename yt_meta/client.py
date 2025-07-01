@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Generator, MutableMapping
 from datetime import date, datetime
+from typing import Callable
 
 import httpx
 
@@ -178,38 +179,32 @@ class YtMeta:
     def get_video_comments(
         self,
         youtube_url: str,
+        limit: int = 100,
         sort_by: str = "top",
-        limit: int = -1,
-        filters: dict | None = None,
-    ) -> Generator[dict, None, None]:
+        progress_callback: Callable[[int], None] | None = None
+    ):
         """
-        Fetches comments for a given YouTube video.
+        Get comments for a specific YouTube video.
 
         Args:
-            youtube_url: The full URL of the YouTube video.
-            sort_by: How to sort comments. 'top' (default) or 'recent'.
-            limit: The maximum number of comments to return (-1 for all).
-            filters: A dictionary specifying the filter conditions.
+            youtube_url (str): The full URL of the YouTube video.
+            limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
+            sort_by (str, optional): The order to sort comments by. Can be 'top' or 'recent'. Defaults to "top".
+            progress_callback (Callable[[int], None], optional): A function to be called 
+                with the number of comments fetched so far. Defaults to None.
 
         Yields:
-            A dictionary for each comment with a standardized structure.
+            dict: A dictionary representing a single comment.
         """
         video_id = self._video_fetcher.get_video_id(youtube_url)
-        comments_generator = self._comment_fetcher.get_comments(video_id, sort_by=sort_by)
+        comments_generator = self._comment_fetcher.get_comments(
+            video_id,
+            limit=limit,
+            sort_by=sort_by,
+            progress_callback=progress_callback
+        )
 
-        # Apply filters if any
-        if filters:
-            validate_filters(filters)
-            comments_generator = apply_comment_filters(comments_generator, filters)
-
-        # Apply limit if any
-        if limit > 0:
-            for i, comment in enumerate(comments_generator):
-                if i >= limit:
-                    break
-                yield comment
-        else:
-            yield from comments_generator
+        yield from comments_generator
 
     def _get_videos_tab_renderer(self, initial_data: dict):
         tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])

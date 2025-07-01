@@ -405,3 +405,43 @@ def test_is_reply_flag(fetcher):
 
     assert not top_level_comment["is_reply"]
     assert reply_comment["is_reply"]
+
+def test_progress_callback_is_called(fetcher, video_page_html, continuation_json, mocker):
+    """
+    Verify that the progress callback is invoked with the correct counts.
+    """
+    mock_callback = mocker.MagicMock()
+
+    # We need to mock the sort endpoints to prevent the initial real network call
+    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={
+        "top": {"continuationCommand": {"token": "fake_token"}}
+    })
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value={})
+    mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
+
+
+    # Mock the POST requests to return a known continuation response
+    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(
+        status_code=200, 
+        json=lambda: continuation_json
+    ))
+
+    # We expect 20 comments from the fixture
+    # The callback should be called once with a count of 20
+    comments_generator = fetcher.get_comments(
+        "test_video_id",
+        limit=50,
+        progress_callback=mock_callback
+    )
+
+    # Consume the generator to trigger the calls
+    list(comments_generator)
+
+    # Assert that the callback was called correctly
+    mock_callback.assert_called()
+    # It will be called after each "page" of comments is processed.
+    # Page 1: 20 comments
+    # Page 2: 40 comments
+    # Page 3: 50 comments (hits the limit)
+    mock_callback.assert_called_with(50)
+    assert mock_callback.call_count == 3

@@ -1,5 +1,6 @@
 import json
 import re
+from typing import Callable
 
 import httpx
 
@@ -17,13 +18,21 @@ class CommentFetcher:
     def __init__(self):
         self._client = httpx.Client(headers={'User-Agent': const.USER_AGENT})
 
-    def get_comments(self, youtube_id: str, sort_by: str = "top"):
+    def get_comments(
+        self, 
+        youtube_id: str, 
+        sort_by: str = "top",
+        limit: int = 100,
+        progress_callback: Callable[[int], None] | None = None
+    ):
         """
         Fetch comments for a YouTube video.
 
         Args:
             youtube_id: The YouTube video ID
             sort_by: Comment sorting method ('top' or 'recent')
+            limit: The maximum number of comments to fetch
+            progress_callback: A function to be called with the number of comments fetched
         """
         # 1. Get initial page
         response = self._client.get(const.YOUTUBE_VIDEO_URL.format(youtube_id=youtube_id))
@@ -41,11 +50,13 @@ class CommentFetcher:
 
         current_continuation = sort_endpoints[sort_by]
 
+        fetched_count = 0
+
         # 4. Use separate queues for comment pages and reply threads
         reply_continuations_queue = []
 
         # 5. Fetch all pages of the main, sorted comment thread
-        while current_continuation:
+        while current_continuation and fetched_count < limit:
             payload = {
                 const.KEY_CONTEXT: context,
                 const.KEY_CONTINUATION: current_continuation[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN]
@@ -57,7 +68,16 @@ class CommentFetcher:
 
             # Parse and yield comments from the current page
             comments = self._parse_comments(continuation_data)
-            yield from comments
+            
+            for comment in comments:
+                if fetched_count < limit:
+                    yield comment
+                    fetched_count += 1
+                else:
+                    break
+            
+            if progress_callback:
+                progress_callback(fetched_count)
 
             # Find continuation for the next page of main comments
             current_continuation = self._find_comment_page_continuation(continuation_data)
@@ -68,7 +88,7 @@ class CommentFetcher:
         # 6. After fetching all main comments, fetch all replies for all threads
         processed_reply_tokens = set()
 
-        while reply_continuations_queue:
+        while reply_continuations_queue and fetched_count < limit:
             current_continuation = reply_continuations_queue.pop(0)
             token = current_continuation[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN]
 
@@ -86,7 +106,16 @@ class CommentFetcher:
             reply_data = response.json()
 
             comments = self._parse_comments(reply_data)
-            yield from comments
+            
+            for comment in comments:
+                if fetched_count < limit:
+                    yield comment
+                    fetched_count += 1
+                else:
+                    break
+
+            if progress_callback:
+                progress_callback(fetched_count)
 
             # A reply thread itself can be paginated, so add its continuation back to the queue
             next_reply_page_continuation = self._find_comment_page_continuation(reply_data)

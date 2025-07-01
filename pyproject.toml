@@ -1,9 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "yt-meta"
 version = "0.3.1"
 description = "A lightweight, dependency-free library for fetching YouTube metadata."
 readme = "README.md"
-authors = [{ name = "Sami W.", email = "samwitteveenai@gmail.com" }]
+authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
 license = { file = "LICENSE" }
 classifiers = [
     "License :: OSI Approved :: MIT License",
@@ -24,10 +28,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-mock"]
+dev = ["pytest", "pytest-cov", "pytest-mock", "ruff", "tqdm"]
 
 [project.urls]
-Homepage = "https://github.com/samwitteveenai/yt-meta"
+Homepage = "https://github.com/shaneisley/yt-meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -67,3 +71,6 @@ select = [
 ignore = [
     "E501", # Line too long, handled by black
 ]
+
+[tool.uv.sources]
+yt-meta = { path = ".", editable = true }

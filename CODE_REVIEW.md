@@ -45,11 +45,11 @@ The "Ranked Feature Implementation Plan" provided is an accurate and well-struct
 3.  **Distinguish Comments/Replies:** ✅ **Completed.** The `is_reply` boolean flag was already being correctly calculated. A dedicated unit test has been added to verify this logic and prevent future regressions.
 
 #### Priority 2: Architectural Leap (Confirmed Opportunity)
-4.  **Implement Asynchronous API (`aget_comments`):** Confirmed. The library currently only supports synchronous operations with `httpx.Client`. Adding an `async` interface would be a major enhancement.
+4.  **Implement Asynchronous API (`aget_comments`):** 🔵 **On Hold.** Will be addressed in a future branch.
 
 #### Priority 3 & 4: Advanced Features (Confirmed Gaps)
-5.  **Pinned Comment Detection:** Confirmed. The parser does not currently check for the `pinnedCommentBadge`.
-6.  **Author Badges:** Confirmed. `authorBadges` are not being parsed.
+5.  **Pinned Comment Detection:** ✅ **Completed.** This was already implemented (`is_pinned` flag) and is covered by the `test_pinned_comment_detection` test.
+6.  **Author Badges:** ✅ **Completed.** This was already implemented (`author_badges` list) and is covered by the `test_comment_author_badge_extraction` test.
 7.  **Progress Callback:** Confirmed. No callback mechanism exists for long-running operations.
 8.  **Structured Reply Fetching:** Confirmed. Replies are fetched in a flat list with the main comments; there is no way to fetch them on-demand for a specific parent comment.
 
