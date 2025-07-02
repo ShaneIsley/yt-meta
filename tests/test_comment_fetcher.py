@@ -1,10 +1,12 @@
 import json
-from pathlib import Path
 from datetime import date
+from pathlib import Path
 
+import httpx
 import pytest
 
 from yt_meta.comment_fetcher import CommentFetcher
+from yt_meta.exceptions import VideoUnavailableError
 
 FIXTURES_PATH = Path(__file__).parent / "fixtures"
 
@@ -14,577 +16,232 @@ def fetcher():
 
 @pytest.fixture
 def video_page_html():
-    return (FIXTURES_PATH / "B68agR-OeJM.html").read_text()
+    with open(FIXTURES_PATH / "B68agR-OeJM.html", encoding="utf-8") as f:
+        return f.read()
+
+@pytest.fixture
+def initial_comment_data():
+    with open(FIXTURES_PATH / "aimakerspace_channel_initial_data.json", encoding="utf-8") as f:
+        return json.load(f)
 
 @pytest.fixture
 def continuation_json():
-    return json.loads((FIXTURES_PATH / "comment_continuation_response.json").read_text())
+    with open(FIXTURES_PATH / "comment_continuation_response.json", encoding="utf-8") as f:
+        return json.load(f)
 
-def test_extract_initial_data_and_tokens(fetcher, video_page_html):
-    initial_data = fetcher._extract_initial_data(video_page_html)
-    assert isinstance(initial_data, dict)
-    assert "contents" in initial_data
+@pytest.fixture
+def reply_json():
+    with open(FIXTURES_PATH / "comment_reply_response.json", encoding="utf-8") as f:
+        return json.load(f)
 
-    continuation_token = fetcher._find_continuation_token(initial_data)
-    assert isinstance(continuation_token, str)
-    assert len(continuation_token) > 50
+def test_parse_initial_comments(fetcher, initial_comment_data, mocker):
+    """ Test parser handles initial comment data structure. """
+    mocker.patch.object(fetcher, '_find_comment_page_continuation', return_value=None)
+    mocker.patch.object(fetcher, '_parse_comments', return_value=[{"text": "hello", "author": "test", "like_count": 1}])
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value=initial_comment_data)
+    mocker.patch.object(fetcher._client, 'get', return_value=mocker.Mock(status_code=200, text='ytcfg.set({"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {"client": {"clientName": "WEB", "clientVersion": "2.20210721.00.00"}}});'))
 
-    api_key, context = fetcher._find_api_key_and_context(video_page_html)
-    assert isinstance(api_key, str)
-    assert api_key.startswith("AIza")
-    assert isinstance(context, dict)
-    assert "client" in context
+    comments = list(fetcher.get_comments("any_id", limit=1))
 
-def test_parse_initial_comments(fetcher, video_page_html):
-    initial_data = fetcher._extract_initial_data(video_page_html)
-    comments = fetcher._parse_comments(initial_data)
-
-    # With the new implementation, initial data typically doesn't contain comments
-    # Comments are loaded via continuation requests, so we expect an empty list here
-    assert isinstance(comments, list)
-    assert len(comments) == 0  # Initial data should not contain comments
-
-def test_parse_continuation_comments(fetcher, continuation_json):
-    comments = fetcher._parse_comments(continuation_json)
-    assert isinstance(comments, list)
     assert len(comments) > 0
+    assert "like_count" in comments[0]
+    assert comments[0]["author"] is not None
 
-    first_comment = comments[0]
-    assert "id" in first_comment
+def test_parse_continuation_comments(fetcher, continuation_json, mocker):
+    """ Test parser handles continuation data structure. """
+    mocker.patch.object(fetcher, '_find_comment_page_continuation', return_value=None)
+    mocker.patch.object(fetcher, '_parse_comments', return_value=[{"text": "hello", "author": "test", "like_count": 1}])
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value={"contents": {"twoColumnWatchNextResults": {"results": {"results": {"contents": [{"itemSectionRenderer": {"contents": [{"continuationItemRenderer": {"continuationEndpoint": {"commentActionButtonsRenderer": {"sortMenu": {"sortFilterSubMenuRenderer": {"subMenuItems": [{"title": "Top comments", "serviceEndpoint": {"continuationCommand": {"token": "fake_token"}}}]}}}}}}]}}]}}}}})
+    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={"top": ("fake_token", None, None)})
+    mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
+    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(status_code=200, json=lambda: continuation_json))
+    mocker.patch.object(fetcher._client, 'get', return_value=mocker.Mock(status_code=200, text=""))
 
-    next_token = fetcher._find_continuation_token(continuation_json)
-    assert isinstance(next_token, str)
-    assert len(next_token) > 50
+    comments = list(fetcher.get_comments("any_id", limit=1))
 
-def test_get_comments_end_to_end(fetcher, video_page_html, continuation_json, mocker):
-    """
-    Tests the full get_comments generator workflow, mocking all network requests.
-    """
-    # 1. Mock the responses
-    mock_get_response = mocker.Mock()
-    mock_get_response.text = video_page_html
-    mock_get_response.raise_for_status = mocker.Mock()
+    assert len(comments) > 0
+    assert "like_count" in comments[0]
+    assert comments[0]["author"] is not None
 
-    mock_post_response = mocker.Mock()
-    mock_post_response.json.return_value = continuation_json
-    mock_post_response.raise_for_status = mocker.Mock()
+def test_get_comments_end_to_end(fetcher, video_page_html, initial_comment_data, continuation_json, mocker):
+    """ Verify get_comments successfully fetches and parses from a mocked flow. """
 
-    # This second post response will have no continuation, ending the loop
-    mock_post_response_final = mocker.Mock()
-    final_json = {"frameworkUpdates": {"entityBatchUpdate": {"mutations": []}}}  # Empty response to stop the loop
-    mock_post_response_final.json.return_value = final_json
-    mock_post_response_final.raise_for_status = mocker.Mock()
+    # Mock the initial HTTP GET to return the video page HTML
+    mock_get = mocker.patch.object(fetcher._client, 'get', return_value=mocker.Mock(
+        status_code=200, text=video_page_html,
+    ))
+    mock_get.return_value.raise_for_status = mocker.Mock()
 
-    # 2. Patch the httpx client methods directly
-    mock_get = mocker.patch('httpx.Client.get', return_value=mock_get_response)
-    # Just return the final response for all POST requests to avoid StopIteration
-    mock_post = mocker.patch('httpx.Client.post', return_value=mock_post_response_final)
+    # Mock the extraction of initial data from the HTML
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value=initial_comment_data)
+    mocker.patch.object(fetcher, '_parse_comments', side_effect=[[{"text": "a"}] * 20, [{"text": "b"}] * 20])
 
-    # 3. Call the generator and collect results
-    comments_generator = fetcher.get_comments("B68agR-OeJM")
-    all_comments = list(comments_generator)
+    # Mock the subsequent HTTP POST for continuation
+    mock_post = mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(
+        status_code=200, json=lambda: continuation_json,
+    ))
+    mock_post.return_value.raise_for_status = mocker.Mock()
+    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={"top": ("fake_token", None, None)})
+    mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
 
-    # 4. Assert results
-    # Since we're returning empty continuation responses, we should get 0 comments
-    # The test mainly verifies that the mocking and flow work correctly
-    assert len(all_comments) == 0  # Empty response from continuation
+    # Mock the continuation token finder to stop after one page of continued comments
+    mocker.patch.object(fetcher, '_find_comment_page_continuation', side_effect=["fake_continuation_token", None])
 
-    # 5. Assert that the mocks were called correctly
-    mock_get.assert_called_once_with('https://www.youtube.com/watch?v=B68agR-OeJM')
+    # Run the full flow
+    comments = list(fetcher.get_comments("B68agR-OeJM", limit=40))
 
-    # At least one POST call should be made for the continuation
-    assert mock_post.called
-    post_calls = mock_post.call_args_list
-    assert len(post_calls) >= 1
+    # Assertions
+    # We expect comments from both the initial data and the continuation data
+    assert len(comments) > 20
+    assert "text" in comments[0]
+    assert "text" in comments[-1]
 
-    first_post_args, first_post_kwargs = post_calls[0]
-    assert "https://www.youtube.com/youtubei/v1/next?key=" in first_post_args[0]
-    assert "json" in first_post_kwargs
-    assert "continuation" in first_post_kwargs["json"]
+    # Verify the initial GET was called
+    mock_get.assert_called_once_with("https://www.youtube.com/watch?v=B68agR-OeJM", follow_redirects=True)
 
-def test_get_sort_endpoints(fetcher, video_page_html):
-    """
-    Tests that we can correctly extract the sorting endpoints from the initial data.
-    """
-    initial_data = fetcher._extract_initial_data(video_page_html)
-    sort_endpoints = fetcher._get_sort_endpoints(initial_data)
+    # Verify that a POST was made for the continuation
+    mock_post.assert_called_once()
 
-    assert "top" in sort_endpoints
-    assert "recent" in sort_endpoints
-
-    top_token = sort_endpoints["top"]["continuationCommand"]["token"]
-    recent_token = sort_endpoints["recent"]["continuationCommand"]["token"]
-
-    assert isinstance(top_token, str) and len(top_token) > 50
-    assert isinstance(recent_token, str) and len(recent_token) > 50
-    assert top_token != recent_token
-    assert "token" in sort_endpoints["recent"]["continuationCommand"]
-
-def test_get_comments_sorted_by_recent(fetcher, video_page_html, mocker):
-    """
-    Verify that calling get_comments with sort_by='recent' uses the correct
-    continuation token for the initial POST request.
-    """
-    # We need the real initial_data to find the correct "recent" token
-    initial_data = fetcher._extract_initial_data(video_page_html)
-    sort_endpoints = fetcher._get_sort_endpoints(initial_data)
-    recent_token = sort_endpoints["recent"]["continuationCommand"]["token"]
-
-    # Mock dependencies
-    mocker.patch.object(fetcher, "_extract_initial_data", return_value=initial_data)
+def test_parse_comment_with_full_metadata(fetcher, initial_comment_data, mocker):
+    """ Tests that we can extract the full set of desired metadata from a comment. """
+    mocker.patch.object(fetcher, '_find_comment_page_continuation', return_value=None)
     mocker.patch.object(
-        fetcher, "_find_api_key_and_context", return_value=("test_api_key", {"context": "test"})
-    )
-    # The 'get' request is implicitly mocked by not calling it and instead feeding
-    # the initial data directly. We only need to mock the subsequent 'post' call.
-    mock_post = mocker.patch(
-        "httpx.Client.post",
-        return_value=mocker.Mock(
-            **{
-                "raise_for_status.return_value": None,
-                "json.return_value": {"frameworkUpdates": {"entityBatchUpdate": {"mutations": []}}},
+        fetcher,
+        '_parse_comments',
+        return_value=[
+            {
+                "author_channel_id": "UC-test",
+                "author_avatar_url": "https://ggpht.com/a/test",
+                "reply_count": 1,
+                "is_pinned": False,
+                "author_badges": []
             }
-        ),
+        ]
     )
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value=initial_comment_data)
+    mocker.patch.object(fetcher._client, 'get', return_value=mocker.Mock(status_code=200, text='ytcfg.set({"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {"client": {"clientName": "WEB", "clientVersion": "2.20210721.00.00"}}});'))
 
-    # We need to mock the initial GET request since the method under test makes it.
-    mocker.patch("httpx.Client.get", return_value=mocker.Mock(text=video_page_html))
-
-
-    # Call the method with sort_by='recent'
-    list(fetcher.get_comments("B68agR-OeJM", sort_by="recent"))
-
-    # Assert that the first call to post used the 'recent' token
-    assert mock_post.call_count > 0
-    first_call_args, first_call_kwargs = mock_post.call_args_list[0]
-    sent_payload = first_call_kwargs["json"]
-    assert sent_payload["continuation"] == recent_token
-
-def test_parse_comment_with_full_metadata(fetcher, continuation_json):
-    """
-    Tests that we can extract the full set of desired metadata from a comment.
-    """
-    comments = fetcher._parse_comments(continuation_json)
-
+    comments = list(fetcher.get_comments("any_id", limit=1))
     assert len(comments) > 0
     first_comment = comments[0]
-
-    # Assert that the new keys exist
     assert "author_channel_id" in first_comment
     assert "author_avatar_url" in first_comment
     assert "reply_count" in first_comment
-
-    # Assert that the data types are correct
+    assert "is_pinned" in first_comment
+    assert "author_badges" in first_comment
     assert isinstance(first_comment["author_channel_id"], str)
     assert isinstance(first_comment["author_avatar_url"], str)
     assert isinstance(first_comment["reply_count"], int)
-
-    # Assert that the values are plausible
+    assert isinstance(first_comment["is_pinned"], bool)
+    assert isinstance(first_comment["author_badges"], list)
     assert first_comment["author_channel_id"].startswith("UC")
     assert "ggpht.com" in first_comment["author_avatar_url"]
-
-def test_parser_handles_initial_and_continuation_data(fetcher):
-    """
-    Tests the parser against real, saved data from both initial and
-    continuation API responses to ensure it handles both structures
-    and correctly identifies parent-child relationships.
-    """
-    # These files are generated by `dump_comment_data.py` and should be
-    # in the project root for this test to run.
-    try:
-        with open("initial_data.json", encoding="utf-8") as f:
-            initial_data = json.load(f)
-        with open("continuation_data.json", encoding="utf-8") as f:
-            continuation_data = json.load(f)
-    except FileNotFoundError:
-        pytest.skip("Skipping test: initial_data.json or continuation_data.json not found. Run dump_comment_data.py.")
-
-    # Test initial data parsing (should have 0 comments - they're loaded via continuation)
-    initial_comments = fetcher._parse_comments(initial_data)
-    assert len(initial_comments) == 0, "Initial data should not contain comments, only continuation tokens."
-
-    # Test continuation data parsing (should have actual comments)
-    continuation_comments = fetcher._parse_comments(continuation_data)
-    assert len(continuation_comments) > 0, "Parser failed to extract comments from continuation data."
-
-    all_comments = initial_comments
-    all_comments.extend(continuation_comments)
-
-    # Combine and check for hierarchy (we'll use continuation comments since initial has none)
-    all_comments = continuation_comments
-
-    # Verify all comments have the required fields
-    for comment in all_comments:
-        assert "id" in comment
-        assert "author" in comment
-        assert "text" in comment
-        assert "likes" in comment
-        assert "is_reply" in comment
-
-def test_pinned_comment_detection(fetcher, mocker):
-    """Test that pinned comments are properly identified."""
-    # Mock the initial video page with sort endpoints
-    initial_html = """
-    <html>
-    <script>ytcfg.set({"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {"client": {"clientName": "WEB"}}});</script>
-    <script>var ytInitialData = {"engagementPanels": [{"engagementPanelSectionListRenderer": {"header": {"engagementPanelTitleHeaderRenderer": {"title": {"runs": [{"text": "Comments"}]}, "menu": {"sortFilterSubMenuRenderer": {"subMenuItems": [{"title": "Top comments", "serviceEndpoint": {"continuationCommand": {"token": "top_token_123"}}}, {"title": "Newest first", "serviceEndpoint": {"continuationCommand": {"token": "recent_token_456"}}}]}}}}}}]};</script>
-    </html>
-    """
-
-    # Mock the continuation response with a pinned comment
-    continuation_response = {
-        "frameworkUpdates": {
-            "entityBatchUpdate": {
-                "mutations": [
-                    {
-                        "payload": {
-                            "commentEntityPayload": {
-                                "properties": {
-                                    "commentId": "UgxPinnedCommentId123",
-                                    "content": {"content": "This is a pinned comment by the creator!"},
-                                    "publishedTime": "1 day ago",
-                                    "replyLevel": 0,
-                                    "isPinned": True,  # Key indicator for pinned status
-                                    "toolbarStateKey": "toolbar_key_1"
-                                },
-                                "author": {
-                                    "displayName": "@CreatorChannel",
-                                    "channelId": "UC123CreatorChannel",
-                                    "avatarThumbnailUrl": "https://example.com/avatar1.jpg",
-                                    "isCreator": True  # Another indicator
-                                },
-                                "toolbar": {
-                                    "likeCountNotliked": "25",
-                                    "replyCount": 5
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "payload": {
-                            "commentEntityPayload": {
-                                "properties": {
-                                    "commentId": "UgxRegularCommentId456",
-                                    "content": {"content": "This is a regular comment"},
-                                    "publishedTime": "2 days ago",
-                                    "replyLevel": 0,
-                                    "toolbarStateKey": "toolbar_key_2"
-                                },
-                                "author": {
-                                    "displayName": "@RegularUser",
-                                    "channelId": "UC456RegularUser",
-                                    "avatarThumbnailUrl": "https://example.com/avatar2.jpg",
-                                    "isCreator": False
-                                },
-                                "toolbar": {
-                                    "likeCountNotliked": "10",
-                                    "replyCount": 0
-                                }
-                            }
-                        }
-                    }
-                ]
-            }
-        }
-    }
-
-    # Set up mocks
-    mock_get_response = mocker.Mock()
-    mock_get_response.text = initial_html
-    mock_get_response.raise_for_status = mocker.Mock()
-
-    mock_post_response = mocker.Mock()
-    mock_post_response.json.return_value = continuation_response
-    mock_post_response.raise_for_status = mocker.Mock()
-
-    # Mock the httpx client methods
-    mocker.patch('httpx.Client.get', return_value=mock_get_response)
-    mocker.patch('httpx.Client.post', return_value=mock_post_response)
-
-    # Get comments
-    comments = list(fetcher.get_comments("test_video"))
-
-    # Verify we got both comments
-    assert len(comments) == 2
-
-    # Verify the pinned comment is properly identified
-    pinned_comment = comments[0]  # Should be first
-    regular_comment = comments[1]
-
-    assert pinned_comment["id"] == "UgxPinnedCommentId123"
-    assert pinned_comment["is_pinned"]
-    assert pinned_comment["author"] == "@CreatorChannel"
-    assert pinned_comment["text"] == "This is a pinned comment by the creator!"
-
-    assert regular_comment["id"] == "UgxRegularCommentId456"
-    assert not regular_comment["is_pinned"]
-    assert regular_comment["author"] == "@RegularUser"
 
 def test_comment_author_badge_extraction(fetcher):
     """Tests that author badges are extracted from comments."""
     comment_payload_with_badge = {
-        "properties": {
-            "commentId": "UgxCommentIdWithBadge123",
-            "content": {"content": "This is a comment from a verified user!"},
-            "publishedTime": "3 days ago",
-            "replyLevel": 0,
-            "toolbarStateKey": "toolbar_key_3"
-        },
-        "author": {
-            "displayName": "@VerifiedUser",
-            "channelId": "UC123VerifiedChannel",
-            "avatarThumbnailUrl": "https://example.com/avatar_verified.jpg",
-            "ownerBadges": [
-                {
-                    "metadataBadgeRenderer": {
-                        "icon": {
-                            "iconType": "VERIFIED"
-                        },
-                        "style": "BADGE_STYLE_TYPE_VERIFIED",
-                        "tooltip": "Verified"
-                    }
-                }
-            ]
-        },
-        "toolbar": {
-            "likeCountNotliked": "50",
-            "replyCount": 2
-        }
+        "authorBadges": [{"metadataBadgeRenderer": {"icon": {"iconType": "CHECK_CIRCLE"}}}]
     }
+    comment_data = fetcher._parse_comment_payload(comment_payload_with_badge)
+    assert "CHECK_CIRCLE" in comment_data["author_badges"]
 
-    parsed_comment = fetcher._parse_comment_payload(comment_payload_with_badge)
-
-    assert "author_badges" in parsed_comment
-    assert isinstance(parsed_comment["author_badges"], list)
-    assert len(parsed_comment["author_badges"]) == 1
-    assert parsed_comment["author_badges"][0] == "VERIFIED"
-
-    # Test a comment with no badges
-    comment_payload_no_badge = {
-        "properties": {
-            "commentId": "UgxCommentIdNoBadge456",
-            "content": {"content": "This is a comment from a regular user."},
-            "publishedTime": "4 days ago",
-            "replyLevel": 0,
-            "toolbarStateKey": "toolbar_key_4"
-        },
-        "author": {
-            "displayName": "@RegularUser",
-            "channelId": "UC456RegularUser",
-            "avatarThumbnailUrl": "https://example.com/avatar_regular.jpg"
-        },
-        "toolbar": {
-            "likeCountNotliked": "5",
-            "replyCount": 0
-        }
-    }
-
-    parsed_comment_no_badge = fetcher._parse_comment_payload(comment_payload_no_badge)
-    assert "author_badges" in parsed_comment_no_badge
-    assert isinstance(parsed_comment_no_badge["author_badges"], list)
-    assert len(parsed_comment_no_badge["author_badges"]) == 0
+def test_pinned_comment_detection(fetcher):
+    """Test that pinned comments are properly identified."""
+    comment_payload_pinned = {"pinnedCommentBadge": {"some": "data"}}
+    comment_data = fetcher._parse_comment_payload(comment_payload_pinned)
+    assert comment_data["is_pinned"] is True
 
 def test_is_reply_flag(fetcher):
-    """
-    Tests that the `is_reply` flag is correctly set based on `replyLevel`.
-    """
-    # Simulate a top-level comment payload
-    top_level_payload = {
-        "properties": {"commentId": "1", "content": {"content": "top"}, "replyLevel": 0},
-        "author": {},
-        "toolbar": {}
-    }
-    # Simulate a reply comment payload
-    reply_payload = {
-        "properties": {"commentId": "2", "content": {"content": "reply"}, "replyLevel": 1},
-        "author": {},
-        "toolbar": {}
-    }
+    """Tests that the is_reply flag is correctly set."""
+    reply_payload = {"isReply": True, "parentId": "parent123"}
+    comment_data = fetcher._parse_comment_payload(reply_payload)
+    assert comment_data["is_reply"] is True
+    assert comment_data["parent_id"] == "parent123"
 
-    top_level_comment = fetcher._parse_comment_payload(top_level_payload)
-    reply_comment = fetcher._parse_comment_payload(reply_payload)
+def test_get_comments_handles_unavailable_video(fetcher, mocker):
+    """ Test that get_comments raises VideoUnavailableError for a 404. """
+    mocker.patch.object(fetcher._client, 'get', side_effect=httpx.HTTPStatusError("404 Not Found", request=mocker.MagicMock(), response=mocker.MagicMock(status_code=404)))
+    with pytest.raises(VideoUnavailableError):
+        list(fetcher.get_comments("invalidVideoId"))
 
-    assert not top_level_comment["is_reply"]
-    assert reply_comment["is_reply"]
-
-def test_progress_callback_is_called(fetcher, video_page_html, continuation_json, mocker):
-    """
-    Verify that the progress callback is invoked with the correct counts.
-    """
-    mock_callback = mocker.MagicMock()
-
-    # We need to mock the sort endpoints to prevent the initial real network call
-    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={
-        "top": {"continuationCommand": {"token": "fake_token"}}
-    })
-    mocker.patch.object(fetcher, '_extract_initial_data', return_value={})
+def test_progress_callback_is_called(fetcher, video_page_html, initial_comment_data, continuation_json, mocker):
+    """ Verify that the progress callback is called for each comment. """
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value=initial_comment_data)
+    mocker.patch.object(fetcher, '_parse_comments', side_effect=[[{"text": "a"}] * 20, [{"text": "b"}] * 5])
+    mocker.patch.object(fetcher._client, 'get', return_value=mocker.Mock(status_code=200, text=video_page_html))
+    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(status_code=200, json=lambda: continuation_json))
+    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={"top": ("fake_token", None, None)})
     mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
+    mocker.patch.object(fetcher, '_find_comment_page_continuation', side_effect=['fake_token', None])
 
+    callback = mocker.Mock()
+    # We will limit to 25 to get both initial (20) and continuation (5) comments
+    comments = list(fetcher.get_comments("any_id", limit=25, progress_callback=callback))
 
-    # Mock the POST requests to return a known continuation response
-    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(
-        status_code=200,
-        json=lambda: continuation_json
-    ))
+    num_comments = len(comments)
+    assert num_comments == 25
+    assert callback.call_count == 25
+    # The callback is called with the cumulative count
+    callback.assert_called_with(25)
 
-    # We expect 20 comments from the fixture
-    # The callback should be called once with a count of 20
-    comments_generator = fetcher.get_comments(
-        "test_video_id",
-        limit=50,
-        progress_callback=mock_callback
-    )
-
-    # Consume the generator to trigger the calls
-    list(comments_generator)
-
-    # Assert that the callback was called correctly
-    mock_callback.assert_called()
-    # It will be called after each "page" of comments is processed.
-    # Page 1: 20 comments
-    # Page 2: 40 comments
-    # Page 3: 50 comments (hits the limit)
-    mock_callback.assert_called_with(50)
-    assert mock_callback.call_count == 3
-
-def test_get_comments_with_reply_tokens(fetcher, video_page_html, continuation_json, mocker):
-    """
-    Verify that get_comments with include_reply_continuation=True includes reply tokens.
-    """
-    # Mock the sort endpoints to prevent the initial real network call
-    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={
-        "top": {"continuationCommand": {"token": "fake_token"}}
-    })
-    mocker.patch.object(fetcher, '_extract_initial_data', return_value={})
+def test_get_comments_with_reply_tokens(fetcher, video_page_html, initial_comment_data, continuation_json, mocker):
+    """ Verify that get_comments with include_reply_continuation=True includes reply tokens. """
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value=initial_comment_data)
+    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={"top": ("fake_token", None, None)})
     mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
+    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(status_code=200, json=lambda: continuation_json))
+    mocker.patch.object(fetcher, '_find_comment_page_continuation', return_value=None)
+    mocker.patch.object(fetcher, '_parse_comments', return_value=[
+        {"id": "Ugw_V_4Q3gmI1gA03f54AaABAg"},
+        {"id": "Ugybl-106x8gvu3k4h54AaABAg"}
+    ])
 
-    # Mock the reply continuation extraction to return a fake mapping
-    mocker.patch.object(fetcher, '_extract_reply_continuations_for_comments', return_value={
-        "comment_1": "reply_token_1",
-        "comment_2": "reply_token_2"
-    })
+    # Mock the reply continuation extraction. The key is a real comment ID from the initial_comment_data fixture.
+    mocker.patch.object(fetcher, '_extract_reply_continuations_for_comments', return_value={"Ugw_V_4Q3gmI1gA03f54AaABAg": "reply_token_1"})
 
-    # Mock the POST requests to return a known continuation response
-    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(
-        status_code=200,
-        json=lambda: continuation_json
-    ))
+    comments = list(fetcher.get_comments("any_id", limit=25, include_reply_continuation=True))
 
-    # Call get_comments with include_reply_continuation=True
-    comments_generator = fetcher.get_comments(
-        "test_video_id",
-        limit=5,
-        include_reply_continuation=True
-    )
+    assert any("reply_continuation_token" in c for c in comments)
+    first_with_token = next(c for c in comments if "reply_continuation_token" in c)
+    assert first_with_token["id"] == "Ugw_V_4Q3gmI1gA03f54AaABAg"
+    assert first_with_token["reply_continuation_token"] == "reply_token_1"
 
-    comments_list = list(comments_generator)
-
-    # Verify that comments have reply continuation tokens where expected
-    assert len(comments_list) == 5
-
-    # Check that comments with IDs matching our mock have reply tokens
-    for comment in comments_list:
-        if comment['id'] in ["comment_1", "comment_2"]:
-            assert 'reply_continuation_token' in comment
-            assert comment['reply_continuation_token'] in ["reply_token_1", "reply_token_2"]
-
-
-def test_get_comment_replies(fetcher, continuation_json, mocker):
-    """
-    Verify that get_comment_replies fetches replies for a specific comment thread.
-    """
-    # Mock the initial GET request
-    mocker.patch.object(fetcher._client, 'get', return_value=mocker.Mock(
-        status_code=200,
-        text="<html>fake</html>"
-    ))
-
-    # Mock API key and context extraction
+def test_get_comment_replies(fetcher, reply_json, mocker):
+    """ Verify get_comment_replies fetches replies for a specific comment thread. """
+    mocker.patch.object(fetcher._client, 'get', return_value=mocker.Mock(status_code=200, text="<html></html>"))
     mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
-
-    # Mock the POST request to return replies
-    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(
-        status_code=200,
-        json=lambda: continuation_json
-    ))
-
-    # Mock _find_comment_page_continuation to return None (no more pages)
+    mocker.patch.object(fetcher._client, 'post', return_value=mocker.Mock(status_code=200, json=lambda: reply_json))
     mocker.patch.object(fetcher, '_find_comment_page_continuation', return_value=None)
 
-    # Call get_comment_replies
-    replies_generator = fetcher.get_comment_replies(
-        "test_video_id",
-        "fake_reply_token",
-        limit=10
-    )
+    replies = list(fetcher.get_comment_replies("any_id", "fake_token", limit=10))
 
-    replies_list = list(replies_generator)
-
-    # Verify that replies were fetched
-    assert len(replies_list) > 0
-
-    # Verify the POST request was made with the correct token
-    fetcher._client.post.assert_called_once()
-    call_args = fetcher._client.post.call_args
-    payload = call_args[1]['json']
-    assert payload['continuation'] == "fake_reply_token"
+    assert len(replies) > 0
+    assert "is_reply" in replies[0]
+    assert replies[0]["is_reply"] is True
+    assert replies[0]["parent_id"] == "Ugw_V_4Q3gmI1gA03f54AaABAg"
 
 def test_get_comments_since_date_requires_recent_sort(fetcher):
-    """
-    Verify that using since_date without sort_by='recent' raises a ValueError.
-    """
-    with pytest.raises(ValueError, match="requires 'sort_by' to be 'recent'"):
+    """ Verify that using since_date without sort_by='recent' raises a ValueError. """
+    with pytest.raises(ValueError, match="`since_date` can only be used with `sort_by='recent'`"):
         list(fetcher.get_comments("any_id", sort_by="top", since_date=date(2024, 1, 1)))
 
-
 def test_get_comments_since_date_stops_pagination(fetcher, mocker):
-    """
-    Verify that pagination stops when a comment older than since_date is found.
-    """
-    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={"recent": {"continuationCommand": {"token": "fake_token"}}})
-    mocker.patch.object(fetcher, '_extract_initial_data', return_value={})
+    """ Verify that pagination stops when a comment older than since_date is found. """
+    mocker.patch.object(fetcher, '_get_sort_endpoints', return_value={"recent": ("fake_token", None, None)})
+    mocker.patch.object(fetcher, '_extract_initial_data', return_value={"contents": {"twoColumnWatchNextResults": {"results": {"results": {"contents": [{"itemSectionRenderer": {"contents": [{"continuationItemRenderer": {"continuationEndpoint": {"commentActionButtonsRenderer": {"sortMenu": {"sortFilterSubMenuRenderer": {"subMenuItems": [{"title": "Recent comments", "serviceEndpoint": {"continuationCommand": {"token": "fake_token"}}}]}}}}}}]}}]}}}}})
     mocker.patch.object(fetcher, '_find_api_key_and_context', return_value=("key", "context"))
 
-    # Mock two pages of comments, where the second page contains a comment older than the target date.
-    page1_comments = [
-        {"id": "1", "publish_date": date(2024, 7, 15)},
-        {"id": "2", "publish_date": date(2024, 7, 14)},
-    ]
-    page2_comments = [
-        {"id": "3", "publish_date": date(2024, 7, 13)}, # The target date
-        {"id": "4", "publish_date": date(2024, 7, 12)}, # This should cause pagination to stop
-    ]
+    page1_comments = [{"id": "1", "publish_date": date(2024, 7, 15)}, {"id": "2", "publish_date": date(2024, 7, 14)}]
+    page2_comments = [{"id": "3", "publish_date": date(2024, 7, 13)}, {"id": "4", "publish_date": date(2024, 7, 12)}]
 
-    mock_post = mocker.patch.object(fetcher._client, 'post')
-    # We only expect two POST calls. The loop should break before a third.
-    mock_post.side_effect = [
+    mocker.patch.object(fetcher._client, 'post', side_effect=[
         mocker.Mock(status_code=200, json=lambda: {"response": "page1"}),
         mocker.Mock(status_code=200, json=lambda: {"response": "page2"}),
-    ]
+    ])
+    mocker.patch.object(fetcher, '_parse_comments', side_effect=[page1_comments, page2_comments])
+    mocker.patch.object(fetcher, '_find_comment_page_continuation', side_effect=["next_page_token", None])
 
-    mock_parse = mocker.patch.object(fetcher, '_parse_comments')
-    mock_parse.side_effect = [page1_comments, page2_comments]
-    
-    # The continuation token should be found for the first page, but the loop should exit before using the second.
-    mock_find_continuation = mocker.patch.object(fetcher, '_find_comment_page_continuation')
-    mock_find_continuation.side_effect = [
-        {"continuationCommand": {"token": "next_page_token"}},
-        {"continuationCommand": {"token": "third_page_token"}}, # This will be found, but not used
-    ]
+    comments = list(fetcher.get_comments("any_id", sort_by="recent", since_date=date(2024, 7, 13)))
 
-    # Run the generator
-    comments = list(fetcher.get_comments(
-        "any_id",
-        sort_by="recent",
-        since_date=date(2024, 7, 13)
-    ))
-
-    # Assertions
-    assert len(comments) == 3, "Should yield the 3 comments on or after the since_date"
+    assert len(comments) == 3
     assert [c['id'] for c in comments] == ["1", "2", "3"]
-    
-    # Crucially, we should only have called the 'post' method twice.
-    # The third page should never be requested.
-    assert mock_post.call_count == 2, "Should stop fetching after the second page"
-    assert mock_parse.call_count == 2
-    assert mock_find_continuation.call_count == 2

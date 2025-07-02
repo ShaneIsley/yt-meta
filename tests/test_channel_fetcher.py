@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from httpx import Client
-import httpx
 
 from yt_meta.exceptions import MetadataParsingError, VideoUnavailableError
 from yt_meta.fetchers import ChannelFetcher, VideoFetcher

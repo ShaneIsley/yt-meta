@@ -1,80 +1,69 @@
+"""
+Example: Comment Sorting Comparison
+
+This example demonstrates the difference between YouTube's two comment 
+sorting methods: "top" (most popular) and "recent" (chronological).
+
+This helps understand how different sorting affects which comments you see.
+"""
+
 import logging
-import time
 
 from yt_meta import YtMeta
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
 
-# --- Configuration ---
-# A video with a modest number of comments, as requested.
-# URL: https://www.youtube.com/watch?v=feT7_wVmgv0
-VIDEO_URL = "https://www.youtube.com/watch?v=feT7_wVmgv0"
-MAX_COMMENTS = 15
 
-# --- Script ---
-def demonstrate_sorting(yt_meta: YtMeta, sort_order: str):
-    """Fetches, times, and prints comments for a given sort order."""
-    logger.info(f"--- Fetching up to {MAX_COMMENTS} comments sorted by: '{sort_order}' ---")
-    start_time = time.time()
+def fetch_and_display_comments(client: YtMeta, video_url: str, sort_by: str):
+    """Fetch and display comments using the specified sorting method."""
+    try:
+        logger.info(f"Fetching comments sorted by: {sort_by}")
+        
+        comments = list(client.get_video_comments(
+            video_url,
+            sort_by=sort_by,
+            limit=10
+        ))
+        
+        print(f"\n📊 COMMENTS SORTED BY '{sort_by.upper()}':")
+        print("=" * 50)
+        
+        for i, comment in enumerate(comments[:5], 1):
+            print(f"{i}. @{comment['author']}")
+            print(f"   💬 {comment['text'][:70].replace(chr(10), ' ')}...")
+            print(f"   👍 {comment['like_count']} likes | 💭 {comment['reply_count']} replies")
+            print(f"   📅 {comment['publish_date']}")
+            print()
+            
+        return len(comments)
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch {sort_by} comments: {e}")
+        return 0
 
-    comments_generator = yt_meta.get_video_comments(
-        youtube_url=VIDEO_URL,
-        sort_by=sort_order,
-        limit=MAX_COMMENTS
-    )
 
-    comment_list = list(comments_generator)
-    end_time = time.time()
-
-    # Group comments by parent-child relationships
-    comments_by_id = {c['id']: c for c in comment_list}
-    top_level_comments = []
-
-    for comment in comment_list:
-        if comment['parent_id']:
-            # This is a reply - add it to parent's replies list
-            parent = comments_by_id.get(comment['parent_id'])
-            if parent:
-                parent.setdefault('replies', []).append(comment)
-        else:
-            # This is a top-level comment
-            top_level_comments.append(comment)
-
-    # Display hierarchical structure
-    for i, comment in enumerate(top_level_comments):
-        print(f"Comment {i+1}:")
-        print(f"  ID: {comment['id']}")
-        print(f"  Author: {comment['author']} (Channel ID: {comment['author_channel_id']})")
-        print(f"  Avatar: {comment['author_avatar_url']}")
-        print(f"  Likes: {comment['like_count']} | Replies: {comment['reply_count']}")
-        print(f"  Published: {comment['publish_date']}")
-        clean_text = comment['text'][:80].replace('\\n', ' ')
-        print(f"  Text: '{clean_text}...'")
-
-        # Show replies if any
-        if 'replies' in comment:
-            for r_idx, reply in enumerate(comment['replies']):
-                print(f"    ↳ Reply {r_idx+1}:")
-                print(f"      ID: {reply['id']} (Parent: {reply['parent_id']})")
-                print(f"      Author: {reply['author']}")
-                print(f"      Likes: {reply['likes']}")
-                reply_text = reply['text'][:60].replace('\\n', ' ')
-                print(f"      Text: '{reply_text}...'")
-        print("-" * 40)
-
-    duration = end_time - start_time
-    total_replies = sum(len(c.get('replies', [])) for c in top_level_comments)
-    logger.info(f"Fetched {len(top_level_comments)} top-level comments with {total_replies} replies ({len(comment_list)} total) in {duration:.2f} seconds.")
-    print("-" * 40)
+def main():
+    client = YtMeta()
+    video_url = "https://www.youtube.com/watch?v=feT7_wVmgv0"
+    
+    print("=== Comment Sorting Comparison ===")
+    print(f"Video: {video_url}")
+    print("\nComparing 'top' vs 'recent' sorting methods...")
+    
+    # Fetch comments using different sorting methods
+    recent_count = fetch_and_display_comments(client, video_url, "recent")
+    top_count = fetch_and_display_comments(client, video_url, "top")
+    
+    # Educational summary
+    print("🎯 SORTING DIFFERENCES:")
+    print("• TOP sorting shows most popular/engaging comments first")
+    print("• RECENT sorting shows newest comments first (chronological)")
+    print("• Use TOP to find viral/important discussions")  
+    print("• Use RECENT to see latest community activity")
+    print(f"\nFetched {recent_count} recent and {top_count} top comments successfully!")
 
 
 if __name__ == "__main__":
-    yt_meta = YtMeta()
-
-    # Demonstrate fetching recent comments (chronological order)
-    demonstrate_sorting(yt_meta, sort_order="recent")
-
-    # Demonstrate fetching top comments (popularity order)
-    demonstrate_sorting(yt_meta, sort_order="top")
+    main()

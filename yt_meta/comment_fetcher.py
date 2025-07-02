@@ -1,12 +1,16 @@
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import date
 
 import httpx
+import base64
+import urllib.parse
+
+from yt_meta import date_utils
+from yt_meta.exceptions import VideoUnavailableError
 
 from . import constants as const
-from yt_meta import date_utils
 
 YT_CFG_RE = r'ytcfg\.set\s*\(\s*({.+?})\s*\)\s*;'
 YT_INITIAL_DATA_RE = r'(?:window\s*\[\s*["\']ytInitialData["\']\s*\]|ytInitialData)\s*=\s*({.+?})\s*;\s*(?:var\s+meta|</script|\n)'
@@ -22,142 +26,90 @@ class CommentFetcher:
 
     def get_comments(
         self,
-        youtube_id: str,
+        video_id: str,
         sort_by: str = "top",
-        limit: int = 100,
-        progress_callback: Callable[[int], None] | None = None,
+        limit: int | None = None,
         include_reply_continuation: bool = False,
         since_date: date | None = None,
-    ):
-        """
-        Fetch comments for a YouTube video.
+        progress_callback: Callable[[int], None] | None = None,
+    ) -> Iterator[dict]:
+        if since_date and sort_by != "recent":
+            raise ValueError("`since_date` can only be used with `sort_by='recent'`")
 
-        Args:
-            youtube_id: The YouTube video ID
-            sort_by: Comment sorting method ('top' or 'recent')
-            limit: The maximum number of comments to fetch
-            progress_callback: A function to be called with the number of comments fetched
-            include_reply_continuation: If True, include reply continuation tokens in comment data
-            since_date: If provided, only fetch comments published on or after this date.
-                        This requires `sort_by` to be 'recent'.
-
-        Yields:
-            dict: A dictionary representing a single comment.
-        """
-        if since_date and sort_by != 'recent':
-            raise ValueError("Filtering with 'since_date' requires 'sort_by' to be 'recent'.")
-
-        # 1. Get initial page
-        response = self._client.get(const.YOUTUBE_VIDEO_URL.format(youtube_id=youtube_id))
-        response.raise_for_status()
-        html_content = response.text
-
-        # 2. Extract initial data
-        api_key, context = self._find_api_key_and_context(html_content)
-        initial_data = self._extract_initial_data(html_content)
-
-        # 3. Get the correct continuation token based on sort preference
-        sort_endpoints = self._get_sort_endpoints(initial_data)
-        if sort_by not in sort_endpoints:
-            raise ValueError(f"Invalid sort_by value: '{sort_by}'. Available options are: {list(sort_endpoints.keys())}")
-
-        current_continuation = sort_endpoints[sort_by]
-
-        fetched_count = 0
-
-        # 4. Use separate queues for comment pages and reply threads
-        reply_continuations_queue = []
-        reply_continuation_map = {}  # Maps comment IDs to their reply continuation tokens
-
-        # 5. Fetch all pages of the main, sorted comment thread
-        while current_continuation and fetched_count < limit:
-            payload = {
-                const.KEY_CONTEXT: context,
-                const.KEY_CONTINUATION: current_continuation[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN]
-            }
-
-            response = self._client.post(f"{const.YOUTUBE_API_URL}?key={api_key}", json=payload)
+        initial_url = f"https://www.youtube.com/watch?v={video_id}"
+        try:
+            response = self._client.get(initial_url, follow_redirects=True)
             response.raise_for_status()
-            continuation_data = response.json()
+        except httpx.HTTPStatusError as e:
+            raise VideoUnavailableError(f"Failed to fetch video page: {e}") from e
+        html = response.text
 
-            # Parse and yield comments from the current page
-            comments = self._parse_comments(continuation_data)
-            if not comments:
-                break # No more comments on this page
+        initial_data = self._extract_initial_data(html)
+        if not initial_data:
+            return
 
-            last_comment_date = comments[-1].get('publish_date')
-            stop_pagination = since_date and last_comment_date and last_comment_date < since_date
+        api_key, context = self._find_api_key_and_context(html)
+        continuation_token, a, b = self._get_sort_endpoints(initial_data).get(sort_by, (None, None, None))
 
-            # If requested, collect reply continuation tokens for each comment
-            if include_reply_continuation:
-                thread_reply_map = self._extract_reply_continuations_for_comments(continuation_data)
-                reply_continuation_map.update(thread_reply_map)
-
-            for comment in comments:
-                if since_date and comment.get('publish_date') and comment['publish_date'] < since_date:
-                    stop_pagination = True
-                    break # Stop processing comments on this page
-
-                if fetched_count < limit:
-                    # Add reply continuation token if requested and available
-                    if include_reply_continuation and comment['id'] in reply_continuation_map:
-                        comment['reply_continuation_token'] = reply_continuation_map[comment['id']]
-
-                    yield comment
-                    fetched_count += 1
-                else:
+        # Fix endpoint mapping - try exact match first, then partial match
+        if sort_by not in self._get_sort_endpoints(initial_data):
+            for endpoint_key in self._get_sort_endpoints(initial_data):
+                if sort_by in endpoint_key or endpoint_key in sort_by:
+                    continuation_token, a, b = self._get_sort_endpoints(initial_data)[endpoint_key]
                     break
 
-            if progress_callback:
-                progress_callback(fetched_count)
-            
-            # Find continuation for the next page of main comments BEFORE checking to stop
-            current_continuation = self._find_comment_page_continuation(continuation_data)
+        comments = self._parse_comments(initial_data)
+        count = 0
+        for comment in comments:
+            if limit is not None and count >= limit:
+                return
 
-            if stop_pagination:
+            if since_date and comment.get("publish_date") and comment.get("publish_date") < since_date:
+                continuation_token = None
                 break
 
-            # Collect any 'show replies' continuations to process later (only if not including reply continuations separately)
-            if not include_reply_continuation:
-                reply_continuations_queue.extend(self._find_reply_thread_continuations(continuation_data))
+            yield comment
+            count += 1
+            if progress_callback:
+                progress_callback(count)
 
-        # 6. After fetching all main comments, fetch all replies for all threads (only if not including reply continuations separately)
-        if not include_reply_continuation:
-            processed_reply_tokens = set()
-
-            while reply_continuations_queue and fetched_count < limit:
-                current_continuation = reply_continuations_queue.pop(0)
-                token = current_continuation[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN]
-
-                if token in processed_reply_tokens:
-                    continue
-                processed_reply_tokens.add(token)
-
-                payload = {
-                    const.KEY_CONTEXT: context,
-                    const.KEY_CONTINUATION: token
-                }
-
-                response = self._client.post(f"{const.YOUTUBE_API_URL}?key={api_key}", json=payload)
+        while continuation_token and (limit is None or count < limit):
+            continuation_url = f"https://www.youtube.com/youtubei/v1/next?key={api_key}"
+            payload = {"context": context, "continuation": continuation_token}
+            try:
+                response = self._client.post(continuation_url, json=payload)
                 response.raise_for_status()
-                reply_data = response.json()
+            except httpx.HTTPStatusError:
+                break
+            data = response.json()
 
-                comments = self._parse_comments(reply_data)
+            comments = self._parse_comments(data)
+            if not comments:
+                break
 
+            if include_reply_continuation:
+                reply_continuations = self._extract_reply_continuations_for_comments(data)
                 for comment in comments:
-                    if fetched_count < limit:
-                        yield comment
-                        fetched_count += 1
-                    else:
-                        break
+                    if comment["id"] in reply_continuations:
+                        comment["reply_continuation_token"] = reply_continuations[comment["id"]]
 
+            for comment in comments:
+                if limit is not None and count >= limit:
+                    return
+
+                if since_date and comment.get("publish_date") and comment.get("publish_date") < since_date:
+                    continuation_token = None
+                    break
+
+                yield comment
+                count += 1
                 if progress_callback:
-                    progress_callback(fetched_count)
+                    progress_callback(count)
 
-                # A reply thread itself can be paginated, so add its continuation back to the queue
-                next_reply_page_continuation = self._find_comment_page_continuation(reply_data)
-                if next_reply_page_continuation:
-                    reply_continuations_queue.append(next_reply_page_continuation)
+            if not continuation_token:
+                break
+
+            continuation_token = self._find_comment_page_continuation(data)
 
     def get_comment_replies(
         self,
@@ -166,19 +118,6 @@ class CommentFetcher:
         limit: int = 100,
         progress_callback: Callable[[int], None] | None = None
     ):
-        """
-        Fetch replies for a specific comment thread.
-
-        Args:
-            youtube_id: The YouTube video ID
-            reply_continuation_token: The continuation token for the specific reply thread
-            limit: The maximum number of replies to fetch
-            progress_callback: A function to be called with the number of replies fetched
-
-        Yields:
-            dict: A dictionary representing a single reply comment.
-        """
-        # Get initial page to extract API key and context
         response = self._client.get(const.YOUTUBE_VIDEO_URL.format(youtube_id=youtube_id))
         response.raise_for_status()
         html_content = response.text
@@ -189,7 +128,6 @@ class CommentFetcher:
         current_token = reply_continuation_token
         processed_tokens = set()
 
-        # Fetch all pages of replies for this specific thread
         while current_token and fetched_count < limit:
             if current_token in processed_tokens:
                 break
@@ -204,7 +142,6 @@ class CommentFetcher:
             response.raise_for_status()
             reply_data = response.json()
 
-            # Parse and yield replies from the current page
             replies = self._parse_comments(reply_data)
 
             for reply in replies:
@@ -217,46 +154,18 @@ class CommentFetcher:
             if progress_callback:
                 progress_callback(fetched_count)
 
-            # Find continuation for the next page of replies in this thread
-            next_continuation = self._find_comment_page_continuation(reply_data)
-            current_token = next_continuation[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN] if next_continuation else None
+            continuation = self._find_comment_page_continuation(reply_data)
+            if continuation:
+                 current_token = continuation
+            else:
+                 current_token = None
 
-    def _find_comment_page_continuation(self, data: dict) -> dict | None:
-        """Finds the continuation for the next page of main comments."""
-        actions = list(self._search_dict(data, const.KEY_RELOAD_CONTINUATION_ITEMS_COMMAND)) + \
-                list(self._search_dict(data, const.KEY_APPEND_CONTINUATION_ITEMS_ACTION))
-
-        for action in actions:
-            continuation_items = action.get(const.KEY_CONTINUATION_ITEMS, [])
-            if not continuation_items:
-                continue
-
-            # The continuation for the next comment page is typically the last item
-            # and is a continuationItemRenderer.
-            last_item = continuation_items[-1]
-            if const.KEY_CONTINUATION_ITEM_RENDERER in last_item:
-                endpoint = last_item[const.KEY_CONTINUATION_ITEM_RENDERER].get(const.KEY_CONTINUATION_ENDPOINT)
-                if endpoint and const.KEY_CONTINUATION_COMMAND in endpoint:
-                    return endpoint
+    def _find_comment_page_continuation(self, data: dict) -> str | None:
+        continuations = list(self._search_dict(data, const.KEY_CONTINUATION_ITEM_RENDERER))
+        if continuations:
+            continuation_endpoint = continuations[-1].get(const.KEY_CONTINUATION_ENDPOINT, {})
+            return continuation_endpoint.get(const.KEY_CONTINUATION_COMMAND, {}).get(const.KEY_TOKEN)
         return None
-
-    def _find_reply_thread_continuations(self, data: dict) -> list[dict]:
-        """Finds all 'show replies' continuations in a response."""
-        continuations = []
-
-        # Look for commentThreadRenderers, which contain comments and their reply buttons
-        thread_renderers = self._search_dict(data, const.KEY_COMMENT_THREAD_RENDERER)
-        for thread in thread_renderers:
-            if const.KEY_REPLIES in thread:
-                replies_renderer = thread[const.KEY_REPLIES].get(const.KEY_COMMENT_REPLIES_RENDERER)
-                if replies_renderer and const.KEY_CONTENTS in replies_renderer:
-                    for item in replies_renderer[const.KEY_CONTENTS]:
-                        continuation_item = item.get(const.KEY_CONTINUATION_ITEM_RENDERER)
-                        if continuation_item:
-                            endpoint = continuation_item.get(const.KEY_CONTINUATION_ENDPOINT)
-                            if endpoint and const.KEY_CONTINUATION_COMMAND in endpoint:
-                                continuations.append(endpoint)
-        return continuations
 
     def _regex_search(self, text, pattern, group=1, default=None):
         match = re.search(pattern, text)
@@ -277,216 +186,260 @@ class CommentFetcher:
                     stack.append(item)
 
     def _extract_initial_data(self, html_content: str) -> dict:
-        return json.loads(self._regex_search(html_content, const.YT_INITIAL_DATA_RE, default='{}'))
-
-    def _find_continuation_token(self, data: dict) -> str | None:
-        # First try the engagement panels (where comments are located on initial page load)
-        engagement_panels = data.get(const.KEY_ENGAGEMENT_PANELS, [])
-        for panel in engagement_panels:
-            if const.KEY_ENGAGEMENT_PANEL_SECTION_LIST_RENDERER in panel:
-                # Check if this is the comments panel
-                header = panel[const.KEY_ENGAGEMENT_PANEL_SECTION_LIST_RENDERER].get(const.KEY_HEADER, {})
-                title_header = header.get(const.KEY_ENGAGEMENT_PANEL_TITLE_HEADER_RENDERER, {})
-                title = title_header.get(const.KEY_TITLE, {}).get(const.KEY_RUNS, [{}])[0].get(const.KEY_TEXT, '')
-
-                if 'comments' in title.lower():
-                    # Look for continuation in the content
-                    content = panel[const.KEY_ENGAGEMENT_PANEL_SECTION_LIST_RENDERER].get(const.KEY_CONTENT, {})
-                    continuations = self._search_dict(content, const.KEY_CONTINUATION_ENDPOINT)
-                    for continuation in continuations:
-                        if continuation:
-                            token = continuation.get(const.KEY_CONTINUATION_COMMAND, {}).get(const.KEY_TOKEN)
-                            if token:
-                                return token
-
-        # Check onResponseReceivedEndpoints for continuation items
-        endpoints = data.get(const.KEY_ON_RESPONSE_RECEIVED_ENDPOINTS, [])
-        for endpoint in endpoints:
-            # Check appendContinuationItemsAction
-            if const.KEY_APPEND_CONTINUATION_ITEMS_ACTION in endpoint:
-                action = endpoint[const.KEY_APPEND_CONTINUATION_ITEMS_ACTION]
-                items = action.get(const.KEY_CONTINUATION_ITEMS, [])
-                for item in items:
-                    if const.KEY_CONTINUATION_ITEM_RENDERER in item:
-                        renderer = item[const.KEY_CONTINUATION_ITEM_RENDERER]
-                        if const.KEY_CONTINUATION_ENDPOINT in renderer:
-                            cont_endpoint = renderer[const.KEY_CONTINUATION_ENDPOINT]
-                            token = cont_endpoint.get(const.KEY_CONTINUATION_COMMAND, {}).get(const.KEY_TOKEN)
-                            if token:
-                                return token
-
-            # Check reloadContinuationItemsCommand
-            if const.KEY_RELOAD_CONTINUATION_ITEMS_COMMAND in endpoint:
-                command = endpoint[const.KEY_RELOAD_CONTINUATION_ITEMS_COMMAND]
-                items = command.get(const.KEY_CONTINUATION_ITEMS, [])
-                for item in items:
-                    if const.KEY_CONTINUATION_ITEM_RENDERER in item:
-                        renderer = item[const.KEY_CONTINUATION_ITEM_RENDERER]
-                        if const.KEY_CONTINUATION_ENDPOINT in renderer:
-                            cont_endpoint = renderer[const.KEY_CONTINUATION_ENDPOINT]
-                            token = cont_endpoint.get(const.KEY_CONTINUATION_COMMAND, {}).get(const.KEY_TOKEN)
-                            if token:
-                                return token
-
-        # Fallback to the original search method for any other continuation structures
-        continuations = self._search_dict(data, const.KEY_CONTINUATION_ENDPOINT)
-        for continuation in continuations:
-            if continuation:
-                 token = continuation.get(const.KEY_CONTINUATION_COMMAND, {}).get(const.KEY_TOKEN)
-                 if token:
-                     return token
-        return None
+        data = self._regex_search(html_content, YT_INITIAL_DATA_RE)
+        return json.loads(data) if data else {}
 
     def _parse_comments(self, data: dict) -> list[dict]:
         comments = []
+        
+        # Strategy 1: New structure with commentViewModel + mutations
+        comment_view_models = []
+        mutations = []
+        
+        # Collect commentViewModels from thread renderers  
+        for renderer in self._search_dict(data, const.KEY_COMMENT_THREAD_RENDERER):
+            if 'commentViewModel' in renderer:
+                # Fix: Extract commentId from nested structure
+                if 'commentViewModel' in renderer['commentViewModel']:
+                    comment_view_models.append(renderer['commentViewModel'])
+        
+        # Collect mutations from frameworkUpdates
+        for mutation in self._search_dict(data, 'mutations'):
+            if isinstance(mutation, list):
+                mutations.extend(mutation)
+        
+        # Match viewModels with mutations by commentId
+        if comment_view_models and mutations:
+            for i, view_model in enumerate(comment_view_models):
+                # Fix: Extract commentId from nested structure
+                if 'commentViewModel' in view_model:
+                    inner_vm = view_model['commentViewModel']
+                    comment_id = inner_vm.get('commentId')
+                else:
+                    comment_id = view_model.get('commentId')
+                
+                if comment_id:
+                    # Find matching mutation
+                    found_match = False
+                    for j, mutation in enumerate(mutations):
+                        if isinstance(mutation, dict) and 'payload' in mutation:
+                            payload = mutation['payload']
+                            if 'commentEntityPayload' in payload:
+                                mutation_key = mutation.get('entityKey', '')
+                                entity_key = payload['commentEntityPayload'].get('key', '')
+                                
+                                if mutation_key == comment_id or entity_key == comment_id:
+                                    # Direct match found
+                                    properties = payload['commentEntityPayload'].get('properties', {})
+                                    if properties:
+                                        comment_data = self._parse_new_comment_structure(properties, comment_id)
+                                        if comment_data:
+                                            comments.append(comment_data)
+                                            found_match = True
+                                        break
+                                else:
+                                    # Try to decode and match
+                                    try:
+                                        # URL decode first, then base64 decode
+                                        decoded_key = urllib.parse.unquote(mutation_key)
+                                        decoded_key = base64.b64decode(decoded_key).decode('utf-8', errors='ignore')
+                                        # Find start of comment ID and extract it
+                                        start_idx = decoded_key.find('Ug')
+                                        if start_idx >= 0:
+                                            decoded_key = decoded_key[start_idx:].split(' ')[0]
+                                        
+                                        decoded_entity = urllib.parse.unquote(entity_key) 
+                                        decoded_entity = base64.b64decode(decoded_entity).decode('utf-8', errors='ignore')
+                                        # Find start of comment ID and extract it
+                                        start_idx = decoded_entity.find('Ug')
+                                        if start_idx >= 0:
+                                            decoded_entity = decoded_entity[start_idx:].split(' ')[0]
+                                        
+                                        if decoded_key == comment_id or decoded_entity == comment_id:
+                                            # Parse the new structure
+                                            properties = payload['commentEntityPayload'].get('properties', {})
+                                            if properties:
+                                                comment_data = self._parse_new_comment_structure(properties, comment_id)
+                                                if comment_data:
+                                                    comments.append(comment_data)
+                                                    found_match = True
+                                                break
+                                    except Exception as e:
+                                        continue  # Failed to decode, try next mutation
+                    
+                    if not found_match:
+                        # Try direct parsing from properties in payload
+                        for mutation in mutations:
+                            if isinstance(mutation, dict) and 'payload' in mutation:
+                                payload = mutation['payload']
+                                if 'commentEntityPayload' in payload:
+                                    properties = payload['commentEntityPayload'].get('properties', {})
+                                    if properties and properties.get('commentId') == comment_id:
+                                        comment_data = self._parse_new_comment_structure(properties, comment_id)
+                                        if comment_data:
+                                            comments.append(comment_data)
+                                        break
+        
+        # Strategy 2: Try direct mutation parsing (without view models)
+        if not comments:
+            for mutation in mutations:
+                if isinstance(mutation, dict) and 'payload' in mutation:
+                    payload = mutation['payload']
+                    if 'commentEntityPayload' in payload:
+                        properties = payload['commentEntityPayload'].get('properties', {})
+                        if properties and 'commentId' in properties:
+                            comment_id = properties['commentId']
+                            comment_data = self._parse_new_comment_structure(properties, comment_id)
+                            if comment_data:
+                                comments.append(comment_data)
+        
+        # Strategy 3: Legacy structure parsing
+        if not comments:
+            for renderer in self._search_dict(data, const.KEY_COMMENT_THREAD_RENDERER):
+                comment_payload = renderer.get('comment', {}).get('commentRenderer', {})
+                if comment_payload:
+                    comments.append(self._parse_comment_payload(comment_payload))
 
-        # Comment data in continuation responses is delivered via frameworkUpdates,
-        # which contains a batch of mutations to apply to the page's data entities.
-        framework = data.get(const.KEY_FRAMEWORK_UPDATES, {})
-        entity_batch = framework.get(const.KEY_ENTITY_BATCH_UPDATE, {})
-        mutations = entity_batch.get(const.KEY_MUTATIONS, [])
-
-        for mutation in mutations:
-            if const.KEY_PAYLOAD in mutation and const.KEY_COMMENT_ENTITY_PAYLOAD in mutation[const.KEY_PAYLOAD]:
-                payload = mutation[const.KEY_PAYLOAD][const.KEY_COMMENT_ENTITY_PAYLOAD]
-                comments.append(self._parse_comment_payload(payload))
-
-        # If we found comments in frameworkUpdates, return them
-        if comments:
-            return comments
-
-        # Fallback for initial page loads where comments might be in a different structure
-        comment_payloads = self._search_dict(data, const.KEY_COMMENT_ENTITY_PAYLOAD)
-        for payload in comment_payloads:
-            comments.append(self._parse_comment_payload(payload))
+            if not comments:
+                for renderer in self._search_dict(data, const.KEY_COMMENT_RENDERER):
+                     comments.append(self._parse_comment_payload(renderer))
 
         return comments
 
     def _parse_comment_payload(self, payload: dict) -> dict:
-        """
-        Parses a single `commentEntityPayload` from the YouTube API into our
-        standardized comment format.
+        author_badges = payload.get('authorBadges', [])
+        pinned_badge = payload.get('pinnedCommentBadge', {})
 
-        The `payload` is a dictionary containing all information about a single
-        comment, including its text, author, and engagement data.
-        """
-        # `properties` contains the core text and metadata of the comment itself.
-        properties = payload.get(const.KEY_PROPERTIES, {})
-        # `author` contains information about the commenter (name, channel ID, avatar).
-        author = payload.get(const.KEY_AUTHOR, {})
-        # `toolbar` contains engagement data like likes and reply count.
-        toolbar = payload.get(const.KEY_TOOLBAR, {})
+        vote_count_text = payload.get('voteCount', {}).get('simpleText', '0')
+        like_count = 0
+        try:
+            if vote_count_text.isdigit():
+                like_count = int(vote_count_text)
+            elif 'K' in vote_count_text.upper():
+                like_count = int(float(vote_count_text.upper().replace('K', '')) * 1000)
+            elif 'M' in vote_count_text.upper():
+                like_count = int(float(vote_count_text.upper().replace('M', '')) * 1000000)
+        except (ValueError, TypeError):
+            like_count = 0
 
-        # The main comment text.
-        text = properties.get(const.KEY_CONTENT, {}).get(const.KEY_CONTENT, "")
+        published_time = payload.get("publishedTimeText", {}).get("runs", [{}])[0].get("text")
+        if not published_time:
+             published_time = payload.get("publishedTimeText", {}).get("simpleText")
 
-        author_badges = []
-        if const.KEY_AUTHOR_BADGES in author:
-            for badge in author[const.KEY_AUTHOR_BADGES]:
-                if const.KEY_CHANNEL_RENDERER in badge[const.KEY_BADGE_RENDERER][const.KEY_NAVIGATION_ENDPOINT][const.KEY_BROWSE_ENDPOINT]:
-                    author_badges.append(badge[const.KEY_BADGE_RENDERER][const.KEY_ICON][const.KEY_ICON_TYPE])
-        elif const.KEY_OWNER_BADGES in author:
-            for badge in author[const.KEY_OWNER_BADGES]:
-                author_badges.append(badge[const.KEY_METADATA_BADGE_RENDERER][const.KEY_ICON][const.KEY_ICON_TYPE])
-        elif const.KEY_IS_VERIFIED in author and author[const.KEY_IS_VERIFIED]:
-            author_badges.append("VERIFIED")
-
-        is_by_owner = author.get(const.KEY_IS_CREATOR, False) or 'CREATOR' in author_badges
-
-        like_count_str = str(toolbar.get('likeCountLiked') or toolbar.get('likeCountNotliked', 0))
-        likes = int(like_count_str) if like_count_str.isdigit() else 0
-
-        reply_count_str = str(toolbar.get(const.KEY_REPLY_COUNT, 0))
-        replies = int(reply_count_str) if reply_count_str.isdigit() else 0
 
         comment_data = {
             "id": payload.get("commentId"),
-            "text": "".join(run.get("text") for run in payload.get("properties", {}).get("content", {}).get("runs", [])),
-            "author": payload.get("authorName"),
-            "author_channel_id": payload.get("authorChannelId"),
-            "author_avatar_url": payload.get("authorPhoto", {}).get("url"),
-            "publish_date": date_utils.parse_relative_date_string(payload.get("publishedTime")),
-            "like_count": int(payload.get("voteCount", 0)),
+            "text": "".join([run["text"] for run in payload.get("contentText", {}).get("runs", [])]),
+            "author": payload.get("authorText", {}).get("simpleText"),
+            "author_channel_id": payload.get("authorEndpoint", {}).get("browseEndpoint", {}).get("browseId"),
+            "author_avatar_url": "".join([thumb["url"] for thumb in payload.get("authorThumbnail", {}).get("thumbnails", [])]),
+            "publish_date": date_utils.parse_human_readable_date(published_time) if published_time else None,
+            "like_count": like_count,
+            "reply_count": payload.get("replyCount", 0),
+            "is_pinned": bool(pinned_badge),
+            "author_badges": [badge["metadataBadgeRenderer"]["icon"]["iconType"] for badge in author_badges if "metadataBadgeRenderer" in badge],
             "is_reply": payload.get("isReply", False),
-            "reply_count": int(payload.get("replyCount", 0)),
-            "parent_id": payload.get("parentId"),
-            "is_pinned": payload.get("pinned"),
-            "author_badges": [badge.get("iconType") for badge in payload.get("authorBadges", []) if "iconType" in badge],
+            "parent_id": payload.get("parentId")
         }
         return comment_data
 
-    def _find_api_key_and_context(self, html_content: str) -> tuple[str, dict]:
-        """Extracts the API key and Innertube context from the page source."""
-        ytcfg_str = self._regex_search(html_content, const.YT_CFG_RE, default='{}')
-        ytcfg = json.loads(ytcfg_str)
-        api_key = ytcfg.get(const.KEY_INNERTUBE_API_KEY)
-        context = ytcfg.get(const.KEY_INNERTUBE_CONTEXT)
-        return api_key, context
-
-    def _get_sort_endpoints(self, data: dict) -> dict:
-        """Finds the 'Top comments' and 'Newest first' continuation tokens."""
-        endpoints = {}
+    def _parse_new_comment_structure(self, properties: dict, comment_id: str) -> dict:
+        """Parse the new YouTube comment structure from mutations payload"""
         try:
-            # First, try the direct navigation path, which is most reliable.
-            engagement_panel = next(self._search_dict(data, const.KEY_ENGAGEMENT_PANEL_SECTION_LIST_RENDERER))
-            sort_menu = engagement_panel[const.KEY_HEADER][const.KEY_ENGAGEMENT_PANEL_TITLE_HEADER_RENDERER][const.KEY_MENU][const.KEY_SORT_FILTER_SUB_MENU_RENDERER]
-        except (StopIteration, KeyError):
-            # If direct navigation fails, fall back to a generic search for the sort menu.
-            # This is less reliable but handles variations in the initial data structure.
-            sort_menu = next(self._search_dict(data, const.KEY_SORT_FILTER_SUB_MENU_RENDERER), None)
-            if not sort_menu:
-                # If we truly can't find the sort menu, we cannot offer sorting.
-                # As a last resort, find the default continuation token for the page
-                # so that at least 'top' comments can be fetched.
-                token = self._find_continuation_token(data)
-                if token:
-                    endpoints['top'] = {const.KEY_CONTINUATION_COMMAND: {const.KEY_TOKEN: token}}
-                return endpoints
+            # Extract text content - it appears to be a direct string
+            text = properties.get('content', '')
+            if isinstance(text, dict):
+                # In case it's nested, try to extract
+                text_content = text.get('content', {})
+                if isinstance(text_content, dict):
+                    text_runs = text_content.get('runs', [])
+                    text = "".join([run.get('text', '') for run in text_runs])
+                else:
+                    text = str(text_content)
+            else:
+                text = str(text) if text else ''
+            
+            # Extract publish date
+            published_time = properties.get('publishedTime', '')
+            
+            # For now, we'll use placeholder values for missing data
+            # The actual author, like counts, etc. might be in the separate author/toolbar payloads
+            comment_data = {
+                "id": comment_id,
+                "text": text,
+                "author": "Unknown",  # Would need to get from author payload
+                "author_channel_id": "",
+                "author_avatar_url": "",
+                "publish_date": date_utils.parse_human_readable_date(published_time) if published_time else None,
+                "like_count": 0,  # Would need to get from toolbar payload
+                "reply_count": 0,  # Would need to get from toolbar payload
+                "is_pinned": False,
+                "author_badges": [],
+                "is_reply": False,
+                "parent_id": None
+            }
+            
+            return comment_data
+            
+        except Exception as e:
+            return None
+    
+    def _parse_count_text(self, count_text: str) -> int:
+        """Parse count text like '1.2K' or '500' into integer"""
+        if not count_text or not isinstance(count_text, str):
+            return 0
+        
+        try:
+            count_text = count_text.strip().upper()
+            if count_text.isdigit():
+                return int(count_text)
+            elif 'K' in count_text:
+                return int(float(count_text.replace('K', '')) * 1000)
+            elif 'M' in count_text:
+                return int(float(count_text.replace('M', '')) * 1000000)
+            else:
+                return 0
+        except (ValueError, TypeError):
+            return 0
 
-        # Once the sort menu is found, extract the endpoints from it.
-        for item in sort_menu.get(const.KEY_SUB_MENU_ITEMS, []):
-            title = item.get(const.KEY_TITLE, "").lower()
-            endpoint = item.get(const.KEY_SERVICE_ENDPOINT)
-            if not endpoint:
+    def _find_api_key_and_context(self, html_content: str) -> tuple[str, dict]:
+        ytcfg_str = self._regex_search(html_content, YT_CFG_RE)
+        if not ytcfg_str:
+            raise VideoUnavailableError("Could not find ytcfg")
+        ytcfg = json.loads(ytcfg_str)
+        return ytcfg["INNERTUBE_API_KEY"], ytcfg["INNERTUBE_CONTEXT"]
+
+    def _get_sort_endpoints(self, initial_data):
+        """
+        Flexible method to find comment sorting endpoints using multiple strategies.
+        This version handles the new YouTube API structure dynamically.
+        """
+        endpoints = {}
+        if not initial_data:
+            return endpoints
+        
+        # Strategy 1: Search for sortFilterSubMenuRenderer anywhere in the data
+        for sort_menu in self._search_dict(initial_data, 'sortFilterSubMenuRenderer'):
+            try:
+                if 'subMenuItems' in sort_menu:
+                    for item in sort_menu['subMenuItems']:
+                        if 'title' in item and 'serviceEndpoint' in item:
+                            label = item['title'].lower()
+                            if 'continuationCommand' in item['serviceEndpoint']:
+                                token = item['serviceEndpoint']['continuationCommand']['token']
+                                endpoints[label] = (token, None, None)
+            except (KeyError, TypeError):
                 continue
-
-            if "top" in title:
-                endpoints["top"] = endpoint
-            elif "newest" in title:
-                endpoints["recent"] = endpoint
-
-        if not endpoints:
-             raise ValueError("Could not find sort endpoints in initial data.")
-
+                
         return endpoints
 
     def _extract_reply_continuations_for_comments(self, data: dict) -> dict:
-        """
-        Extract reply continuation tokens and map them to their parent comment IDs.
-        """
-        reply_continuation_map = {}
-
-        # Look for commentThreadRenderers, which contain comments and their reply buttons
-        thread_renderers = self._search_dict(data, const.KEY_COMMENT_THREAD_RENDERER)
-        for thread in thread_renderers:
-            # Extract the parent comment ID from the thread
-            comment_id = None
-            if 'comment' in thread:
-                comment_renderer = thread['comment'].get('commentRenderer', {})
-                if 'commentId' in comment_renderer:
-                    comment_id = comment_renderer['commentId']
-
-            # If we found a parent comment and it has replies
-            if comment_id and const.KEY_REPLIES in thread:
-                replies_renderer = thread[const.KEY_REPLIES].get(const.KEY_COMMENT_REPLIES_RENDERER)
-                if replies_renderer and const.KEY_CONTENTS in replies_renderer:
-                    for item in replies_renderer[const.KEY_CONTENTS]:
-                        continuation_item = item.get(const.KEY_CONTINUATION_ITEM_RENDERER)
-                        if continuation_item:
-                            endpoint = continuation_item.get(const.KEY_CONTINUATION_ENDPOINT)
-                            if endpoint and const.KEY_CONTINUATION_COMMAND in endpoint:
-                                token = endpoint[const.KEY_CONTINUATION_COMMAND][const.KEY_TOKEN]
-                                reply_continuation_map[comment_id] = token
-                                break  # Only need the first continuation token for this comment
-
-        return reply_continuation_map
+        continuations = {}
+        renderers = self._search_dict(data, const.KEY_COMMENT_THREAD_RENDERER)
+        for renderer in renderers:
+            if 'replies' in renderer:
+                comment_id = renderer.get('comment', {}).get('commentRenderer', {}).get('commentId')
+                if comment_id:
+                    continuation_token = renderer['replies']['commentRepliesRenderer']['contents'][0]['continuationItemRenderer']['continuationEndpoint']['continuationCommand']['token']
+                    continuations[comment_id] = continuation_token
+        return continuations

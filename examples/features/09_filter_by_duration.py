@@ -13,33 +13,35 @@ logging.basicConfig(level=logging.INFO)
 print("--- Example: Filtering for 'YouTube Shorts' (duration <= 60s) ---")
 client = YtMeta()
 
-# Using MrBeast channel which has a mix of long videos and some shorts
-# Note: MKBHD primarily makes longer content, so we use MrBeast instead
-channel_url = "https://www.youtube.com/@MrBeast/videos"
+# TED videos often have consistent durations for their talks
+channel_url = "https://www.youtube.com/@TED/videos"
 
-# Find videos that are between 1 and 60 seconds long.
-shorts_filter = {"duration_seconds": {"lte": 60, "gt": 0}}
+# Find videos between 10 and 20 minutes long
+duration_filter = {
+    "duration_seconds": {
+        "gte": 10 * 60,  # 10 minutes in seconds
+        "lte": 20 * 60   # 20 minutes in seconds
+    }
+}
 
-# No need for full metadata, as duration ('lengthSeconds') is available
-# in the basic video info. This makes the query very fast.
-videos = client.get_channel_videos(
+print(f"Finding videos on {channel_url} between 10-20 minutes long...")
+videos_generator = client.get_channel_videos(
     channel_url,
-    filters=shorts_filter,
-    fetch_full_metadata=False,
+    filters=duration_filter
 )
 
-# Take the first 3 videos that match the filter (reduced from 5 for faster execution)
-# Note: If the channel doesn't have many shorts, this may take some time
-# as it needs to search through many videos to find matches
-filtered_videos = list(itertools.islice(videos, 3))
+# Get the first 5 matching videos
+matching_videos = list(itertools.islice(videos_generator, 5))
 
-print(f"Found {len(filtered_videos)} 'Shorts' (<= 60 seconds) (showing first 3):")
-for video in filtered_videos:
-    duration = video.get("duration_seconds")
-    print(f"- Title: {video.get('title')}")
-    print(f"  Duration: {duration}s")
-    print(f"  URL: {video.get('url')}")
+print(f"Found {len(matching_videos)} videos between 10-20 minutes (showing all):")
+for i, video in enumerate(matching_videos, 1):
+    duration = video.get("duration_seconds", 0)
+    duration_text = video.get("duration_text", "N/A")
+    title = video.get("title", "No Title")
+    
+    print(f"{i}. '{title}'")
+    print(f"   Duration: {duration_text} ({duration} seconds)")
+    print()
 
-if not filtered_videos:
-    print("No shorts found in the first batch of videos from this channel.")
-    print("This is normal for channels that primarily create longer-form content.")
+if len(matching_videos) == 0:
+    print("No videos found in this duration range. TED talks vary in length.")

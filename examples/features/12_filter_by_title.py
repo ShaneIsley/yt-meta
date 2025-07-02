@@ -2,23 +2,28 @@ import itertools
 
 from yt_meta import YtMeta
 
-# Example: Find videos by filtering on their titles.
+# Example: Find videos by filtering on their title.
 # This is a "fast" filter because the title is available on the main channel
 # page, avoiding extra requests.
 
 client = YtMeta()
-channel_url = "https://www.youtube.com/@coreyms/videos"
+channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
-# --- Example 1: Using the 'contains' operator ---
-filters_contains = {"title": {"contains": "git"}}
+# Find videos with "python" in the title (case-insensitive).
+# Title filtering is a "fast" filter since title is available in the basic video data.
+filters = {"title": {"contains": "python"}}
 
-print(f"Finding videos on {channel_url} with 'Git' in the title...")
+print(f"Finding videos on {channel_url} with 'python' in the title...")
+videos = client.get_channel_videos(channel_url, filters=filters)
 
-videos_contains = client.get_channel_videos(channel_url, filters=filters_contains, fetch_full_metadata=False)
+count = 0
+for video in itertools.islice(videos, 5):
+    count += 1
+    title = video.get("title", "N/A")
+    print(f"{count}. '{title}'")
 
-for video in itertools.islice(videos_contains, 5):
-    print(f"- {video.get('title')}")
-
+if count == 0:
+    print("No videos found with 'python' in the title. Try 'AI' or 'machine' instead.")
 
 # --- Example 2: Using a regular expression ---
 # Find videos that start with "Python"

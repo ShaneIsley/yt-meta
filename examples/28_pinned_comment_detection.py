@@ -1,92 +1,73 @@
 #!/usr/bin/env python3
 """
-Pinned Comment Detection Example
+Example: Pinned Comment Detection
 
 This example demonstrates how to detect pinned comments in YouTube videos.
 Pinned comments are typically posted by the video creator and appear at the
 top of the comment section.
-
-The video used in this example has a pinned comment from the creator.
 """
 
-import time
+import logging
 
 from yt_meta import YtMeta
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
+
 
 def main():
-    yt_meta = YtMeta()
-
-    # This video has a pinned comment by the creator
+    client = YtMeta()
+    
+    # This video has a pinned comment by the creator  
     video_url = "https://www.youtube.com/watch?v=ZMs2xCmosvI"
+    
+    try:
+        logger.info(f"Fetching comments from: {video_url}")
+        
+        # Fetch comments - pinned comments typically appear first
+        comments = list(client.get_video_comments(video_url, limit=15))
+        
+        # Separate pinned and regular comments
+        pinned_comments = [c for c in comments if c.get('is_pinned', False)]
+        regular_comments = [c for c in comments if not c.get('is_pinned', False)]
+        
+        logger.info(f"Found {len(pinned_comments)} pinned comment(s) and {len(regular_comments)} regular comment(s)")
+        
+        # Display pinned comments
+        if pinned_comments:
+            print("\n📌 PINNED COMMENTS:")
+            print("=" * 50)
+            for i, comment in enumerate(pinned_comments, 1):
+                print(f"{i}. @{comment['author']}")
+                print(f"   💬 {comment['text'][:100]}...")
+                print(f"   👍 {comment['like_count']} likes | 💬 {comment['reply_count']} replies")
+                print(f"   📅 {comment['publish_date']}")
+                print()
+        else:
+            print("\n📝 No pinned comments found in this video.")
+        
+        # Show a few regular comments for comparison
+        if regular_comments:
+            print("💭 REGULAR COMMENTS (first 3):")
+            print("=" * 50) 
+            for i, comment in enumerate(regular_comments[:3], 1):
+                print(f"{i}. @{comment['author']}")
+                print(f"   💬 {comment['text'][:80]}...")
+                print(f"   👍 {comment['like_count']} likes")
+                print()
+        
+        # Educational summary
+        print("✨ Why pinned comments matter:")
+        print("• Highlight important announcements from creators")
+        print("• Provide context or corrections to the video")
+        print("• Show official responses to community feedback")
+        print("• Often contain links or additional resources")
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch comments: {e}")
+        print(f"❌ Error: Could not analyze comments from {video_url}")
 
-    print("🔍 Analyzing YouTube video for pinned comments...")
-    print(f"📺 Video: {video_url}")
-    print()
-
-    # Fetch comments with a reasonable limit
-    print("💬 Fetching comments...")
-    start_time = time.time()
-    comments = list(yt_meta.get_video_comments(video_url, limit=20))
-    end_time = time.time()
-
-    print(f"✅ Fetched {len(comments)} comments in {end_time - start_time:.2f}s")
-    print()
-
-    # Separate pinned and regular comments
-    pinned_comments = [c for c in comments if c.get('is_pinned', False)]
-    regular_comments = [c for c in comments if not c.get('is_pinned', False)]
-
-    print(f"📌 Found {len(pinned_comments)} pinned comment(s)")
-    print(f"💭 Found {len(regular_comments)} regular comment(s)")
-    print()
-
-    # Display pinned comments
-    if pinned_comments:
-        print("📌 PINNED COMMENTS:")
-        print("=" * 60)
-        for i, comment in enumerate(pinned_comments, 1):
-            print(f"Pinned Comment #{i}:")
-            print(f"👤 Author: {comment['author']}")
-            print(f"💬 Text: {comment['text'][:100]}{'...' if len(comment['text']) > 100 else ''}")
-            print(f"👍 Likes: {comment['likes']}")
-            print(f"🕒 Published: {comment['published_time']}")
-            print(f"🆔 ID: {comment['id']}")
-            print()
-
-    # Display top regular comments
-    print("💭 TOP REGULAR COMMENTS:")
-    print("=" * 60)
-    for i, comment in enumerate(regular_comments[:5], 1):
-        print(f"Comment #{i}:")
-        print(f"👤 Author: {comment['author']}")
-        print(f"💬 Text: {comment['text'][:100]}{'...' if len(comment['text']) > 100 else ''}")
-        print(f"👍 Likes: {comment['likes']}")
-        print(f"💬 Replies: {comment['reply_count']}")
-        print(f"🕒 Published: {comment['published_time']}")
-        print()
-
-    # Summary statistics
-    print("📊 SUMMARY:")
-    print("=" * 60)
-    print(f"Total comments analyzed: {len(comments)}")
-    print(f"Pinned comments: {len(pinned_comments)}")
-    print(f"Regular comments: {len(regular_comments)}")
-
-    if pinned_comments:
-        avg_pinned_likes = sum(c['likes'] for c in pinned_comments) / len(pinned_comments)
-        print(f"Average likes on pinned comments: {avg_pinned_likes:.1f}")
-
-    if regular_comments:
-        avg_regular_likes = sum(c['likes'] for c in regular_comments) / len(regular_comments)
-        print(f"Average likes on regular comments: {avg_regular_likes:.1f}")
-
-    print()
-    print("✨ Pinned comment detection helps identify:")
-    print("  • Creator announcements and important updates")
-    print("  • Official responses to community feedback")
-    print("  • Key information highlighted by the content creator")
-    print("  • Community guidelines or video corrections")
 
 if __name__ == "__main__":
     main()

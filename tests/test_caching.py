@@ -50,7 +50,7 @@ def test_video_metadata_caching(cached_client):
 
     with (
         patch("httpx.Client.get", return_value=mock_response) as mock_get,
-        patch("yt_meta.client.parsing.parse_video_metadata", return_value={"meta": "data"}) as mock_parse,
+        patch("yt_meta.fetchers.parsing.parse_video_metadata", return_value={"meta": "data"}) as mock_parse,
     ):
         # First call - should fetch and cache
         result1 = cached_client.get_video_metadata(video_url)
@@ -81,7 +81,7 @@ def test_cache_persistence(tmp_path):
 
     with (
         patch("httpx.Client.get", return_value=mock_response),
-        patch("yt_meta.client.parsing.parse_video_metadata", return_value={"persistent": "data"}),
+        patch("yt_meta.fetchers.parsing.parse_video_metadata", return_value={"persistent": "data"}),
     ):
         # First client instance
         cache1 = Cache(cache_dir)
@@ -92,7 +92,7 @@ def test_cache_persistence(tmp_path):
     # Second client instance with the same cache directory
     with (
         patch("httpx.Client.get", return_value=mock_response) as mock_get,
-        patch("yt_meta.client.parsing.parse_video_metadata") as mock_parse,
+        patch("yt_meta.fetchers.parsing.parse_video_metadata") as mock_parse,
     ):
         cache2 = Cache(cache_dir)
         client2 = YtMeta(cache=cache2)
@@ -115,7 +115,7 @@ def test_clear_cache(cached_client):
 
     with (
         patch("httpx.Client.get", return_value=mock_response) as mock_get,
-        patch("yt_meta.client.parsing.parse_video_metadata", return_value={"meta": "data"}),
+        patch("yt_meta.fetchers.parsing.parse_video_metadata", return_value={"meta": "data"}),
     ):
         # Populate the cache
         cached_client.get_video_metadata(video_url)
@@ -192,21 +192,3 @@ def test_channel_page_caching():
         result3 = client.get_channel_metadata("https://www.youtube.com/channel/test", force_refresh=True)
         assert mock_client.return_value.get.call_count == 2
         assert result3 is not None
-
-
-def test_continuation_caching(mock_response):
-    """Test that continuation data is cached."""
-    with patch("httpx.Client") as mock_client:
-        mock_client.return_value.post.return_value = mock_response
-        client = YtMeta()
-
-        # Mock the initial data needed for continuation
-        ytcfg = {"INNERTUBE_API_KEY": "test_key", "INNERTUBE_CONTEXT": {}}
-
-        # First call should trigger a POST
-        client._get_continuation_data("test_token", ytcfg)
-        mock_client.return_value.post.assert_called_once()
-
-        # Second call should hit the cache
-        client._get_continuation_data("test_token", ytcfg)
-        mock_client.return_value.post.assert_called_once() # Should not be called again

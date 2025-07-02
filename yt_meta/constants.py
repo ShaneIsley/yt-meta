@@ -33,6 +33,7 @@ KEY_TOKEN = "token"
 # Comment structure keys
 KEY_COMMENT_ENTITY_PAYLOAD = "commentEntityPayload"
 KEY_COMMENT_REPLIES_RENDERER = "commentRepliesRenderer"
+KEY_COMMENT_RENDERER = "commentRenderer"
 KEY_COMMENT_THREAD_RENDERER = "commentThreadRenderer"
 KEY_PROPERTIES = "properties"
 KEY_TOOLBAR = "toolbar"

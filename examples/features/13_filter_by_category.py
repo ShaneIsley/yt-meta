@@ -3,22 +3,18 @@ import itertools
 from yt_meta import YtMeta
 
 # Example: Find videos by filtering on their category.
-# This is a "slow" filter because the category is not available on the
-# main channel page. This means the client must fetch the full metadata for
-# each video, which is slower.
+# Category is a "slow" filter because full metadata is required.
 
 client = YtMeta()
-# Using a channel with a clear variety of categories
-channel_url = "https://www.youtube.com/@MrBeast/videos"
+channel_url = "https://www.youtube.com/@TED/videos"
 
-filters = {"category": {"eq": "Entertainment"}}
+# TED videos are typically in the "Education" category
+filters = {"category": {"eq": "Education"}}
 
-# The client will automatically set `fetch_full_metadata=True` because "category"
-# is a slow filter.
-print(f"Finding videos on {channel_url} in the 'Entertainment' category...")
+print(f"Finding 'Education' category videos from {channel_url}...")
 videos = client.get_channel_videos(channel_url, filters=filters)
 
-for video in itertools.islice(videos, 5):
-    title = video.get("title", "N/A")
-    category = video.get("category", "N/A")
-    print(f"- '{title}' (Category: {category})")
+for video in itertools.islice(videos, 3):
+    print(f"- '{video.get('title')}' (Category: {video.get('category')})")
+
+print("\nNote: Category filtering requires full metadata, so it's slower.")

@@ -4,7 +4,9 @@ the progress of long-running operations like fetching a large number of comments
 """
 import logging
 import sys
+
 from tqdm import tqdm
+
 from yt_meta import YtMeta
 
 # --- Configuration ---
@@ -18,7 +20,7 @@ if __name__ == "__main__":
 
     # --- 1. Fetching without a progress callback ---
     # By default, no progress is shown. The library is silent.
-    logger.info(f"--- Running without a progress callback (default behavior) ---")
+    logger.info("--- Running without a progress callback (default behavior) ---")
     comments_generator_silent = yt_meta.get_video_comments(
         youtube_url=VIDEO_URL,
         limit=MAX_COMMENTS
@@ -34,7 +36,7 @@ if __name__ == "__main__":
         # Using carriage return to print on the same line
         print(f"  ... Fetched {count} comments", end='\\r')
 
-    logger.info(f"--- Running with a simple print callback ---")
+    logger.info("--- Running with a simple print callback ---")
     comments_generator_simple = yt_meta.get_video_comments(
         youtube_url=VIDEO_URL,
         limit=MAX_COMMENTS,
@@ -47,11 +49,11 @@ if __name__ == "__main__":
 
     # --- 3. Using the `tqdm` library for a rich progress bar ---
     # For a better user experience, you can integrate with a library like tqdm.
-    logger.info(f"--- Running with a tqdm progress bar ---")
-    
+    logger.info("--- Running with a tqdm progress bar ---")
+
     # Initialize tqdm progress bar
     with tqdm(total=MAX_COMMENTS, desc="Fetching Comments", unit="comment") as pbar:
-        
+
         # The callback function will update the progress bar
         def tqdm_callback(count: int):
             # To update, we set the progress bar to the new total count
@@ -65,4 +67,4 @@ if __name__ == "__main__":
         )
         comment_list_tqdm = list(comments_generator_tqdm)
 
-    logger.info(f"Finished. Fetched {len(comment_list_tqdm)} comments with tqdm.") 
+    logger.info(f"Finished. Fetched {len(comment_list_tqdm)} comments with tqdm.")

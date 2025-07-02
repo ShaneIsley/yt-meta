@@ -56,3 +56,6 @@ def parse_relative_date_string(date_str: str) -> date:
 
     # Fallback for unrecognized formats
     return datetime.today().date()
+
+
+parse_human_readable_date = parse_relative_date_string

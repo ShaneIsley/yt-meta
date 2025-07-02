@@ -12,7 +12,9 @@ older than the specified date, minimizing API calls and processing time.
 from datetime import date, timedelta
 
 from tqdm import tqdm
+
 from yt_meta import YtMeta
+
 
 def main():
     client = YtMeta()
@@ -28,14 +30,14 @@ def main():
     print("=" * 60)
     print(f"Video URL: {video_url}")
     print(f"Fetching comments posted on or after: {since_date.isoformat()}")
-    print(f"Sorting by: 'recent' (required for this feature)\n")
+    print("Sorting by: 'recent' (required for this feature)\n")
 
     # --- Test Case 1: Correct Usage ---
     print("--- Correct Usage: sort_by='recent' ---")
     try:
         # Use a progress bar to see how many comments are fetched
         pbar = tqdm(desc="Fetching recent comments", unit=" comments")
-        
+
         def progress_callback(count):
             pbar.update(count - pbar.n)
 
@@ -55,7 +57,7 @@ def main():
                 print(f"  Date: {comments_since[0]['publish_date'].isoformat()}")
             print(f"  Author: {comments_since[0]['author']}")
             print(f"  Text: '{comments_since[0]['text'][:80]}...'")
-            
+
             print("\nOldest comment fetched (should be on or after the target date):")
             if 'publish_date' in comments_since[-1]:
                 print(f"  Date: {comments_since[-1]['publish_date'].isoformat()}")
@@ -86,4 +88,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main() 
+    main()

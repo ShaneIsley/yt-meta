@@ -2,7 +2,7 @@ import logging
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
-from httpx import Client
+import httpx
 
 from . import parsing
 from .date_utils import parse_relative_date_string
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class _BaseFetcher:
     """A base class for fetchers that process lists of videos."""
-    def __init__(self, session: Client, cache: MutableMapping | None, video_fetcher: "VideoFetcher"):
+    def __init__(self, session: httpx.Client, cache: MutableMapping | None, video_fetcher: "VideoFetcher"):
         self.session = session
         self.cache = cache
         self.video_fetcher = video_fetcher
@@ -65,7 +65,7 @@ class _BaseFetcher:
 
 class VideoFetcher:
     """Fetches data related to a single YouTube video."""
-    def __init__(self, session: Client, cache: MutableMapping | None):
+    def __init__(self, session: httpx.Client, cache: MutableMapping | None):
         self.session = session
         self.cache = cache
 
@@ -90,7 +90,7 @@ class VideoFetcher:
             response = self.session.get(youtube_url, timeout=10)
             response.raise_for_status()
             html = response.text
-        except Exception as e:
+        except httpx.RequestError as e:
             logger.error(f"Failed to fetch video page {youtube_url}: {e}")
             raise VideoUnavailableError(f"Failed to fetch video page: {e}", video_id=youtube_url.split("v=")[-1]) from e
 
@@ -119,7 +119,7 @@ class VideoFetcher:
 
 class ChannelFetcher(_BaseFetcher):
     """Fetches data related to a YouTube channel's videos and shorts."""
-    def __init__(self, session: Client, cache: MutableMapping | None, video_fetcher: VideoFetcher):
+    def __init__(self, session: httpx.Client, cache: MutableMapping | None, video_fetcher: VideoFetcher):
         super().__init__(session, cache, video_fetcher)
 
     def _get_channel_page_cache_key(self, channel_url: str) -> str:
@@ -144,7 +144,7 @@ class ChannelFetcher(_BaseFetcher):
             response = self.session.get(key.replace("channel_page:", ""), timeout=10)
             response.raise_for_status()
             html = response.text
-        except Exception as e:
+        except httpx.RequestError as e:
             self.logger.error(f"Request failed for channel page {key}: {e}")
             raise VideoUnavailableError(f"Could not fetch channel page: {e}", channel_url=key) from e
         initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
@@ -166,7 +166,7 @@ class ChannelFetcher(_BaseFetcher):
             response = self.session.get(key.replace("channel_shorts_page:", ""), timeout=10)
             response.raise_for_status()
             html = response.text
-        except Exception as e:
+        except httpx.RequestError as e:
             raise VideoUnavailableError(f"Could not fetch channel shorts page: {e}", channel_url=key) from e
         initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
         if not initial_data:
@@ -361,7 +361,7 @@ class ChannelFetcher(_BaseFetcher):
 
 class PlaylistFetcher(_BaseFetcher):
     """Fetches data related to a YouTube playlist."""
-    def __init__(self, session: Client, cache: MutableMapping | None, video_fetcher: VideoFetcher):
+    def __init__(self, session: httpx.Client, cache: MutableMapping | None, video_fetcher: VideoFetcher):
         super().__init__(session, cache, video_fetcher)
 
     def _get_raw_playlist_videos_generator(self, playlist_id: str):
@@ -370,7 +370,7 @@ class PlaylistFetcher(_BaseFetcher):
             response = self.session.get(playlist_url, timeout=10)
             response.raise_for_status()
             html = response.text
-        except Exception as e:
+        except httpx.RequestError as e:
             raise VideoUnavailableError(f"Could not fetch playlist page: {e}", playlist_id=playlist_id) from e
         initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
         if not initial_data:
