@@ -25,6 +25,7 @@ dependencies = [
     "pytest-mock>=3.14.1",
     "rich>=14.0.0",
     "sqlitedict>=2.1.0",
+    "youtube-comment-downloader>=0.1.76",
 ]
 
 [project.optional-dependencies]
