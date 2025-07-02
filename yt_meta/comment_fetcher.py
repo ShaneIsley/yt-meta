@@ -90,36 +90,20 @@ class CommentFetcher:
                     if not api_response:
                         break
                         
-                    # Extract all payload data using parser
-                    comment_payloads = self.parser.extract_comment_payloads(api_response)
-                    author_payloads = self.parser.extract_author_payloads(api_response)
-                    toolbar_payloads = self.parser.extract_toolbar_payloads(api_response)
-                    
-                    # Get mapping data using parser
-                    surface_keys = self.parser.get_surface_key_mappings(api_response)
-                    toolbar_states = self.parser.get_toolbar_states(api_response)
-                    paid_comments = self.parser.get_paid_comments(api_response, surface_keys)
+                    # Extract complete comments directly (new approach)
+                    comments = self.parser.extract_complete_comments(api_response)
                     
                     # Extract reply continuation tokens if requested
                     reply_tokens = {}
                     if include_reply_continuation:
                         reply_tokens = self.parser.extract_reply_continuations(api_response)
                     
-                    # Process comments using parser
+                    # Process comments
                     found_comments = False
-                    for comment_data in comment_payloads:
+                    for comment in comments:
                         if limit and comment_count >= limit:
                             break
                             
-                        comment = self.parser.parse_comment_complete(
-                            comment_data, 
-                            author_payloads, 
-                            toolbar_payloads,
-                            toolbar_states,
-                            paid_comments,
-                            surface_keys
-                        )
-                        
                         if not comment or comment['id'] in seen_ids:
                             continue
                             
@@ -196,36 +180,30 @@ class CommentFetcher:
                     if not api_response:
                         break
                         
-                    # Extract replies from the response
-                    # Replies come in onResponseReceivedEndpoints.appendContinuationItemsAction.continuationItems
+                    # Extract replies using the same direct extraction as main comments
+                    replies = self.parser.extract_complete_comments(api_response)
                     replies_found = False
                     
-                    if "onResponseReceivedEndpoints" in api_response:
-                        for endpoint in api_response["onResponseReceivedEndpoints"]:
-                            if "appendContinuationItemsAction" in endpoint:
-                                action = endpoint["appendContinuationItemsAction"]
-                                if "continuationItems" in action:
-                                    for item in action["continuationItems"]:
-                                        if "commentRenderer" in item:
-                                            reply_data = item["commentRenderer"]
-                                            
-                                            # Parse reply as a comment but mark it as a reply
-                                            reply = self._parse_reply_comment(reply_data)
-                                            
-                                            if not reply or reply['id'] in seen_ids:
-                                                continue
-                                                
-                                            if limit and reply_count >= limit:
-                                                break
-                                                
-                                            seen_ids.add(reply['id'])
-                                            reply_count += 1
-                                            replies_found = True
-                                            
-                                            if progress_callback:
-                                                progress_callback(reply_count)
-                                                
-                                            yield reply
+                    for reply in replies:
+                        if not reply or reply['id'] in seen_ids:
+                            continue
+                            
+                        if limit and reply_count >= limit:
+                            break
+                            
+                        # Mark as reply and set reply-specific properties
+                        reply['is_reply'] = True
+                        reply['reply_count'] = 0  # Replies don't have nested replies
+                        reply['is_pinned'] = False  # Replies can't be pinned
+                        
+                        seen_ids.add(reply['id'])
+                        reply_count += 1
+                        replies_found = True
+                        
+                        if progress_callback:
+                            progress_callback(reply_count)
+                            
+                        yield reply
                                             
                     if not replies_found:
                         break
@@ -242,106 +220,7 @@ class CommentFetcher:
         except Exception as e:
             logger.error(f"Error fetching replies: {e}")
             raise VideoUnavailableError(f"Could not fetch replies for video {video_id}: {e}")
-            
-    def _parse_reply_comment(self, reply_data: Dict) -> Optional[Dict[str, Any]]:
-        """
-        Parse a reply comment from commentRenderer data.
-        
-        Args:
-            reply_data: Raw reply data from commentRenderer
-            
-        Returns:
-            Parsed reply comment or None if parsing fails
-        """
-        try:
-            comment_id = reply_data.get("commentId", "")
-            if not comment_id:
-                return None
-                
-            # Extract text content
-            text = ""
-            if "contentText" in reply_data:
-                content = reply_data["contentText"]
-                if "runs" in content:
-                    text = "".join(run.get("text", "") for run in content["runs"])
-                elif "simpleText" in content:
-                    text = content["simpleText"]
-                    
-            # Extract author information
-            author = "Unknown"
-            if "authorText" in reply_data:
-                author_text = reply_data["authorText"]
-                if "simpleText" in author_text:
-                    author = author_text["simpleText"]
-                    
-            # Extract author channel ID
-            author_channel_id = ""
-            if "authorEndpoint" in reply_data:
-                endpoint = reply_data["authorEndpoint"]
-                if "browseEndpoint" in endpoint:
-                    browse_endpoint = endpoint["browseEndpoint"]
-                    author_channel_id = browse_endpoint.get("browseId", "")
-                    
-            # Extract author avatar
-            author_avatar_url = ""
-            if "authorThumbnail" in reply_data:
-                thumbnail = reply_data["authorThumbnail"]
-                if "thumbnails" in thumbnail and thumbnail["thumbnails"]:
-                    # Get the highest resolution thumbnail
-                    author_avatar_url = thumbnail["thumbnails"][-1].get("url", "")
-                    
-            # Extract engagement counts
-            like_count = reply_data.get("likeCount", 0)
-            if isinstance(like_count, str):
-                like_count = self.parser._parse_engagement_count(like_count)
-                
-            # Extract time information
-            time_human = ""
-            if "publishedTimeText" in reply_data:
-                time_text = reply_data["publishedTimeText"]
-                if "runs" in time_text:
-                    time_human = "".join(run.get("text", "") for run in time_text["runs"])
-                elif "simpleText" in time_text:
-                    time_human = time_text["simpleText"]
-                    
-            # Parse time to date
-            publish_date = None
-            if time_human:
-                try:
-                    from .date_utils import parse_relative_date_string
-                    publish_date = parse_relative_date_string(time_human)
-                except Exception:
-                    pass
-                    
-            # Extract reply-specific information
-            is_reply = reply_data.get("isReply", True)  # Default to True for replies
-            parent_id = reply_data.get("parentId", "")
-            
-            # Check if author is channel owner
-            is_hearted = reply_data.get("authorIsChannelOwner", False)
-            
-            return {
-                'id': comment_id,
-                'text': text,
-                'author': author,
-                'author_channel_id': author_channel_id,
-                'author_avatar_url': author_avatar_url,
-                'publish_date': publish_date,
-                'time_human': time_human,
-                'time_parsed': None,
-                'like_count': like_count,
-                'reply_count': 0,  # Replies don't have nested replies in YouTube
-                'is_hearted': is_hearted,
-                'is_reply': is_reply,
-                'is_pinned': False,  # Replies can't be pinned
-                'paid_comment': None,
-                'author_badges': [],
-                'parent_id': parent_id,
-            }
-            
-        except Exception as e:
-            logger.error(f"Error parsing reply comment: {e}")
-            return None
+
 
 
 # Maintain backward compatibility with the old class name

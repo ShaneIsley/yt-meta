@@ -51,22 +51,26 @@ class CommentParser:
     def extract_author_payloads(self, api_response: Dict) -> Dict[str, Dict]:
         """
         Extract author payload data from API response.
+        Author data is embedded in commentEntityPayload.author.
         
         Args:
             api_response: API response containing author data
             
         Returns:
-            Dictionary mapping author keys to author data
+            Dictionary mapping comment keys to author data
         """
         authors = {}
         
         def search_authors(obj):
             if isinstance(obj, dict):
-                if "authorEntityPayload" in obj:
-                    payload = obj["authorEntityPayload"]
-                    if "key" in payload:
-                        key = payload["key"]
-                        authors[key] = payload
+                if "commentEntityPayload" in obj:
+                    payload = obj["commentEntityPayload"]
+                    if "author" in payload:
+                        # Use comment key as the mapping key
+                        comment_key = payload.get("key", "")
+                        author_data = payload["author"]
+                        if comment_key:
+                            authors[comment_key] = author_data
                         
                 for value in obj.values():
                     search_authors(value)
@@ -81,6 +85,7 @@ class CommentParser:
     def extract_toolbar_payloads(self, api_response: Dict) -> Dict[str, Dict]:
         """
         Extract toolbar payload data from API response.
+        Looks for engagementToolbarSurfaceEntityPayload and engagementToolbarStateEntityPayload.
         
         Args:
             api_response: API response containing toolbar data
@@ -92,11 +97,17 @@ class CommentParser:
         
         def search_toolbars(obj):
             if isinstance(obj, dict):
-                if "engagementToolbarEntityPayload" in obj:
-                    payload = obj["engagementToolbarEntityPayload"]
-                    if "key" in payload:
-                        key = payload["key"]
-                        toolbars[key] = payload
+                # Look for both surface and state toolbar payloads
+                for payload_type in ["engagementToolbarSurfaceEntityPayload", "engagementToolbarStateEntityPayload"]:
+                    if payload_type in obj:
+                        payload = obj[payload_type]
+                        if "key" in payload:
+                            key = payload["key"]
+                            # Merge data from both payload types
+                            if key in toolbars:
+                                toolbars[key].update(payload)
+                            else:
+                                toolbars[key] = payload.copy()
                         
                 for value in obj.values():
                     search_toolbars(value)
@@ -433,4 +444,98 @@ class CommentParser:
                 
         except (ValueError, TypeError):
             logger.warning(f"Could not parse engagement count: {count_str}")
-            return 0 
+            return 0
+        
+    def extract_complete_comments(self, api_response: Dict) -> List[Dict[str, Any]]:
+        """
+        Extract complete comment data directly from commentEntityPayload.
+        This approach gets all data (comment, author, toolbar) from a single payload.
+        
+        Args:
+            api_response: API response data
+            
+        Returns:
+            List of complete comment dictionaries
+        """
+        comments = []
+        
+        def search_complete_comments(obj):
+            if isinstance(obj, dict):
+                if "commentEntityPayload" in obj:
+                    payload = obj["commentEntityPayload"]
+                    
+                    # Extract comment properties
+                    properties = payload.get("properties", {})
+                    comment_id = properties.get("commentId")
+                    
+                    if not comment_id:
+                        return
+                        
+                    # Extract text content
+                    content = properties.get("content", {})
+                    text = content.get("content", "")
+                    
+                    # Extract author data directly from payload
+                    author_data = payload.get("author", {})
+                    author_name = author_data.get("displayName", "Unknown")
+                    author_channel_id = author_data.get("channelId", "")
+                    author_avatar_url = author_data.get("avatarThumbnailUrl", "")
+                    is_verified = author_data.get("isVerified", False)
+                    is_creator = author_data.get("isCreator", False)
+                    
+                    # Extract toolbar data directly from payload
+                    toolbar_data = payload.get("toolbar", {})
+                    like_count = self._parse_engagement_count(
+                        toolbar_data.get("likeCountNotliked") or
+                        toolbar_data.get("likeCountLiked") or
+                        "0"
+                    )
+                    reply_count = self._parse_engagement_count(
+                        toolbar_data.get("replyCount", "0")
+                    )
+                    
+                    # Extract time information
+                    published_time = properties.get("publishedTime", "")
+                    publish_date = None
+                    if published_time:
+                        try:
+                            publish_date = parse_relative_date_string(published_time)
+                        except Exception:
+                            pass
+                    
+                    # Extract other properties
+                    reply_level = properties.get("replyLevel", 0)
+                    is_reply = reply_level > 0
+                    
+                    comment = {
+                        'id': comment_id,
+                        'text': text,
+                        'author': author_name,
+                        'author_channel_id': author_channel_id,
+                        'author_avatar_url': author_avatar_url,
+                        'publish_date': publish_date,
+                        'time_human': published_time,
+                        'time_parsed': None,
+                        'like_count': like_count,
+                        'reply_count': reply_count,
+                        'is_hearted': False,  # Can be extracted from toolbar states if needed
+                        'is_reply': is_reply,
+                        'is_pinned': False,  # Can be determined from other data if needed
+                        'paid_comment': None,
+                        'author_badges': [],  # Can be extracted from author data if needed
+                        'parent_id': None,  # For replies
+                        'is_verified': is_verified,
+                        'is_creator': is_creator,
+                    }
+                    
+                    comments.append(comment)
+                    
+                for value in obj.values():
+                    search_complete_comments(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    search_complete_comments(item)
+                    
+        search_complete_comments(api_response)
+        logger.debug(f"Extracted {len(comments)} complete comments directly")
+        return comments 
