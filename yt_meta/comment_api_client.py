@@ -313,4 +313,38 @@ class CommentAPIClient:
                         
             return None
             
-        return search_for_continuation(api_response) 
+        return search_for_continuation(api_response)
+        
+    def make_reply_request(self, reply_continuation_token: str, ytcfg: Dict) -> Optional[Dict]:
+        """
+        Make API request to get reply data using reply continuation token.
+        
+        Args:
+            reply_continuation_token: Reply continuation token
+            ytcfg: YouTube configuration data
+            
+        Returns:
+            API response data containing replies or None if failed
+        """
+        api_key = ytcfg.get("INNERTUBE_API_KEY")
+        if not api_key:
+            logger.error("No API key found in ytcfg")
+            return None
+            
+        url = f"https://www.youtube.com/youtubei/v1/next?key={api_key}"
+        
+        context = ytcfg.get("INNERTUBE_CONTEXT", {})
+        
+        payload = {
+            "context": context,
+            "continuation": reply_continuation_token
+        }
+        
+        try:
+            response = self.client.post(url, json=payload)
+            response.raise_for_status()
+            return response.json()
+            
+        except Exception as e:
+            logger.error(f"Reply API request failed: {e}")
+            return None 

@@ -202,6 +202,58 @@ class CommentParser:
         logger.debug(f"Extracted {len(paid_comments)} paid comments")
         return paid_comments
         
+    def extract_reply_continuations(self, api_response: Dict) -> Dict[str, str]:
+        """
+        Extract reply continuation tokens from comment thread renderers.
+        
+        Args:
+            api_response: API response data containing comment threads
+            
+        Returns:
+            Dictionary mapping comment IDs to their reply continuation tokens
+        """
+        reply_tokens = {}
+        
+        def search_comment_threads(obj):
+            if isinstance(obj, dict):
+                if "commentThreadRenderer" in obj:
+                    thread = obj["commentThreadRenderer"]
+                    
+                    # Get comment ID from commentViewModel
+                    comment_id = None
+                    if "commentViewModel" in thread:
+                        view_model = thread["commentViewModel"]
+                        if "commentViewModel" in view_model:
+                            comment_id = view_model["commentViewModel"].get("commentId")
+                    
+                    # Look for reply continuation token
+                    if comment_id and "replies" in thread:
+                        replies = thread["replies"]
+                        if "commentRepliesRenderer" in replies:
+                            replies_renderer = replies["commentRepliesRenderer"]
+                            if "contents" in replies_renderer:
+                                contents = replies_renderer["contents"]
+                                for content in contents:
+                                    if "continuationItemRenderer" in content:
+                                        continuation_item = content["continuationItemRenderer"]
+                                        if "continuationEndpoint" in continuation_item:
+                                            endpoint = continuation_item["continuationEndpoint"]
+                                            if "continuationCommand" in endpoint:
+                                                token = endpoint["continuationCommand"].get("token")
+                                                if token:
+                                                    reply_tokens[comment_id] = token
+                                                    logger.debug(f"Found reply token for comment {comment_id}: {token[:50]}...")
+                                                    
+                for value in obj.values():
+                    search_comment_threads(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    search_comment_threads(item)
+                    
+        search_comment_threads(api_response)
+        logger.debug(f"Extracted {len(reply_tokens)} reply continuation tokens")
+        return reply_tokens
+        
     def parse_comment_complete(
         self, 
         comment_data: Dict,
