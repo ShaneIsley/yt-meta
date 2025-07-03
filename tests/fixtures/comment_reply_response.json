@@ -1,0 +1,26 @@
+{
+  "onResponseReceivedEndpoints": [
+    {
+      "appendContinuationItemsAction": {
+        "continuationItems": [
+          {
+            "commentRenderer": {
+              "commentId": "Ugw_V_4Q3gmI1gA03f54AaABAg.9y3j6q9e7bK9y3j7a4p7H1",
+              "authorText": { "simpleText": "Reply Author" },
+              "authorThumbnail": { "thumbnails": [{ "url": "https://yt3.ggpht.com/..." }] },
+              "authorEndpoint": { "browseEndpoint": { "browseId": "UC-reply-author" } },
+              "contentText": { "runs": [{ "text": "This is a reply." }] },
+              "publishedTimeText": { "runs": [{ "text": "1 day ago" }] },
+              "isLiked": false,
+              "likeCount": 1,
+              "authorIsChannelOwner": false,
+              "isReply": true,
+              "parentId": "Ugw_V_4Q3gmI1gA03f54AaABAg"
+            }
+          }
+        ],
+        "targetId": "comment-replies-item-Ugw_V_4Q3gmI1gA03f54AaABAg"
+      }
+    }
+  ]
+} 

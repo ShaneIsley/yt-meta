@@ -1,53 +1,76 @@
 """
-Example: Fetching and filtering video comments.
+Example: Fetching video comments with different sorting methods.
+
+This example demonstrates how to fetch comments using both "top" and "recent"
+sorting to see the difference in results.
 """
-import itertools
+
 import logging
 
 from yt_meta import YtMeta
-from yt_meta.fetchers import SORT_BY_POPULAR
+from yt_meta.exceptions import VideoUnavailableError
 
-# Configure logging to see the library's output
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logging
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
-# The URL of the video we want to get comments from
-video_id = "KUCZe1xBKFM"
-video_url = f"https://www.youtube.com/watch?v={video_id}"
+# --- Configuration ---
+VIDEO_URL = "https://www.youtube.com/watch?v=B68agR-OeJM"
+MAX_COMMENTS = 20
 
-# Initialize the client
-client = YtMeta()
 
-# --- Example: Get up to 5 popular comments with more than 100 likes ---
-print(f"Fetching up to 5 popular comments for video with over 100 likes: {video_url}")
-print("-" * 30)
+def fetch_comments_with_sorting(client: YtMeta, sort_by: str):
+    """Fetch and display comments with specified sorting."""
+    try:
+        logger.info(f"Fetching {MAX_COMMENTS} comments sorted by '{sort_by}'")
 
-# The 'limit' parameter acts as a maximum cap on the number of comments to return.
-# The 'filters' are applied *before* a comment is counted towards the limit.
-# Therefore, you may get fewer than the limit if not enough comments match the filter.
-filters = {"like_count": {"gt": 100}}
+        comments = list(
+            client.get_video_comments(
+                youtube_url=VIDEO_URL, sort_by=sort_by, limit=MAX_COMMENTS
+            )
+        )
 
-comments_generator = client.get_video_comments(
-    video_url,
-    sort_by=SORT_BY_POPULAR,
-    filters=filters,
-    limit=5
-)
+        print(f"\n📊 COMMENTS SORTED BY '{sort_by.upper()}' ({len(comments)} found):")
+        print("=" * 60)
 
-comments_found = 0
-for comment in comments_generator:
-    comments_found += 1
-    author = comment.get('author')
-    likes = comment.get('like_count')
-    text = comment.get('text', '').replace('\n', ' ')
-    published = comment.get('published_text')
-    
-    print(f"Author: {author} ({likes} likes, {published})")
-    print(f"Comment: {text}")
-    
-    if comment.get('is_by_owner'):
-        print("[COMMENT BY VIDEO CREATOR]")
-    if comment.get('is_hearted_by_owner'):
-        print("[HEARTED BY CREATOR]")
-    print("-" * 30)
+        for i, comment in enumerate(comments[:5], 1):  # Show first 5
+            print(f"{i}. @{comment['author']}")
+            print(f"   💬 {comment['text'][:80]}...")
+            print(
+                f"   👍 {comment['like_count']} likes | 💭 {comment['reply_count']} replies"
+            )
+            print(f"   🔗 Channel: {comment['author_channel_id']}")
+            print()
 
-print(f"\nFound {comments_found} comments matching the criteria.") 
+        return len(comments)
+
+    except VideoUnavailableError as e:
+        logger.error(f"Video unavailable for {sort_by} comments: {e}")
+        print(f"❌ Cannot fetch {sort_by} comments: Video is not accessible")
+        return 0
+
+    except Exception as e:
+        logger.error(f"Error fetching {sort_by} comments: {e}")
+        print(f"❌ Failed to fetch {sort_by} comments from video")
+        return 0
+
+
+def main():
+    client = YtMeta()
+
+    print("=== Video Comments Sorting Demonstration ===")
+    print(f"Video: {VIDEO_URL}")
+
+    # Fetch comments with both sorting methods
+    top_count = fetch_comments_with_sorting(client, "top")
+    recent_count = fetch_comments_with_sorting(client, "recent")
+
+    # Summary
+    print("🎯 SORTING SUMMARY:")
+    print("• TOP sorting shows most popular/engaging comments")
+    print("• RECENT sorting shows newest comments first")
+    print(f"• Successfully fetched {top_count} top and {recent_count} recent comments")
+
+
+if __name__ == "__main__":
+    main()

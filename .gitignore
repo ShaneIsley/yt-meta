@@ -107,4 +107,11 @@ cache/
 # ... except for in these directories
 !tests/fixtures/*.json
 !tests/fixtures/*.html
-!examples/saved_responses/*.html
+!examples/saved_responses/*.html# Development artifacts
+benchmark_*.py
+dump_*.py
+*_ANALYSIS.md
+*_PLAN.md
+*_COMPARISON.md
+# Prevent accidentally committing saved HTML responses
+examples/saved_responses/*.html

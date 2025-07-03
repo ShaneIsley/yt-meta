@@ -1,77 +1,79 @@
-[project]
-name = "yt-meta"
-version = "0.3.1"
-description = "A lightweight YouTube metadata library."
-readme = "README.md"
-authors = [
-    { name = "Shane Isley", email = "shaneisley@gmail.com" }
-]
-license = "MIT"
-classifiers = [
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "Natural Language :: English",
-    "Operating System :: OS Independent",
-    "Topic :: Internet :: WWW/HTTP",
-    "Topic :: Multimedia :: Video",
-    "Topic :: Software Development :: Libraries :: Python Modules",
-]
-dependencies = [
-    "youtube-comment-downloader>=0.1.76",
-    "beautifulsoup4>=4.12.3",
-    "httpx>=0.27.0",
-    "python-dateutil>=2.9.0",
-    "loguru>=0.7.2",
-]
-requires-python = ">=3.9"
-
-[project.urls]
-Homepage = "https://github.com/shaneisley/yt-meta"
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.3.2",
-    "pytest-cov>=6.2.1",
-    "pytest-mock>=3.14.1",
-    "freezegun>=1.5.1",
-    "ruff>=0.5.5",
-]
-publish = [
-    "build>=1.2.1",
-    "twine>=5.1.1",
-]
-persistent-cache = [
-    "diskcache>=5.6.3",
-]
-examples = [
-    "sqlitedict>=2.1.0",
-]
-
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
-[tool.pytest.ini_options]
-markers = [
-    "integration: marks tests as integration tests (slow, require network)",
+[project]
+name = "yt-meta"
+version = "0.3.1"
+description = "A lightweight, dependency-free library for fetching YouTube metadata."
+readme = "README.md"
+authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
 ]
-addopts = "--color=yes"
-pythonpath = "."
+requires-python = ">=3.10"
+dependencies = [
+    "httpx",
+    "beautifulsoup4",
+    "dateparser",
+    "pytz", # A dependency of dateparser
+    "loguru",
+    "diskcache>=5.6.3",
+    "pytest-mock>=3.14.1",
+    "rich>=14.0.0",
+    "sqlitedict>=2.1.0",
+    "youtube-comment-downloader>=0.1.76",
+    "youtube-transcript-api>=1.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "pytest-mock", "ruff", "tqdm"]
+
+[project.urls]
+Homepage = "https://github.com/shaneisley/yt-meta"
 
 [tool.setuptools.packages.find]
-include = ["yt_meta"]
+where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+markers = [
+    "integration: marks tests as integration tests (makes network requests)",
+]
+filterwarnings = [
+    "ignore:Parsing dates involving a day of month without a year specified is ambiguous:DeprecationWarning",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+    "tqdm>=4.67.1",
+]
 
 [tool.ruff]
-line-length = 120
+# Exclude a variety of commonly ignored directories.
+# ... existing code ...
 
 [tool.ruff.lint]
-# Enable Pyflakes, pycodestyle, and isort rules.
-select = ["E", "F", "I"]
+# By default, ruff will lint all files in the current directory and its subdirectories
+# except for those that are excluded by .gitignore, .ignore, .ruff_ignore, or global-exclude.
+# You can override this behavior by specifying the `select` option.
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501", # Line too long, handled by black
+]
 
-[tool.ruff.format]
-quote-style = "double"
-
-[tool.rye]
+[tool.uv.sources]
+yt-meta = { path = ".", editable = true }

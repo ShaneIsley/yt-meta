@@ -5,7 +5,8 @@ This module contains pure functions for parsing data from YouTube's HTML and JSO
 import json
 import logging
 import re
-from typing import Optional
+
+import dateparser
 
 from .exceptions import MetadataParsingError, VideoUnavailableError
 from .utils import _deep_get
@@ -25,7 +26,7 @@ def _regex_search(text: str, pattern: str, default: str = "", flags: int = 0) ->
     return match.group(1) if match else default
 
 
-def find_ytcfg(html: str) -> Optional[dict]:
+def find_ytcfg(html: str) -> dict | None:
     """
     Finds and parses the `ytcfg` data from a page's HTML source.
 
@@ -43,7 +44,7 @@ def find_ytcfg(html: str) -> Optional[dict]:
     return None
 
 
-def extract_and_parse_json(html_content: str, variable_name: str) -> Optional[dict]:
+def extract_and_parse_json(html_content: str, variable_name: str) -> dict | None:
     """
     Extracts and parses a JSON object assigned to a JavaScript variable in HTML content.
     """
@@ -57,7 +58,7 @@ def extract_and_parse_json(html_content: str, variable_name: str) -> Optional[di
         logger.warning(
             f"Using generic regex for '{variable_name}'. This is less robust and intended for simple cases."
         )
-        pattern = rf'var\s+{re.escape(variable_name)}\s*=\s*({{.*?}});'
+        pattern = rf"var\s+{re.escape(variable_name)}\s*=\s*({{.*?}});"
 
     json_str = _regex_search(html_content, pattern, flags=re.DOTALL)
     if not json_str:
@@ -98,12 +99,26 @@ def parse_duration(duration_label: str) -> int | None:
 
 def parse_view_count(view_count_text: str) -> int | None:
     """
-    Parses a view count string (e.g., '2,905,010 views') into an integer.
+    Parses a view count string (e.g., '2,905,010 views', '7.3K views', '1.2M views') into an integer.
     """
     if not view_count_text:
         return None
     try:
-        return int(view_count_text.split(" ")[0].replace(",", ""))
+        # Extract the numeric part (first word before "views")
+        count_str = view_count_text.split(" ")[0].replace(",", "")
+
+        # Handle K/M/B suffixes (common in shorts)
+        multipliers = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}
+
+        # Check if it ends with a multiplier
+        for suffix, multiplier in multipliers.items():
+            if count_str.upper().endswith(suffix):
+                # Remove the suffix and convert to float, then multiply
+                base_number = float(count_str[:-1])
+                return int(base_number * multiplier)
+
+        # No suffix, just parse as integer
+        return int(count_str)
     except (ValueError, TypeError, IndexError):
         return None
 
@@ -113,9 +128,15 @@ def find_like_count(player_response_data: dict) -> int | None:
     Extracts the like count from the `ytInitialPlayerResponse` data structure.
     """
     try:
-        renderer = _deep_get(player_response_data, "microformat.playerMicroformatRenderer", {})
+        renderer = _deep_get(
+            player_response_data, "microformat.playerMicroformatRenderer", {}
+        )
         like_count_str = renderer.get("likeCount")
-        if like_count_str and isinstance(like_count_str, str) and like_count_str.isdigit():
+        if (
+            like_count_str
+            and isinstance(like_count_str, str)
+            and like_count_str.isdigit()
+        ):
             return int(like_count_str)
         return None
     except (KeyError, TypeError):
@@ -130,9 +151,14 @@ def find_heatmap(initial_data: dict) -> list | None:
     This data is located within the `frameworkUpdates` part of the initial data.
     """
     try:
-        mutations = _deep_get(initial_data, "frameworkUpdates.entityBatchUpdate.mutations", [])
+        mutations = _deep_get(
+            initial_data, "frameworkUpdates.entityBatchUpdate.mutations", []
+        )
         for mutation in mutations:
-            if "payload" in mutation and "macroMarkersListEntity" in mutation["payload"]:
+            if (
+                "payload" in mutation
+                and "macroMarkersListEntity" in mutation["payload"]
+            ):
                 markers_list = _deep_get(
                     mutation,
                     "payload.macroMarkersListEntity.markersList.0.value.macroMarkersMarkersListRenderer.contents",
@@ -148,8 +174,12 @@ def find_heatmap(initial_data: dict) -> list | None:
                                     heatmap_marker,
                                     "timeRangeStartMarker.markerDurationFromStartMillis",
                                 ),
-                                "durationMillis": _deep_get(heatmap_marker, "markerDurationMillis"),
-                                "intensityScoreNormalized": _deep_get(heatmap_marker, "intensityScoreNormalized"),
+                                "durationMillis": _deep_get(
+                                    heatmap_marker, "markerDurationMillis"
+                                ),
+                                "intensityScoreNormalized": _deep_get(
+                                    heatmap_marker, "intensityScoreNormalized"
+                                ),
                             }
                         )
                 return heatmap
@@ -188,14 +218,19 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
             badges = _deep_get(video_data, "badges", [])
             overlays = _deep_get(video_data, "thumbnailOverlays", [])
             is_members_only = any(
-                _deep_get(b, "metadataBadgeRenderer.style") == "BADGE_STYLE_TYPE_MEMBERS_ONLY" for b in badges
+                _deep_get(b, "metadataBadgeRenderer.style")
+                == "BADGE_STYLE_TYPE_MEMBERS_ONLY"
+                for b in badges
             )
             is_live = any("thumbnailOverlayNowPlayingRenderer" in o for o in overlays)
             is_premiere = any(
-                _deep_get(o, "thumbnailOverlayTimeStatusRenderer.text.runs.0.text") == "PREMIERE" for o in overlays
+                _deep_get(o, "thumbnailOverlayTimeStatusRenderer.text.runs.0.text")
+                == "PREMIERE"
+                for o in overlays
             )
             is_verified = any(
-                _deep_get(b, "metadataBadgeRenderer.style") == "BADGE_STYLE_TYPE_VERIFIED"
+                _deep_get(b, "metadataBadgeRenderer.style")
+                == "BADGE_STYLE_TYPE_VERIFIED"
                 for b in _deep_get(video_data, "ownerBadges", [])
             )
 
@@ -206,16 +241,22 @@ def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
                 {
                     "video_id": video_data.get("videoId"),
                     "title": _deep_get(video_data, "title.runs.0.text"),
-                    "descriptionSnippet": _deep_get(video_data, "descriptionSnippet.runs.0.text"),
+                    "descriptionSnippet": _deep_get(
+                        video_data, "descriptionSnippet.runs.0.text"
+                    ),
                     "thumbnails": _deep_get(video_data, "thumbnail.thumbnails", []),
-                    "publishedTimeText": _deep_get(video_data, "publishedTimeText.simpleText"),
+                    "publishedTimeText": _deep_get(
+                        video_data, "publishedTimeText.simpleText"
+                    ),
                     "lengthSeconds": parse_duration(
                         _deep_get(
                             video_data,
                             "lengthText.accessibility.accessibilityData.label",
                         )
                     ),
-                    "viewCount": parse_view_count(_deep_get(video_data, "viewCountText.simpleText")),
+                    "viewCount": parse_view_count(
+                        _deep_get(video_data, "viewCountText.simpleText")
+                    ),
                     "url": video_url,
                     "isLive": is_live,
                     "isPremiere": is_premiere,
@@ -237,32 +278,40 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
     """
     Parses a list of short video renderers from a channel's "Shorts" tab.
     """
-    videos = []
+    shorts = []
     continuation_token = None
     if not renderers:
-        return videos, continuation_token
+        return shorts, continuation_token
 
     for renderer in renderers:
         if "richItemRenderer" in renderer:
-            video_data = _deep_get(renderer, "richItemRenderer.content.shortsLockupViewModel")
+            video_data = _deep_get(
+                renderer, "richItemRenderer.content.shortsLockupViewModel"
+            )
             if not video_data:
                 continue
 
-            reel_endpoint = _deep_get(video_data, "onTap.innertubeCommand.reelWatchEndpoint")
-            if not reel_endpoint:
-                continue
+            video_id = _deep_get(
+                video_data, "onTap.innertubeCommand.reelWatchEndpoint.videoId"
+            )
+            title = _deep_get(video_data, "overlayMetadata.primaryText.content")
+            view_count_text = _deep_get(
+                video_data, "overlayMetadata.secondaryText.content"
+            )
+            url_path = _deep_get(
+                video_data,
+                "onTap.innertubeCommand.commandMetadata.webCommandMetadata.url",
+            )
+            video_url = f"https://www.youtube.com{url_path}" if url_path else ""
 
-            url_path = "onTap.innertubeCommand.commandMetadata.webCommandMetadata.url"
-            short_url = f"https://www.youtube.com{_deep_get(video_data, url_path)}"
-            videos.append(
+            shorts.append(
                 {
-                    "video_id": reel_endpoint.get("videoId"),
-                    "title": _deep_get(video_data, "overlayMetadata.primaryText.content"),
-                    "thumbnails": _deep_get(video_data, "thumbnail.sources", []),
-                    "view_count": parse_view_count(
-                        _deep_get(video_data, "overlayMetadata.secondaryText.content")
-                    ),
-                    "url": short_url,
+                    "video_id": video_id,
+                    "title": title,
+                    "view_count": parse_view_count(view_count_text),
+                    "url": video_url,
+                    # Note: duration_seconds is not available in basic shorts renderer
+                    # For duration filtering, fetch_full_metadata=True is required
                 }
             )
 
@@ -271,8 +320,7 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
                 renderer,
                 "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
             )
-
-    return videos, continuation_token
+    return shorts, continuation_token
 
 
 def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:
@@ -301,14 +349,25 @@ def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | N
         if "playlistVideoRenderer" in item:
             videos.append(parse_video_renderer(item["playlistVideoRenderer"]))
         elif "continuationItemRenderer" in item:
-            continuation_endpoint = _deep_get(item, "continuationItemRenderer.continuationEndpoint")
+            continuation_endpoint = _deep_get(
+                item, "continuationItemRenderer.continuationEndpoint"
+            )
             if continuation_endpoint and "continuationCommand" in continuation_endpoint:
-                continuation_token = _deep_get(continuation_endpoint, "continuationCommand.token")
+                continuation_token = _deep_get(
+                    continuation_endpoint, "continuationCommand.token"
+                )
             # Fallback for the case where it's nested deeper
-            elif continuation_endpoint and "commandExecutorCommand" in continuation_endpoint:
-                for command in _deep_get(continuation_endpoint, "commandExecutorCommand.commands", []):
+            elif (
+                continuation_endpoint
+                and "commandExecutorCommand" in continuation_endpoint
+            ):
+                for command in _deep_get(
+                    continuation_endpoint, "commandExecutorCommand.commands", []
+                ):
                     if "continuationCommand" in command:
-                        continuation_token = _deep_get(command, "continuationCommand.token")
+                        continuation_token = _deep_get(
+                            command, "continuationCommand.token"
+                        )
                         break
 
     return videos, continuation_token
@@ -326,17 +385,26 @@ def parse_video_renderer(renderer: dict) -> dict:
         return None
 
     badges = _deep_get(renderer, "badges", [])
-    is_live = any("LIVE" in b.get("metadataBadgeRenderer", {}).get("label", "") for b in badges)
-    is_premiere = "PREMIERE" in _deep_get(renderer, "upcomingEventData.upcomingEventText.runs.0.text", "")
+    is_live = any(
+        "LIVE" in b.get("metadataBadgeRenderer", {}).get("label", "") for b in badges
+    )
+    is_premiere = "PREMIERE" in _deep_get(
+        renderer, "upcomingEventData.upcomingEventText.runs.0.text", ""
+    )
 
     view_count_text = _deep_get(renderer, "viewCountText.simpleText")
     if not view_count_text:
         # Sometimes it's in a different format
         view_count_text = _deep_get(renderer, "viewCountText.runs.0.text")
 
-    channel_url_path = (
-        "longBylineText.runs.0.navigationEndpoint.commandMetadata.webCommandMetadata.url"
-    )
+    channel_url_path = "longBylineText.runs.0.navigationEndpoint.commandMetadata.webCommandMetadata.url"
+    published_time_text = _deep_get(renderer, "publishedTimeText.simpleText")
+    publish_date = None
+    if published_time_text:
+        publish_date = dateparser.parse(
+            published_time_text, settings={"PREFER_DATES_FROM": "past"}
+        )
+
     return {
         "video_id": video_id,
         "title": _deep_get(renderer, "title.runs.0.text"),
@@ -348,7 +416,8 @@ def parse_video_renderer(renderer: dict) -> dict:
             _deep_get(renderer, "lengthText.accessibility.accessibilityData.label")
         ),
         "view_count": parse_view_count(view_count_text),
-        "published_time_text": _deep_get(renderer, "publishedTimeText.simpleText"),
+        "publish_date": publish_date,
+        "published_time_text": published_time_text,
         "is_live": is_live,
         "is_premiere": is_premiere,
         "url": f"https://www.youtube.com/watch?v={video_id}",
@@ -362,7 +431,9 @@ def parse_channel_metadata(initial_data: dict) -> dict:
     metadata_renderer = _deep_get(initial_data, "metadata.channelMetadataRenderer")
     if not metadata_renderer:
         logger.warning("Could not find channelMetadataRenderer in page data.")
-        raise MetadataParsingError("Could not find channelMetadataRenderer in page data.")
+        raise MetadataParsingError(
+            "Could not find channelMetadataRenderer in page data."
+        )
 
     vanity_url_path = (
         "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.endpoint"
@@ -380,7 +451,11 @@ def parse_channel_metadata(initial_data: dict) -> dict:
         "description": metadata_renderer.get("description"),
         "channel_id": metadata_renderer.get("externalId"),
         "vanity_url": vanity_url,
-        "keywords": [kw.strip() for kw in metadata_renderer.get("keywords", "").split(",") if kw.strip()],
+        "keywords": [
+            kw.strip()
+            for kw in metadata_renderer.get("keywords", "").split(",")
+            if kw.strip()
+        ],
         "is_family_safe": metadata_renderer.get("isFamilySafe"),
     }
 
@@ -392,20 +467,26 @@ def parse_playlist_metadata(initial_data: dict) -> dict:
     header = _deep_get(initial_data, "header.playlistHeaderRenderer")
     microformat = _deep_get(initial_data, "microformat.microformatDataRenderer")
     sidebar_primary = _deep_get(
-        initial_data, "sidebar.playlistSidebarRenderer.items.0.playlistSidebarPrimaryInfoRenderer"
+        initial_data,
+        "sidebar.playlistSidebarRenderer.items.0.playlistSidebarPrimaryInfoRenderer",
     )
     sidebar_secondary = _deep_get(
-        initial_data, "sidebar.playlistSidebarRenderer.items.1.playlistSidebarSecondaryInfoRenderer"
+        initial_data,
+        "sidebar.playlistSidebarRenderer.items.1.playlistSidebarSecondaryInfoRenderer",
     )
 
-    video_count_text = _deep_get(sidebar_primary, "stats.0.runs.0.text", "").replace(",", "")
+    video_count_text = _deep_get(sidebar_primary, "stats.0.runs.0.text", "").replace(
+        ",", ""
+    )
     playlist_id = None
     if microformat and "urlCanonical" in microformat:
         match = re.search(r"list=([^&]+)", microformat["urlCanonical"])
         if match:
             playlist_id = match.group(1)
 
-    author = _deep_get(sidebar_secondary, "videoOwner.videoOwnerRenderer.title.runs.0.text")
+    author = _deep_get(
+        sidebar_secondary, "videoOwner.videoOwnerRenderer.title.runs.0.text"
+    )
     if not author:
         author = _deep_get(header, "ownerText.runs.0.text")
 
@@ -425,10 +506,14 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
     """
     if not player_response_data and not initial_data:
         logger.error("Could not extract playerResponse or initialData from page.")
-        raise VideoUnavailableError("Could not extract playerResponse or initialData from page.")
+        raise VideoUnavailableError(
+            "Could not extract playerResponse or initialData from page."
+        )
 
     video_details = _deep_get(player_response_data, "videoDetails", {})
-    microformat = _deep_get(player_response_data, "microformat.playerMicroformatRenderer", {})
+    microformat = _deep_get(
+        player_response_data, "microformat.playerMicroformatRenderer", {}
+    )
 
     subscriber_path = (
         "contents.twoColumnWatchNextResults.results.results.contents.1"

@@ -17,16 +17,21 @@ logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
     client = YtMeta()
-    channel_url = "https://www.youtube.com/@bashbunni/videos"
+    channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
     # --- Example: Filtering a channel by like count > 100 ---
-    print(f"--- Example: Filtering {channel_url} by like count > 100 ---")
-    filters = {"like_count": {"gt": 100}}
+    print(f"--- Example: Filtering {channel_url} by like count > 500 ---")
+    filters = {"like_count": {"gt": 500}}
 
-    # We only take the first 5 results for this example
-    videos = list(itertools.islice(client.get_channel_videos(channel_url, filters=filters), 5))
+    # We only take the first 5 results for this example, and we'll check
+    # at most 20 videos to keep the example fast.
+    videos = list(
+        itertools.islice(
+            client.get_channel_videos(channel_url, filters=filters, max_videos=20), 5
+        )
+    )
 
-    print(f"Found {len(videos)} videos with over 100 likes (showing first 5):")
+    print(f"Found {len(videos)} videos with over 500 likes (showing first 5):")
     for video in videos:
         print(f"- Title: {video.get('title')}")
         print(f"  Likes: {video.get('like_count'):,}")

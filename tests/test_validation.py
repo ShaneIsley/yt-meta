@@ -1,5 +1,6 @@
-import pytest
 from datetime import date
+
+import pytest
 
 from yt_meta.validators import validate_filters
 
@@ -15,7 +16,9 @@ def test_validate_filters_invalid_operator():
     """Test that an invalid operator for a known field raises a ValueError."""
     # Numerical field with a text operator
     filters = {"view_count": {"contains": "text"}}
-    with pytest.raises(ValueError, match="Invalid operator 'contains' for field 'view_count'"):
+    with pytest.raises(
+        ValueError, match="Invalid operator 'contains' for field 'view_count'"
+    ):
         validate_filters(filters)
 
     # Text field with a numerical operator
@@ -54,4 +57,4 @@ def test_validate_filters_valid_filters():
     try:
         validate_filters(filters)
     except (ValueError, TypeError) as e:
-        pytest.fail(f"Valid filters raised an unexpected exception: {e}") 
+        pytest.fail(f"Valid filters raised an unexpected exception: {e}")

@@ -9,6 +9,7 @@ in a filter name or operator.
 This script shows how the library raises specific, helpful errors for
 different kinds of invalid filter inputs.
 """
+
 from yt_meta import YtMeta
 
 client = YtMeta()
@@ -19,7 +20,7 @@ try:
     print("--- Testing with a non-existent filter field ---")
     invalid_filters_1 = {
         "view_count": {"gt": 1_000_000},
-        "non_existent_field": {"eq": "some_value"}  # This field is invalid
+        "non_existent_field": {"eq": "some_value"},  # This field is invalid
     }
     # This will raise a ValueError before any network request is made.
     next(client.get_channel_videos(channel_url, filters=invalid_filters_1))
@@ -31,7 +32,9 @@ except ValueError as e:
 try:
     print("--- Testing with an invalid operator for a field ---")
     invalid_filters_2 = {
-        "view_count": {"contains": "1,000"}  # 'contains' is not valid for numerical fields
+        "view_count": {
+            "contains": "1,000"
+        }  # 'contains' is not valid for numerical fields
     }
     # This will also raise a ValueError.
     next(client.get_channel_videos(channel_url, filters=invalid_filters_2))
@@ -51,4 +54,4 @@ except TypeError as e:
     print(f"Successfully caught expected error: {e}\n")
 
 
-print("Filter validation demonstration complete.") 
+print("Filter validation demonstration complete.")

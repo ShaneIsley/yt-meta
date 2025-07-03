@@ -1,25 +1,17 @@
 # yt_meta/client.py
 
-import json
 import logging
-import os
-from datetime import date, datetime, timedelta
-from typing import Optional, Union, Generator, MutableMapping
+from collections.abc import Callable, Generator
+from datetime import date, datetime
+from typing import Dict, List
 
-import requests
-from youtube_comment_downloader.downloader import SORT_BY_RECENT
+from httpx import Client
 
-from . import parsing
+from .caching import DummyCache, SQLiteCache
+from .comment_fetcher import CommentFetcher
 from .date_utils import parse_relative_date_string
-from .exceptions import MetadataParsingError, VideoUnavailableError
-from .filtering import (
-    apply_filters,
-    partition_filters,
-    apply_comment_filters,
-)
-from .fetchers import VideoFetcher, ChannelFetcher, PlaylistFetcher
-from .utils import _deep_get, parse_vote_count
-from .validators import validate_filters
+from .fetchers import ChannelFetcher, PlaylistFetcher, VideoFetcher
+from .transcript_fetcher import TranscriptFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -30,40 +22,53 @@ class YtMeta:
     This class acts as a Facade, delegating calls to specialized fetcher classes.
     """
 
-    def __init__(self, cache: Optional[MutableMapping] = None):
-        self.cache = {} if cache is None else cache
-        self.logger = logger
-        self.session = requests.Session()
-        self._video_fetcher = VideoFetcher(self.session, self.cache)
-        self._channel_fetcher = ChannelFetcher(self.session, self.cache, self._video_fetcher)
-        self._playlist_fetcher = PlaylistFetcher(self.session, self.cache, self._video_fetcher)
-
-    def clear_cache(self, channel_url: str = None):
+    def __init__(self, cache_path: str | None = None):
         """
-        Clears the in-memory cache for channel pages.
+        Initializes the yt-meta client.
 
-        If a `channel_url` is provided, only the cache for that specific
-        channel is cleared. Otherwise, the entire cache is cleared.
+        Args:
+            cache_path: If provided, the path to a SQLite file for persistent,
+                        on-disk caching. If None (the default), caching is disabled.
         """
-        if channel_url:
-            # This is tricky because we don't know if it's a shorts or videos page
-            # For now, we clear both possible keys
-            videos_key = self._channel_fetcher._get_channel_page_cache_key(channel_url)
-            shorts_key = self._channel_fetcher._get_channel_shorts_page_cache_key(channel_url)
-            if videos_key in self.cache:
-                del self.cache[videos_key]
-                self.logger.info(f"Cache cleared for channel: {videos_key}")
-            if shorts_key in self.cache:
-                del self.cache[shorts_key]
-                self.logger.info(f"Cache cleared for channel: {shorts_key}")
+        self.session = Client(headers={"Accept-Language": "en-US,en;q=0.5"})
+        if cache_path:
+            self.cache = SQLiteCache(path=cache_path)
+            logger.info(f"Using SQLite cache at: {cache_path}")
         else:
-            # Imperfect, but we need to iterate and clear only channel/continuation keys
-            keys_to_clear = [k for k in self.cache if k.startswith("channel_") or k.startswith("continuation:")]
-            for k in keys_to_clear:
-                del self.cache[k]
-            self.logger.info("Channel and continuation cache cleared.")
+            self.cache = DummyCache()
+            logger.info("Caching is disabled.")
 
-    def get_channel_metadata(self, channel_url: str, force_refresh: bool = False) -> dict:
+        self._video_fetcher = VideoFetcher(session=self.session, cache=self.cache)
+        self._channel_fetcher = ChannelFetcher(
+            session=self.session, cache=self.cache, video_fetcher=self._video_fetcher
+        )
+        self._playlist_fetcher = PlaylistFetcher(
+            session=self.session, cache=self.cache, video_fetcher=self._video_fetcher
+        )
+        self._comment_fetcher = CommentFetcher()
+        self._transcript_fetcher = TranscriptFetcher()
+
+    @property
+    def comment_fetcher(self) -> CommentFetcher:
+        return self._comment_fetcher
+
+    def clear_cache(self, prefix: str | None = None):
+        """
+        Clears the cache.
+
+        Args:
+            prefix: If provided, only keys starting with this prefix will be removed.
+        """
+        if prefix:
+            keys_to_remove = [k for k in self.cache if k.startswith(prefix)]
+            for k in keys_to_remove:
+                del self.cache[k]
+        else:
+            self.cache.clear()
+
+    def get_channel_metadata(
+        self, channel_url: str, force_refresh: bool = False
+    ) -> dict:
         """
         Fetches metadata for a YouTube channel.
 
@@ -88,14 +93,30 @@ class YtMeta:
         """
         return self._video_fetcher.get_video_metadata(youtube_url)
 
+    def get_video_transcript(
+        self, video_id: str, languages: List[str] = None
+    ) -> List[Dict]:
+        """
+        Fetches the transcript for a given video.
+
+        Args:
+            video_id: The ID of the YouTube video.
+            languages: A list of language codes to prioritize (e.g., ['en', 'de']).
+                       If None, it will default to English.
+
+        Returns:
+            A list of transcript snippets, or an empty list if not found.
+        """
+        return self._transcript_fetcher.get_transcript(video_id, languages)
+
     def get_channel_videos(
         self,
         channel_url: str,
         force_refresh: bool = False,
         fetch_full_metadata: bool = False,
-        start_date: Optional[Union[str, date]] = None,
-        end_date: Optional[Union[str, date]] = None,
-        filters: Optional[dict] = None,
+        start_date: str | date | None = None,
+        end_date: str | date | None = None,
+        filters: dict | None = None,
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
@@ -124,16 +145,23 @@ class YtMeta:
             A dictionary for each video that matches the criteria.
         """
         return self._channel_fetcher.get_channel_videos(
-            channel_url, force_refresh, fetch_full_metadata, start_date, end_date, filters, stop_at_video_id, max_videos
+            channel_url,
+            force_refresh,
+            fetch_full_metadata,
+            start_date,
+            end_date,
+            filters,
+            stop_at_video_id,
+            max_videos,
         )
 
     def get_playlist_videos(
         self,
         playlist_id: str,
         fetch_full_metadata: bool = False,
-        start_date: Optional[Union[str, date]] = None,
-        end_date: Optional[Union[str, date]] = None,
-        filters: Optional[dict] = None,
+        start_date: str | date | None = None,
+        end_date: str | date | None = None,
+        filters: dict | None = None,
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
@@ -158,7 +186,13 @@ class YtMeta:
             A dictionary for each video that matches the criteria.
         """
         return self._playlist_fetcher.get_playlist_videos(
-            playlist_id, fetch_full_metadata, start_date, end_date, filters, stop_at_video_id, max_videos
+            playlist_id,
+            fetch_full_metadata,
+            start_date,
+            end_date,
+            filters,
+            stop_at_video_id,
+            max_videos,
         )
 
     def get_channel_shorts(
@@ -166,7 +200,7 @@ class YtMeta:
         channel_url: str,
         force_refresh: bool = False,
         fetch_full_metadata: bool = False,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
@@ -185,265 +219,121 @@ class YtMeta:
             A generator of short dictionaries.
         """
         return self._channel_fetcher.get_channel_shorts(
-            channel_url, force_refresh, fetch_full_metadata, filters, stop_at_video_id, max_videos
+            channel_url,
+            force_refresh,
+            fetch_full_metadata,
+            filters,
+            stop_at_video_id,
+            max_videos,
         )
 
     def get_video_comments(
         self,
         youtube_url: str,
-        sort_by: int = SORT_BY_RECENT,
-        limit: int = -1,
-        filters: Optional[dict] = None,
-    ) -> Generator[dict, None, None]:
+        limit: int = 100,
+        sort_by: str = "top",
+        progress_callback: Callable[[int], None] | None = None,
+        since_date: date | str | None = None,
+    ):
         """
-        Fetches comments for a given YouTube video.
+        Get comments for a specific YouTube video.
 
         Args:
-            youtube_url: The full URL of the YouTube video.
-            sort_by: How to sort the comments (0 for popular, 1 for recent).
-            limit: The maximum number of comments to return (-1 for all).
-            filters: A dictionary specifying the filter conditions.
+            youtube_url (str): The full URL of the YouTube video.
+            limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
+            sort_by (str, optional): The order to sort comments by. Can be 'top' or 'recent'. Defaults to "top".
+            progress_callback (Callable[[int], None], optional): A function to be called
+                with the number of comments fetched so far. Defaults to None.
+            since_date (date | str | None, optional): The date from which to fetch comments.
+                Can be a date object, a string in the format "YYYY-MM-DD", or None for no filter.
 
         Yields:
-            A dictionary for each comment with a standardized structure.
+            dict: A dictionary representing a single comment.
         """
-        return self._video_fetcher.get_video_comments(
-            youtube_url, sort_by=sort_by, limit=limit, filters=filters
+        resolved_date = self._resolve_date(since_date)
+        video_id = self._video_fetcher.get_video_id(youtube_url)
+        comments_generator = self._comment_fetcher.get_comments(
+            video_id,
+            limit=limit,
+            sort_by=sort_by,
+            progress_callback=progress_callback,
+            since_date=resolved_date,
         )
 
-    def _get_videos_tab_renderer(self, initial_data: dict):
-        tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
-        for tab in tabs:
-            if _deep_get(tab, "tabRenderer.selected"):
-                return _deep_get(tab, "tabRenderer")
-        return None
+        yield from comments_generator
 
-    def _get_video_renderers(self, tab_renderer: dict):
-        return _deep_get(tab_renderer, "content.richGridRenderer.contents", [])
-
-    def _get_continuation_token(self, tab_renderer: dict):
-        renderers = self._get_video_renderers(tab_renderer)
-        for renderer in renderers:
-            if "continuationItemRenderer" in renderer:
-                return _deep_get(
-                    renderer,
-                    "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
-                )
-        return None
-
-    def _get_video_renderers_from_data(self, continuation_data: dict):
-        return _deep_get(
-            continuation_data,
-            "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
-            [],
-        )
-
-    def _get_continuation_token_from_data(self, continuation_data: dict):
-        continuation_items = self._get_video_renderers_from_data(continuation_data)
-        for item in continuation_items:
-            if "continuationItemRenderer" in item:
-                return _deep_get(
-                    item,
-                    "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
-                )
-        return None
-
-    def _process_videos_generator(
+    def get_video_comments_with_reply_tokens(
         self,
-        video_generator: Generator[dict, None, None],
-        must_fetch_full_metadata: bool,
-        fast_filters: dict,
-        slow_filters: dict,
-        stop_at_video_id: str | None,
-        max_videos: int,
-    ) -> Generator[dict, None, None]:
-        videos_processed = 0
-        for video in video_generator:
-            if not apply_filters(video, fast_filters):
-                continue
-
-            merged_video = video
-            if must_fetch_full_metadata:
-                try:
-                    video_url = f"https://www.youtube.com/watch?v={video['video_id']}"
-                    full_meta = self.get_video_metadata(video_url)
-                    if full_meta:
-                        merged_video = {**video, **full_meta}
-                    else:
-                        self.logger.warning("Could not fetch full metadata for video_id: %s", video["video_id"])
-                        if slow_filters:
-                            continue
-                except (VideoUnavailableError, MetadataParsingError) as e:
-                    self.logger.error("Error fetching metadata for video_id %s: %s", video["video_id"], e)
-                    continue
-
-            if not apply_filters(merged_video, slow_filters):
-                continue
-
-            yield merged_video
-            videos_processed += 1
-
-            if stop_at_video_id and video["video_id"] == stop_at_video_id:
-                self.logger.info("Found video %s, stopping.", stop_at_video_id)
-                return
-
-            if max_videos != -1 and videos_processed >= max_videos:
-                self.logger.info("Reached max_videos limit of %s.", max_videos)
-                return
-
-    def _get_raw_channel_videos_generator(
-        self,
-        channel_url: str,
-        force_refresh: bool,
-        final_start_date: Optional[date],
-    ) -> Generator[dict, None, None]:
-        try:
-            initial_data, ytcfg, _ = self._get_channel_page_data(
-                channel_url, force_refresh=force_refresh
-            )
-        except VideoUnavailableError as e:
-            self.logger.error("Could not fetch initial channel page: %s", e)
-            return
-
-        if not initial_data:
-            raise MetadataParsingError("Could not find initial data script in channel page")
-
-        tab_renderer = self._get_videos_tab_renderer(initial_data)
-        if not tab_renderer:
-            raise MetadataParsingError("Could not find videos tab renderer in channel page")
-
-        continuation_token = self._get_continuation_token(tab_renderer)
-        renderers = self._get_video_renderers(tab_renderer)
-
-        while True:
-            stop_pagination = False
-            for renderer in renderers:
-                if "richItemRenderer" not in renderer:
-                    continue
-                video_data = renderer["richItemRenderer"]["content"]
-                if "videoRenderer" not in video_data:
-                    continue
-                video = parsing.parse_video_renderer(video_data["videoRenderer"])
-                if not video:
-                    continue
-
-                if final_start_date and video.get("publish_date") and video["publish_date"] < final_start_date:
-                    self.logger.info("Video %s is older than start_date %s. Stopping pagination.", video["video_id"], final_start_date)
-                    stop_pagination = True
-                    break
-                yield video
-
-            if stop_pagination or not continuation_token:
-                break
-
-            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            if not continuation_data:
-                break
-
-            continuation_token = self._get_continuation_token_from_data(continuation_data)
-            renderers = self._get_video_renderers_from_data(continuation_data)
-
-    def _get_raw_shorts_generator(self, channel_url: str, force_refresh: bool) -> Generator[dict, None, None]:
-        try:
-            initial_data, ytcfg, _ = self._get_channel_shorts_page_data(channel_url, force_refresh)
-        except (VideoUnavailableError, MetadataParsingError) as e:
-            self.logger.error("Could not fetch initial channel shorts page: %s", e)
-            return
-
-        tabs = _deep_get(initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", [])
-        shorts_tab = None
-        for tab in tabs:
-            if _deep_get(tab, "tabRenderer.title") == "Shorts":
-                shorts_tab = tab
-                break
-
-        if not shorts_tab:
-            # If there's only one tab and it's for shorts, it might not have the title check
-            if len(tabs) == 1 and "/shorts" in _deep_get(tabs[0], "tabRenderer.endpoint.commandMetadata.webCommandMetadata.url", ""):
-                 shorts_tab = tabs[0]
-            else:
-                raise MetadataParsingError("Could not find Shorts tab renderer.", channel_url=channel_url)
-
-
-        renderers = _deep_get(shorts_tab, "tabRenderer.content.richGridRenderer.contents", [])
-
-        shorts, continuation_token = parsing.extract_shorts_from_renderers(renderers)
-        for short in shorts:
-            yield short
-
-        while continuation_token:
-            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            if not continuation_data:
-                break
-
-            renderers = _deep_get(continuation_data, "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems", [])
-            shorts, continuation_token = parsing.extract_shorts_from_renderers(renderers)
-            for short in shorts:
-                yield short
-
-    def _get_raw_playlist_videos_generator(self, playlist_id: str) -> Generator[dict, None, None]:
-        playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
-        try:
-            response = self.session.get(playlist_url, timeout=10)
-            response.raise_for_status()
-            html = response.text
-        except requests.exceptions.RequestException as e:
-            raise VideoUnavailableError(f"Could not fetch playlist page: {e}", playlist_id=playlist_id) from e
-
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-        if not initial_data:
-            raise MetadataParsingError("Could not extract ytInitialData from playlist page.", playlist_id=playlist_id)
-
-        ytcfg = parsing.find_ytcfg(html)
-        if not ytcfg:
-            raise MetadataParsingError("Could not extract ytcfg from playlist page.", playlist_id=playlist_id)
-
-        path = "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.itemSectionRenderer.contents.0.playlistVideoListRenderer"
-        renderer = _deep_get(initial_data, path)
-        if not renderer:
-            self.logger.warning("No video renderers found on the initial playlist page: %s", playlist_id)
-            return
-
-        videos, continuation_token = parsing.extract_videos_from_playlist_renderer(renderer)
-
-        while True:
-            yield from videos
-
-            if not continuation_token:
-                break
-
-            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            if not continuation_data:
-                break
-
-            renderers = _deep_get(continuation_data, "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems", [])
-            videos, continuation_token = parsing.extract_videos_from_playlist_renderer({"contents": renderers})
-
-    def _get_continuation_data(self, token: str, ytcfg: dict):
+        youtube_url: str,
+        limit: int = 100,
+        sort_by: str = "top",
+        progress_callback: Callable[[int], None] | None = None,
+    ):
         """
-        Fetches the next batch of data using a continuation token.
-        Caches the result based on the token.
-        """
-        cache_key = f"continuation:{token}"
-        if cache_key in self.cache:
-            self.logger.info(f"Cache hit for continuation token: {token[:10]}...")
-            return self.cache[cache_key]
+        Get comments for a specific YouTube video, including reply continuation tokens.
 
-        data = {"context": ytcfg["INNERTUBE_CONTEXT"], "continuation": token}
-        response = self.session.post(
-            f"https://www.youtube.com/youtubei/v1/browse?key={ytcfg['INNERTUBE_API_KEY']}",
-            json=data,
-            timeout=10,
+        Args:
+            youtube_url (str): The full URL of the YouTube video.
+            limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
+            sort_by (str, optional): The order to sort comments by. Can be 'top' or 'recent'. Defaults to "top".
+            progress_callback (Callable[[int], None], optional): A function to be called
+                with the number of comments fetched so far. Defaults to None.
+
+        Yields:
+            dict: A dictionary representing a single comment, including 'reply_continuation_token'
+                  field for comments that have replies.
+        """
+        video_id = self._video_fetcher.get_video_id(youtube_url)
+        comments_generator = self._comment_fetcher.get_comments(
+            video_id,
+            limit=limit,
+            sort_by=sort_by,
+            progress_callback=progress_callback,
+            include_reply_continuation=True,
         )
-        response.raise_for_status()
-        result = response.json()
-        self.cache[cache_key] = result
-        return result
 
-    def _resolve_date(self, d: Optional[Union[str, date]]) -> Optional[date]:
-        if isinstance(d, str):
-            parsed_date = parse_relative_date_string(d)
-            if parsed_date:
-                return parsed_date.date()
-            return datetime.fromisoformat(d).date()
-        return d
+        yield from comments_generator
+
+    def get_comment_replies(
+        self,
+        youtube_url: str,
+        reply_continuation_token: str,
+        limit: int = 100,
+        progress_callback: Callable[[int], None] | None = None,
+    ):
+        """
+        Get replies for a specific comment.
+
+        Args:
+            youtube_url (str): The full URL of the YouTube video.
+            reply_continuation_token (str): The continuation token for the specific reply thread.
+            limit (int, optional): The maximum number of replies to fetch. Defaults to 100.
+            progress_callback (Callable[[int], None], optional): A function to be called
+                with the number of replies fetched so far. Defaults to None.
+
+        Yields:
+            dict: A dictionary representing a single reply comment.
+        """
+        video_id = self._video_fetcher.get_video_id(youtube_url)
+        replies_generator = self._comment_fetcher.get_comment_replies(
+            video_id,
+            reply_continuation_token=reply_continuation_token,
+            limit=limit,
+            progress_callback=progress_callback,
+        )
+
+        yield from replies_generator
+
+    def _resolve_date(self, d: str | date | None) -> date | None:
+        if d is None:
+            return None
+        if isinstance(d, datetime):
+            return d.date()
+        if isinstance(d, date):
+            return d
+        try:
+            return parse_relative_date_string(d)
+        except ValueError as e:
+            raise ValueError(
+                f"Invalid date format: {d}. Use 'YYYY-MM-DD' or a relative string like '2 weeks ago'."
+            ) from e

@@ -1,6 +1,5 @@
 import pytest
 from httpx import Client
-from unittest.mock import MagicMock, patch
 
 from yt_meta.fetchers import PlaylistFetcher, VideoFetcher
 
@@ -24,4 +23,4 @@ def test_get_playlist_videos_integration(playlist_fetcher):
     videos = list(playlist_fetcher.get_playlist_videos(playlist_id, max_videos=3))
     assert len(videos) == 3
     assert "video_id" in videos[0]
-    assert "title" in videos[0] 
+    assert "title" in videos[0]

@@ -6,23 +6,27 @@ which are "slow" (requiring a separate request per video). The main entry
 point is `apply_filters`, which checks if a given video dictionary meets a
 set of specified criteria.
 """
+
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
-from .date_utils import parse_relative_date_string
+import dateparser
+
+from yt_meta.validators import FILTER_SCHEMA
 
 logger = logging.getLogger(__name__)
 
 
 # These keys are available in the basic video metadata from channel/playlist pages.
-FAST_FILTER_KEYS = {
+FAST_VIDEO_FILTERS = {
     "view_count",
     "duration_seconds",
-    "description_snippet",
-    "title",
     "publish_date",
+    "title",
+    "description_snippet",
 }
+FAST_SHORTS_FILTERS = {"view_count", "title"}
 
 # These keys require fetching full metadata for each video, making them slower.
 SLOW_FILTER_KEYS = {
@@ -45,14 +49,31 @@ COMMENT_FILTER_KEYS = {
 }
 
 
-def partition_filters(filters: dict) -> tuple[dict, dict]:
-    """Separates a filter dictionary into fast and slow filters."""
+def partition_filters(filters: dict, content_type: str) -> tuple[dict, dict]:
+    """
+    Partitions filters into fast and slow filters based on the content type.
+
+    Fast filters can be applied to the basic metadata fetched in the initial channel/shorts page load.
+    Slow filters require fetching full metadata for each individual video/short.
+
+    Args:
+        filters: The dictionary of filter conditions.
+        content_type: The type of content, either 'videos' or 'shorts'.
+
+    Returns:
+        A tuple of (fast_filters, slow_filters).
+    """
     if not filters:
         return {}, {}
-
-    fast_filters = {k: v for k, v in filters.items() if k in FAST_FILTER_KEYS}
-    slow_filters = {k: v for k, v in filters.items() if k in SLOW_FILTER_KEYS}
-
+    fast_filters = {}
+    slow_filters = {}
+    for key, value in filters.items():
+        if content_type == "videos" and key in FAST_VIDEO_FILTERS:
+            fast_filters[key] = value
+        elif content_type == "shorts" and key in FAST_SHORTS_FILTERS:
+            fast_filters[key] = value
+        else:
+            slow_filters[key] = value
     return fast_filters, slow_filters
 
 
@@ -62,31 +83,66 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
     Supports gt, gte, lt, lte, eq.
     """
     for op, filter_value in condition_dict.items():
-        # If the video value is a date, ensure the filter value is also a date
-        if isinstance(video_value, date):
-            if isinstance(filter_value, str):
-                try:
-                    filter_value = datetime.fromisoformat(filter_value).date()
-                except ValueError:
-                    try:
-                        filter_value = datetime.strptime(filter_value, "%Y-%m-%d").date()
-                    except ValueError:
-                        logger.warning("Invalid date format for filter value: %s", filter_value)
-                        return False
-
         if op == "eq":
-            if not video_value == filter_value: return False
+            if not video_value == filter_value:
+                return False
         elif op == "gt":
-            if not video_value > filter_value: return False
+            if not video_value > filter_value:
+                return False
         elif op == "gte":
-            if not video_value >= filter_value: return False
+            if not video_value >= filter_value:
+                return False
         elif op == "lt":
-            if not video_value < filter_value: return False
+            if not video_value < filter_value:
+                return False
         elif op == "lte":
-            if not video_value <= filter_value: return False
-        else: # Should be unreachable due to validator
+            if not video_value <= filter_value:
+                return False
+        else:  # Should be unreachable due to validator
             return False
     return True
+
+
+def _check_date_condition(video_value, filter_value, op) -> bool:
+    """
+    Checks if a date video value meets a single condition.
+    Supports gt, gte, lt, lte, eq, after, before.
+    """
+    # Ensure both values are datetime objects before comparison
+    if isinstance(video_value, str):
+        video_value = dateparser.parse(
+            video_value, settings={"PREFER_DATES_FROM": "past"}
+        )
+    if isinstance(filter_value, str):
+        filter_value = dateparser.parse(
+            filter_value, settings={"PREFER_DATES_FROM": "past"}
+        )
+
+    if not isinstance(video_value, datetime | date) or not isinstance(
+        filter_value, datetime | date
+    ):
+        return False  # Cannot compare if parsing failed
+
+    # Standardize to date objects for comparison
+    comp_video_value = (
+        video_value.date() if isinstance(video_value, datetime) else video_value
+    )
+    comp_filter_value = (
+        filter_value.date() if isinstance(filter_value, datetime) else filter_value
+    )
+
+    if op == "eq":
+        return comp_video_value == comp_filter_value
+    if op in ("gt", "after"):
+        return comp_video_value > comp_filter_value
+    if op == "gte":
+        return comp_video_value >= comp_filter_value
+    if op in ("lt", "before"):
+        return comp_video_value < comp_filter_value
+    if op == "lte":
+        return comp_video_value <= comp_filter_value
+
+    return False  # Should be unreachable due to validator
 
 
 def _check_text_condition(video_value, condition_dict) -> bool:
@@ -104,7 +160,7 @@ def _check_text_condition(video_value, condition_dict) -> bool:
         elif op == "eq":
             if filter_value.lower() != video_value.lower():
                 return False
-        else: # Should be unreachable due to validator
+        else:  # Should be unreachable due to validator
             return False
     return True
 
@@ -134,99 +190,44 @@ def _check_list_condition(video_value_list, condition_dict) -> bool:
     return True
 
 
-def apply_filters(video: dict, filters: dict) -> bool:
+def apply_filters(video: dict, filters: dict | None) -> bool:
     """
-    Checks if a video object meets the criteria specified in the filters dict.
+    Checks if a video dictionary passes a set of filters.
 
     Args:
-        video: A dictionary representing the video's metadata.
-        filters: A dictionary specifying the filter conditions.
-            Example:
-            {
-                "view_count": {"gt": 1000},
-                "title": {"contains": "Python"}
-            }
+        video: The video metadata dictionary.
+        filters: The dictionary of filters to apply.
 
     Returns:
         True if the video passes all filters, False otherwise.
     """
+    if filters is None:
+        return True  # If no filters are provided, consider the video as passing
+
     for key, condition in filters.items():
-        if key == "view_count":
-            video_value = video.get("view_count")
-            if video_value is None:
-                return False  # Cannot filter if the value doesn't exist
+        if video.get(key) is None:
+            return False  # If the key doesn't exist, it can't match
 
-            if not _check_numerical_condition(video_value, condition):
-                return False
+        schema_type = FILTER_SCHEMA[key]["schema_type"]
+        video_value = video.get(key)
 
-        elif key == "duration_seconds":
-            video_value = video.get("duration_seconds")
-            if video_value is None:
-                return False
+        passes = True  # Assume true and break on first failure
+        if schema_type == "numerical":
+            passes = _check_numerical_condition(video_value, condition)
+        elif schema_type == "date":
+            for op, condition_value in condition.items():
+                if not _check_date_condition(video_value, condition_value, op):
+                    passes = False
+                    break
+        elif schema_type == "text":
+            passes = _check_text_condition(video_value, condition)
+        elif schema_type == "list":
+            passes = _check_list_condition(video_value, condition)
+        elif schema_type == "bool":
+            passes = _check_boolean_condition(video_value, condition)
 
-            if not _check_numerical_condition(video_value, condition):
-                return False
-
-        elif key == "title":
-            video_value = video.get("title")
-            if video_value is None:
-                return False
-
-            if not _check_text_condition(video_value, condition):
-                return False
-
-        elif key == "description_snippet":
-            video_value = video.get("description_snippet")
-            if video_value is None:
-                return False
-
-            if not _check_text_condition(video_value, condition):
-                return False
-
-        elif key == "like_count":
-            # This key is only available in full metadata.
-            video_value = video.get("like_count")
-            if video_value is None:
-                return False
-
-            if not _check_numerical_condition(video_value, condition):
-                return False
-
-        elif key == "category":
-            video_value = video.get("category")
-            if video_value is None:
-                return False
-            if not _check_text_condition(video_value, condition):
-                return False
-
-        elif key == "full_description":
-            video_value = video.get("full_description")
-            if video_value is None:
-                return False
-            if not _check_text_condition(video_value, condition):
-                return False
-
-        elif key == "keywords":
-            video_value = video.get("keywords")
-            if not isinstance(video_value, list):
-                return False
-            if not _check_list_condition(video_value, condition):
-                return False
-
-        elif key == "publish_date":
-            video_value_str = video.get("publish_date")
-            if not video_value_str:
-                # If there's no precise date, we cannot apply a precise filter.
-                # The client should handle preliminary checks on 'publishedTimeText'.
-                return False
-
-            try:
-                video_date = datetime.fromisoformat(video_value_str).date()
-                if not _check_numerical_condition(video_date, condition):
-                    return False
-            except (ValueError, TypeError):
-                logger.warning("Could not parse precise publish_date: %s", video_value_str)
-                return False # Fail if the date is malformed
+        if not passes:
+            return False
 
     return True
 
@@ -252,34 +253,32 @@ def apply_comment_filters(comment: dict, filters: dict) -> bool:
             logger.warning("Unrecognized comment filter key: %s", key)
             continue
 
-        video_value = comment.get(key)
-        if video_value is None:
+        comment_value = comment.get(key)
+        if comment_value is None:
             return False
 
+        passes = True  # Assume true, break on first failure
         if key in {"like_count", "reply_count"}:
-            if not _check_numerical_condition(video_value, condition):
-                return False
+            passes = _check_numerical_condition(comment_value, condition)
         elif key in {"text", "author", "channel_id"}:
-            if not _check_text_condition(video_value, condition):
-                return False
+            passes = _check_text_condition(comment_value, condition)
         elif key in {"is_reply", "is_hearted_by_owner", "is_by_owner"}:
-            if not _check_boolean_condition(video_value, condition):
-                return False
+            passes = _check_boolean_condition(comment_value, condition)
         elif key == "publish_date":
-            if not _check_numerical_condition(video_value, condition):
-                return False
+            for op, condition_value in condition.items():
+                if not _check_date_condition(comment_value, condition_value, op):
+                    passes = False
+                    break
+        if not passes:
+            return False
     return True
 
 
 def _check_boolean_condition(value: bool, condition_dict: dict) -> bool:
     """
-    Checks if a boolean value meets the 'eq' condition.
+    Checks if a boolean value matches the specified condition.
+    Supports 'eq'.
     """
-    op = next(iter(condition_dict))
-    filter_value = condition_dict[op]
-
-    if op != "eq":
-        logger.warning("Unrecognized boolean operator: %s. Only 'eq' is supported.", op)
-        return False
-    
-    return value == filter_value 
+    if "eq" in condition_dict:
+        return value == condition_dict["eq"]
+    return False
