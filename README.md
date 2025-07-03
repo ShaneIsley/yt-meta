@@ -2,33 +2,6 @@
 
 A Python library for finding video and channel metadata from YouTube.
 
-## Recent Updates
-
-### 🚀 Native Comment Fetching (v2.0.0)
-
-We've completely rewritten the comment fetching system to remove the external `youtube-comment-downloader` dependency and implement native comment fetching using `httpx`. This brings several major improvements:
-
-**Key Improvements:**
-- ✅ **Zero External Dependencies**: Removed `youtube-comment-downloader` dependency
-- ✅ **Consistent HTTP Library**: Now uses `httpx` throughout (was mixed `httpx`/`requests`)
-- ✅ **100% Browser Parity**: Fetches all comments including nested replies
-- ✅ **Hierarchical Comments**: Full parent-child relationship support
-- ✅ **Enhanced Metadata**: Added `author_channel_id`, `author_avatar_url`, `reply_count`
-- ✅ **Comment Sorting**: Support for "top" and "recent" comment sorting
-- ✅ **Real-time Compatibility**: Works with live YouTube API changes
-- ✅ **Superior Performance**: 2.5-6.7s for comprehensive comment analysis
-
-**Technical Achievements:**
-- **Complete Test Coverage**: 101/101 tests passing (100% success rate)
-- **Production Ready**: Handles all edge cases and continuation patterns
-- **Memory Efficient**: Queue-based continuation processing
-- **Robust Parsing**: Handles both initial page and continuation data structures
-
-**Migration Notes:**
-- Comment fetching API remains the same - no breaking changes for users
-- Internal architecture completely rewritten for better maintainability
-- All existing functionality preserved with enhanced reliability
-
 ## Purpose
 
 This library is designed to provide a simple and efficient way to collect metadata for YouTube videos, channels, and playlists. It simplifies the process of interacting with YouTube's data, handling complexities like network requests, data parsing, and pagination, so you can focus on your analysis.
@@ -37,9 +10,11 @@ This library is designed to provide a simple and efficient way to collect metada
 
 `yt-meta` is designed around a **Facade** pattern. The main `YtMeta` class provides a simple, unified interface for all fetching operations. Internally, it delegates calls to specialized `Fetcher` classes, each responsible for a specific domain:
 
--   **`VideoFetcher`**: Handles fetching video metadata and comments.
+-   **`VideoFetcher`**: Handles fetching video metadata.
 -   **`ChannelFetcher`**: Manages fetching channel metadata, video lists, and shorts.
 -   **`PlaylistFetcher`**: Responsible for fetching playlist details.
+-   **`CommentFetcher`**: Fetches comments and replies for videos.
+-   **`TranscriptFetcher`**: Fetches video transcripts.
 
 This architecture keeps the codebase clean, organized, and easy to maintain.
 
@@ -191,9 +166,9 @@ recent_comments = client.get_video_comments(
     limit=5
 )
 for comment in recent_comments:
-    print(f"- Text: '{comment['text'][:80]}...'\")
-    print(f\"  - Author: {comment['author']} (Channel ID: {comment['author_channel_id']})\")
-    print(f\"  - Replies: {comment['reply_count']} | Is Reply: {comment['is_reply']}\")
+    print(f"- Text: '{comment['text'][:80]}...'")
+    print(f"  - Author: {comment['author']} (Channel ID: {comment['author_channel_id']})")
+    print(f"  - Replies: {comment['reply_count']} | Is Reply: {comment['is_reply']}")
 
 # Fetch the 5 top comments
 print("\n--- Top Comments ---")
@@ -203,9 +178,9 @@ top_comments = client.get_video_comments(
     limit=5
 )
 for comment in top_comments:
-    print(f"- Text: '{comment['text'][:80]}...'\")
-    print(f\"  - Author: {comment['author']} (Likes: {comment['likes']})\")
-    print(f\"  - Replies: {comment['reply_count']} | Is Reply: {comment['is_reply']}\")
+    print(f"- Text: '{comment['text'][:80]}...'")
+    print(f"  - Author: {comment['author']} (Likes: {comment['likes']})")
+    print(f"  - Replies: {comment['reply_count']} | Is Reply: {comment['is_reply']}")
 ```
 
 #### Fetching Comments Since a Specific Date
@@ -232,6 +207,42 @@ recent_comments = client.get_video_comments(
 
 for comment in recent_comments:
     print(f"- {comment['publish_date']}: {comment['text'][:80]}...")
+```
+
+### 7. Get Video Transcript
+
+Fetches the transcript (subtitles) for a given video. You can specify preferred languages, and it will return the first one that is available.
+
+**Example:**
+```python
+from yt_meta import YtMeta
+
+client = YtMeta()
+video_id = "dQw4w9WgXcQ"
+
+# Fetch the default transcript
+transcript = client.get_video_transcript(video_id)
+if transcript:
+    print("Transcript found. Showing the first 5 snippets:")
+    for snippet in transcript[:5]:
+        start_time = snippet["start"]
+        text = snippet["text"].replace("\\n", " ")
+        print(f"- [{start_time:.2f}s] {text}")
+else:
+    print("No transcript found.")
+
+# Fetch a transcript in a specific language (e.g., Spanish)
+# The client will try 'es' first, then fall back to 'en' if Spanish is not available.
+print("\n--- Attempting to fetch Spanish transcript ---")
+spanish_transcript = client.get_video_transcript(video_id, languages=['es', 'en'])
+if spanish_transcript:
+    print("Transcript found. Showing the first 5 snippets of the best available match:")
+    for snippet in spanish_transcript[:5]:
+        start_time = snippet["start"]
+        text = snippet["text"].replace("\\n", " ")
+        print(f"- [{start_time:.2f}s] {text}")
+else:
+    print("No transcript found for the specified languages.")
 ```
 
 ## Caching
@@ -493,5 +504,7 @@ For developers and contributors, it's helpful to understand the internal design 
   - **`VideoFetcher`:** Handles all logic related to individual videos, such as fetching metadata and comments.
   - **`ChannelFetcher`:** Manages fetching data from a channel's "Videos" and "Shorts" tabs, including handling pagination.
   - **`PlaylistFetcher`:** Responsible for retrieving video lists from a playlist.
+  - **`CommentFetcher`:** Fetches comments and replies for videos.
+  - **`TranscriptFetcher`:** Fetches video transcripts.
 
 This separation of concerns makes the library easier to maintain, test, and extend. If you need to fix a bug related to playlist parsing, for example, you know to look in `yt_meta/fetchers.py` in the `PlaylistFetcher` class.
