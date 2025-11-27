@@ -157,6 +157,18 @@ class ChannelFetcher(_BaseFetcher):
         video_fetcher: VideoFetcher,
     ):
         super().__init__(session, cache, video_fetcher)
+        self._ensure_consent_cookie()
+
+    def _ensure_consent_cookie(self):
+        """
+        Sets the YouTube consent cookie to bypass EU consent pages.
+        """
+        # Known working cookie value since 2022:
+        # SOCS=CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg
+        # (source: https://stackoverflow.com/a/74132453)
+        if "SOCS" not in self.session.cookies:
+            self.session.cookies.set("SOCS", "CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg", domain=".youtube.com")
+            self.logger.info("Set YouTube SOCS cookie to bypass EU consent page.")
 
     def _get_channel_page_cache_key(self, channel_url: str) -> str:
         key = channel_url.rstrip("/")
@@ -177,6 +189,8 @@ class ChannelFetcher(_BaseFetcher):
         if not force_refresh and key in self.cache:
             self.logger.info(f"Using cached data for channel: {key}")
             return self.cache[key]
+
+        self._ensure_consent_cookie()
         try:
             self.logger.info(f"Fetching channel page: {key}")
             response = self.session.get(key.replace("channel_page:", ""), timeout=10)
@@ -208,6 +222,7 @@ class ChannelFetcher(_BaseFetcher):
         key = self._get_channel_shorts_page_cache_key(channel_url)
         if not force_refresh and key in self.cache:
             return self.cache[key]
+        self._ensure_consent_cookie()  # Ensure cookie is set
         try:
             response = self.session.get(
                 key.replace("channel_shorts_page:", ""), timeout=10
