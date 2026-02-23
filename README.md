@@ -4,15 +4,15 @@ A Python library for finding video and channel metadata from YouTube.
 
 ## Purpose
 
-This library is designed to provide a simple and efficient way to collect metadata for YouTube videos, channels, and playlists. It simplifies the process of interacting with YouTube's data, handling complexities like network requests, data parsing, and pagination, so you can focus on your analysis.
+This library collects metadata for YouTube videos, channels, and playlists. It handles network requests, data parsing, and pagination so you can focus on your analysis.
 
 ## Architecture
 
-`yt-meta` is designed around a **Facade** pattern. The main `YtMeta` class provides a simple, unified interface for all fetching operations. Internally, it delegates calls to specialized `Fetcher` classes, each responsible for a specific domain:
+`yt-meta` uses a **Facade** pattern. The `YtMeta` class provides a unified interface for all fetching operations, delegating calls to specialized `Fetcher` classes.
 
--   **`VideoFetcher`**: Handles fetching video metadata.
--   **`ChannelFetcher`**: Manages fetching channel metadata, video lists, and shorts.
--   **`PlaylistFetcher`**: Responsible for fetching playlist details.
+-   **`VideoFetcher`**: Fetches video metadata.
+-   **`ChannelFetcher`**: Fetches channel metadata, video lists, and shorts.
+-   **`PlaylistFetcher`**: Fetches playlist details.
 -   **`CommentFetcher`**: Fetches comments and replies for videos.
 -   **`TranscriptFetcher`**: Fetches video transcripts.
 
@@ -26,7 +26,7 @@ This project uses `uv` for package management. You can install `yt-meta` from Py
 uv pip install yt-meta
 ```
 
-To enable persistent caching, you need to install an optional dependency:
+Persistent caching requires an optional dependency:
 
 ```bash
 # For disk-based caching
@@ -34,8 +34,6 @@ uv pip install "yt-meta[persistent_cache]"
 ```
 
 ## Core Features
-
-The library offers several ways to fetch metadata.
 
 ### 1. Get Video Metadata
 
@@ -105,11 +103,11 @@ for video in itertools.islice(videos_generator, 5):
 
 ### 5. Get All Shorts from a Channel
 
-Similar to videos, you can fetch all "Shorts" from a channel. This also supports a fast path (basic metadata) and a slow path (full metadata).
+You can fetch all Shorts from a channel. Both a fast path (basic metadata) and a slow path (full metadata) are supported.
 
 **Fast Path Example:**
 
-This is the most efficient way to get a list of shorts, but it provides limited metadata.
+The fast path is the most efficient way to list shorts, but provides limited metadata.
 
 ```python
 import itertools
@@ -147,7 +145,7 @@ for short in itertools.islice(shorts_generator, 5):
 
 ### 6. Get Video Comments
 
-Fetches comments for a given video. The method can retrieve comments sorted by **"Top comments"** (default) or by **"Most Recent"**. It returns a generator that yields standardized comment data.
+Fetches comments for a given video, sorted by **"Top comments"** (default) or **"Most Recent"**. Returns a generator yielding standardized comment data.
 
 **Example:**
 
@@ -185,7 +183,7 @@ for comment in top_comments:
 
 #### Fetching Comments Since a Specific Date
 
-You can efficiently fetch comments posted since a specific date by providing the `since_date` parameter. This feature **requires `sort_by='recent'`** to work efficiently. The library will fetch pages of comments until it finds a comment older than the target date, at which point it stops to minimize network requests.
+Pass the `since_date` parameter to fetch comments posted after a specific date. This feature **requires `sort_by='recent'`**. The library fetches comment pages until it finds one older than the target date, then stops to minimize network requests.
 
 **Example:**
 ```python
@@ -211,7 +209,7 @@ for comment in recent_comments:
 
 ### 7. Get Video Transcript
 
-Fetches the transcript (subtitles) for a given video. You can specify preferred languages, and it will return the first one that is available.
+Fetches the transcript (subtitles) for a given video. Specify preferred languages; the client returns the first available match.
 
 **Example:**
 ```python
@@ -263,7 +261,7 @@ meta2 = client.get_video_metadata("some_url")
 
 ### Persistent Caching
 
-For caching results across different runs or scripts, you can provide a **persistent, dictionary-like object** to the client. The library provides an optional `diskcache` integration for this purpose.
+To cache results across runs or scripts, pass a **persistent, dictionary-like object** to the client. The library provides an optional `diskcache` integration.
 
 First, install the necessary extra:
 ```bash
@@ -287,34 +285,34 @@ client = YtMeta(cache=persistent_cache)
 metadata = client.get_video_metadata("some_url")
 ```
 
-Any object that implements the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) can be used as a cache. See `examples/features/19_alternative_caching_sqlite.py` for a demonstration using `sqlitedict`.
+Any object implementing the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) works as a cache. See `examples/features/19_alternative_caching_sqlite.py` for a demonstration using `sqlitedict`.
 
 ## Advanced Features
 
 ### Filtering Videos, Shorts, and Comments
 
-The library provides a powerful filtering system via the `filters` argument, available on methods like `get_channel_videos`, `get_channel_shorts`, and `get_video_comments`. This allows you to find items matching specific criteria on the server side.
+The `filters` argument on `get_channel_videos`, `get_channel_shorts`, and `get_video_comments` selects items matching specific criteria.
 
 #### Robust Filter Validation
-To improve the developer experience and prevent errors, `yt-meta` validates your `filters` dictionary *before* making any network requests. If you provide a filter field that doesn't exist, an invalid operator for a field, or an incorrect value type, the library will immediately raise a `ValueError` or `TypeError`.
+`yt-meta` validates your `filters` dictionary *before* making any network requests. If you provide a nonexistent field, an invalid operator, or an incorrect value type, the library raises a `ValueError` or `TypeError`.
 
-This "fail-fast" approach saves you from waiting for a long-running query to complete only to find out there was a typo in your request. See `examples/features/23_filter_validation.py` for a demonstration.
+This fail-fast design stops you from discovering typos only after a slow query completes. See `examples/features/23_filter_validation.py` for a demonstration.
 
 #### Two-Stage Filtering: Fast vs. Slow
 
 The library uses an efficient two-stage filtering process for videos and shorts:
 
-*   **Fast Filters:** Applied first, using metadata that is available on the main channel or playlist page (e.g., `title`, `view_count`). This is very efficient.
+*   **Fast Filters:** Applied first, using metadata available on the main channel or playlist page (e.g., `title`, `view_count`). This is very efficient.
 *   **Slow Filters:** Applied second, only on items that pass the fast filters. This requires fetching full metadata for each item individually, which is much slower.
 
 The client automatically detects when a slow filter is used and sets `fetch_full_metadata=True` for you.
 
 > [!NOTE]
-> Comment filtering does not use the fast/slow system. All comment filters are applied after fetching the comment data.
+> Comment filtering does not use the fast/slow system. All comment filters apply after fetching comment data.
 
 #### Supported Fields and Operators
 
-The following table lists all supported fields and their valid operators. The validation system will enforce these rules.
+The following table lists supported fields and their valid operators. Validation enforces these rules.
 
 | Field                 | Supported Operators              | Content Type(s)                                             | Filter Speed |
 | :-------------------- | :------------------------------- | :---------------------------------------------------------- | :----------- |
@@ -416,14 +414,14 @@ for video in itertools.islice(recent_videos, 5):
 ```
 
 > **Important Note on Playlist Filtering:**
-> When filtering a playlist by date, the library must fetch metadata for **all** videos first, as playlists are not guaranteed to be chronological. This can be very slow for large playlists.
+> When filtering a playlist by date, the library fetches metadata for **all** videos first, as playlists may not be chronological. Large playlists will be slow.
 
 > **Important Note on Shorts Filtering:**
 > Similarly, the Shorts feed does not provide a publish date on its fast path. Any date-based filter on `get_channel_shorts` will automatically trigger the slower, full metadata fetch for each short.
 
 ## Logging
 
-`yt-meta` uses Python's `logging` module to provide insights into its operations. To see the log output, you can configure a basic logger.
+`yt-meta` uses Python's `logging` module. Configure a basic logger to see log output.
 
 **Example:**
 ```python
@@ -459,7 +457,7 @@ Fetches comments for a specific YouTube video. This is an "enrichment" call and 
 -   **Returns**: A generator that yields a standardized dictionary for each comment.
 
 #### `get_channel_metadata(channel_url: str) -> dict`
-Fetches metadata for a specific channel. Results are cached.
+Fetches metadata for a specific channel. The client caches results.
 -   **`channel_url`**: The URL of the channel.
 -   **Returns**: A dictionary with channel metadata like `title`, `description`, `subscriber_count`, `vanity_url`, etc.
 -   **Raises**: `VideoUnavailableError`, `MetadataParsingError`.
@@ -496,15 +494,15 @@ The base exception for all errors in this library.
 
 ## Library Architecture
 
-For developers and contributors, it's helpful to understand the internal design of `yt-meta`. The library follows the **Facade design pattern**.
+`yt-meta` follows the **Facade design pattern**.
 
-- **`YtMeta` (The Facade):** The main `YtMeta` class that you instantiate is the public-facing API. Its primary role is to delegate requests to the appropriate specialized "fetcher" class. It holds shared objects like the session and cache but contains no data-fetching logic itself.
+- **`YtMeta` (The Facade):** The public-facing API. It delegates requests to the appropriate fetcher class and holds shared objects like the session and cache, but contains no data-fetching logic.
 
 - **Fetcher Classes (The Subsystems):**
-  - **`VideoFetcher`:** Handles all logic related to individual videos, such as fetching metadata and comments.
-  - **`ChannelFetcher`:** Manages fetching data from a channel's "Videos" and "Shorts" tabs, including handling pagination.
-  - **`PlaylistFetcher`:** Responsible for retrieving video lists from a playlist.
+  - **`VideoFetcher`:** Fetches individual video metadata and comments.
+  - **`ChannelFetcher`:** Fetches data from a channel's "Videos" and "Shorts" tabs, including pagination.
+  - **`PlaylistFetcher`:** Retrieves video lists from a playlist.
   - **`CommentFetcher`:** Fetches comments and replies for videos.
   - **`TranscriptFetcher`:** Fetches video transcripts.
 
-This separation of concerns makes the library easier to maintain, test, and extend. If you need to fix a bug related to playlist parsing, for example, you know to look in `yt_meta/fetchers.py` in the `PlaylistFetcher` class.
+This design makes the library easier to maintain, test, and extend. To fix a playlist parsing bug, look in `yt_meta/fetchers.py` in the `PlaylistFetcher` class.
