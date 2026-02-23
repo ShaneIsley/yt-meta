@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Internal architecture: new `TranscriptFetcher` and `CommentFetcher` classes, following the Facade pattern.
-- Documentation and examples updated to reflect new features and usage patterns.
+- Updated documentation and examples to reflect new features and usage patterns.
 
 ---
 
