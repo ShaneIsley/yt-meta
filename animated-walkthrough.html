@@ -1,0 +1,1714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>yt-meta Architecture Walkthrough</title>
+  <style>
+    :root {
+      --bg-primary: #0f0f0f;
+      --bg-secondary: #1a1a1a;
+      --bg-tertiary: #272727;
+      --text-primary: #f1f1f1;
+      --text-secondary: #aaa;
+      --accent-red: #ff0000;
+      --accent-red-hover: #cc0000;
+      --green: #2ecc71;
+      --yellow: #f1c40f;
+      --blue: #3498db;
+      --orange: #e67e22;
+      --tab-height: 48px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--bg-secondary);
+      padding: 16px 24px;
+      border-bottom: 1px solid #333;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 {
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    header span.subtitle {
+      color: var(--text-secondary);
+      font-size: 14px;
+    }
+
+    nav {
+      background: var(--bg-secondary);
+      display: flex;
+      overflow-x: auto;
+      border-bottom: 1px solid #333;
+    }
+
+    nav button {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      padding: 12px 20px;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+      border-bottom: 3px solid transparent;
+      transition: color 0.2s, border-color 0.2s;
+    }
+
+    nav button:hover { color: var(--text-primary); }
+    nav button.active {
+      color: var(--text-primary);
+      border-bottom-color: var(--accent-red);
+    }
+
+    main { padding: 20px; max-width: 1200px; margin: 0 auto; }
+
+    .viz-panel { display: none; }
+    .viz-panel.active { display: block; }
+
+    .viz-panel h2 { font-size: 22px; margin-bottom: 8px; }
+    .viz-panel .description {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: 16px;
+      line-height: 1.5;
+    }
+
+    .canvas-container {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .canvas-container canvas {
+      display: block;
+      width: 100%;
+      height: 420px;
+    }
+
+    .svg-container {
+      background: var(--bg-secondary);
+      border-radius: 12px;
+      overflow: auto;
+      margin-bottom: 16px;
+      min-height: 420px;
+      padding: 20px;
+      position: relative;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .controls button {
+      background: var(--bg-tertiary);
+      color: var(--text-primary);
+      border: 1px solid #444;
+      padding: 8px 20px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.2s;
+    }
+
+    .controls button:hover { background: #333; }
+    .controls button.active-btn {
+      background: var(--accent-red);
+      border-color: var(--accent-red);
+    }
+
+    .counters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .counter-chip {
+      background: var(--bg-tertiary);
+      padding: 6px 14px;
+      border-radius: 16px;
+      font-size: 13px;
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .counter-chip .label { color: var(--text-secondary); }
+    .counter-chip .value { font-weight: 600; }
+
+    .sliders {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .slider-group {
+      background: var(--bg-tertiary);
+      padding: 12px 16px;
+      border-radius: 8px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      grid-template-rows: auto auto;
+      gap: 6px 12px;
+    }
+
+    .slider-group .slider-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      grid-column: 1;
+    }
+
+    .slider-group .slider-value {
+      font-size: 13px;
+      font-weight: 600;
+      text-align: right;
+      grid-column: 2;
+      grid-row: 1;
+    }
+
+    .slider-group input[type="range"] {
+      grid-column: 1 / -1;
+      width: 100%;
+      accent-color: var(--accent-red);
+    }
+
+    .slider-group select {
+      grid-column: 1 / -1;
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      border: 1px solid #444;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    @media (max-width: 768px) {
+      .sliders { grid-template-columns: 1fr; }
+      nav button { padding: 10px 14px; font-size: 12px; }
+      .canvas-container canvas { height: 320px; }
+    }
+
+    /* SVG tree styles */
+    .tree-node rect {
+      transition: fill 0.3s, stroke 0.3s;
+    }
+    .tree-node text {
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+      fill: var(--text-primary);
+    }
+    .tree-edge {
+      stroke: #555;
+      stroke-width: 1.5;
+      fill: none;
+      transition: stroke 0.3s, stroke-width 0.3s;
+    }
+    .tree-edge.highlighted-green { stroke: var(--green); stroke-width: 3; }
+    .tree-edge.highlighted-red { stroke: var(--accent-red); stroke-width: 3; }
+    .tree-node.visited rect { fill: #1a3a2a; stroke: var(--green); }
+    .tree-node.current rect { fill: var(--blue); stroke: #fff; stroke-width: 2; }
+    .tree-node.failed rect { fill: #3a1a1a; stroke: var(--accent-red); }
+    .tree-node.success rect { fill: var(--green); stroke: #fff; stroke-width: 2; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>yt-meta</h1>
+  <span class="subtitle">Architecture Walkthrough &mdash; Interactive Visualizations</span>
+</header>
+
+<nav id="tab-nav">
+  <button class="active" data-tab="tab-1">1. Filter Pipeline</button>
+  <button data-tab="tab-2">2. Pagination Loop</button>
+  <button data-tab="tab-3">3. Comment Cascade</button>
+  <button data-tab="tab-4">4. Cache Comparison</button>
+  <button data-tab="tab-5">5. _deep_get Traversal</button>
+</nav>
+
+<main>
+
+  <!-- ======== VIZ 1: Two-Stage Filter Pipeline ======== -->
+  <section id="tab-1" class="viz-panel active">
+    <h2>Two-Stage Filter Pipeline</h2>
+    <p class="description">
+      Videos flow through fast filters (view_count, duration, title, publish_date, description_snippet)
+      before an optional HTTP fetch, then through slow filters (like_count, category, keywords, full_description).
+      Based on <code>_process_videos_generator</code> in fetchers.py.
+    </p>
+    <div class="canvas-container"><canvas id="canvas-1"></canvas></div>
+    <div class="controls" id="controls-1">
+      <button onclick="viz1.toggle()" id="btn-play-1">Play</button>
+      <button onclick="viz1.reset()">Reset</button>
+    </div>
+    <div class="counters" id="counters-1"></div>
+    <div class="sliders" id="sliders-1"></div>
+  </section>
+
+  <!-- ======== VIZ 2: Pagination / Continuation Token Loop ======== -->
+  <section id="tab-2" class="viz-panel">
+    <h2>Pagination &amp; Continuation Token Loop</h2>
+    <p class="description">
+      Channel videos are loaded page-by-page. Each page returns a continuation token used to
+      fetch the next batch via POST /youtubei/v1/browse. Based on <code>_get_raw_channel_videos_generator</code>.
+    </p>
+    <div class="canvas-container"><canvas id="canvas-2"></canvas></div>
+    <div class="controls" id="controls-2">
+      <button onclick="viz2.toggle()" id="btn-play-2">Play</button>
+      <button onclick="viz2.reset()">Reset</button>
+    </div>
+    <div class="counters" id="counters-2"></div>
+    <div class="sliders" id="sliders-2"></div>
+  </section>
+
+  <!-- ======== VIZ 3: Comment Endpoint Cascading Search ======== -->
+  <section id="tab-3" class="viz-panel">
+    <h2>Comment Endpoint Cascading Search</h2>
+    <p class="description">
+      Three search strategies are tried in order to find comment sort endpoints:
+      1) sortFilterSubMenuRenderer, 2) engagementPanels, 3) continuation tokens.
+      Based on <code>get_sort_endpoints_flexible</code> in comment_api_client.py.
+    </p>
+    <div class="svg-container" id="svg-container-3"></div>
+    <div class="controls" id="controls-3">
+      <button onclick="viz3.toggle()" id="btn-play-3">Play</button>
+      <button onclick="viz3.reset()">Reset</button>
+    </div>
+    <div class="counters" id="counters-3"></div>
+    <div class="sliders" id="sliders-3"></div>
+  </section>
+
+  <!-- ======== VIZ 4: Caching: DummyCache vs SQLiteCache ======== -->
+  <section id="tab-4" class="viz-panel">
+    <h2>Caching: DummyCache vs SQLiteCache</h2>
+    <p class="description">
+      DummyCache always misses (raises KeyError). SQLiteCache stores entries with TTL-based expiry &mdash;
+      expired entries are lazily deleted on read. Based on caching.py.
+    </p>
+    <div class="canvas-container"><canvas id="canvas-4"></canvas></div>
+    <div class="controls" id="controls-4">
+      <button onclick="viz4.toggle()" id="btn-play-4">Play</button>
+      <button onclick="viz4.reset()">Reset</button>
+    </div>
+    <div class="counters" id="counters-4"></div>
+    <div class="sliders" id="sliders-4"></div>
+  </section>
+
+  <!-- ======== VIZ 5: _deep_get JSON Traversal ======== -->
+  <section id="tab-5" class="viz-panel">
+    <h2>_deep_get JSON Traversal</h2>
+    <p class="description">
+      Traverses nested dicts/lists using dot-separated keys. Handles list indices with isdigit().
+      Returns default on any miss. Based on <code>_deep_get</code> in utils.py.
+    </p>
+    <div class="svg-container" id="svg-container-5"></div>
+    <div class="controls" id="controls-5">
+      <button onclick="viz5.toggle()" id="btn-play-5">Play</button>
+      <button onclick="viz5.reset()">Reset</button>
+    </div>
+    <div class="counters" id="counters-5"></div>
+    <div class="sliders" id="sliders-5"></div>
+  </section>
+
+</main>
+
+<script>
+// ===== SHARED UTILITIES =====
+
+function fitCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.parentElement.getBoundingClientRect();
+  const h = parseFloat(getComputedStyle(canvas).height);
+  canvas.width = rect.width * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = rect.width + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  return { w: rect.width, h };
+}
+
+function drawRoundedRect(ctx, x, y, w, h, r, fill, stroke) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); }
+}
+
+function drawArrow(ctx, x1, y1, x2, y2, color, headSize = 8) {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - headSize * Math.cos(angle - 0.4), y2 - headSize * Math.sin(angle - 0.4));
+  ctx.lineTo(x2 - headSize * Math.cos(angle + 0.4), y2 - headSize * Math.sin(angle + 0.4));
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function hexToRgba(hex, a) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
+function createSlider(containerId, opts) {
+  const div = document.createElement('div');
+  div.className = 'slider-group';
+  const label = document.createElement('span');
+  label.className = 'slider-label';
+  label.textContent = opts.label;
+  const valSpan = document.createElement('span');
+  valSpan.className = 'slider-value';
+  const fmt = v => opts.format ? opts.format(v) : v;
+  valSpan.textContent = fmt(opts.value);
+  const input = document.createElement('input');
+  input.type = 'range';
+  input.min = opts.min;
+  input.max = opts.max;
+  input.step = opts.step || 1;
+  input.value = opts.value;
+  input.addEventListener('input', () => {
+    const v = parseFloat(input.value);
+    valSpan.textContent = fmt(v);
+    if (opts.onChange) opts.onChange(v);
+  });
+  div.append(label, valSpan, input);
+  document.getElementById(containerId).appendChild(div);
+  return input;
+}
+
+function createSelect(containerId, opts) {
+  const div = document.createElement('div');
+  div.className = 'slider-group';
+  const label = document.createElement('span');
+  label.className = 'slider-label';
+  label.textContent = opts.label;
+  label.style.gridColumn = '1 / -1';
+  const sel = document.createElement('select');
+  opts.options.forEach((o, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = o;
+    sel.appendChild(opt);
+  });
+  sel.value = opts.value || 0;
+  sel.addEventListener('change', () => {
+    if (opts.onChange) opts.onChange(parseInt(sel.value));
+  });
+  div.append(label, sel);
+  document.getElementById(containerId).appendChild(div);
+  return sel;
+}
+
+function setCounters(id, counters) {
+  const el = document.getElementById(id);
+  el.innerHTML = '';
+  counters.forEach(c => {
+    const chip = document.createElement('div');
+    chip.className = 'counter-chip';
+    chip.innerHTML = `<span class="label">${c.label}</span><span class="value" style="color:${c.color||'#f1f1f1'}">${c.value}</span>`;
+    el.appendChild(chip);
+  });
+}
+
+// ===== TAB SWITCHING =====
+const controllers = {};
+document.querySelectorAll('#tab-nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#tab-nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.viz-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById(btn.dataset.tab).classList.add('active');
+    // pause all, play none (user clicks play)
+    Object.values(controllers).forEach(c => c.pause && c.pause());
+  });
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const btns = [...document.querySelectorAll('#tab-nav button')];
+  const activeIdx = btns.findIndex(b => b.classList.contains('active'));
+  if (e.key === 'ArrowRight' && activeIdx < btns.length - 1) btns[activeIdx + 1].click();
+  else if (e.key === 'ArrowLeft' && activeIdx > 0) btns[activeIdx - 1].click();
+  else if (e.key === ' ') {
+    e.preventDefault();
+    const vizNum = activeIdx + 1;
+    const viz = controllers[vizNum];
+    if (viz) viz.toggle();
+  }
+});
+
+
+// ====================================================================
+// VIZ 1: TWO-STAGE FILTER PIPELINE
+// ====================================================================
+const viz1 = (() => {
+  const canvas = document.getElementById('canvas-1');
+  let W, H;
+  const ctx = canvas.getContext('2d');
+
+  let params = { total: 200, fastPass: 0.6, slowPass: 0.8, fetchLatency: 200 };
+  let dots = [], running = false, rafId = null, lastTime = 0;
+  let counters = { spawned: 0, fastRejected: 0, fetched: 0, slowRejected: 0, yielded: 0 };
+  let spawnTimer = 0, spawnInterval = 80, maxSpawned = 200;
+
+  // Gate positions as fractions of width
+  const FAST_GATE = 0.28, FETCH_ZONE = 0.50, SLOW_GATE = 0.72;
+
+  class Dot {
+    constructor() {
+      this.x = 30;
+      this.y = H * 0.3 + Math.random() * H * 0.4;
+      this.baseY = this.y;
+      this.speed = 1.2 + Math.random() * 0.8;
+      this.phase = 'moving-to-fast';
+      this.timer = 0;
+      this.alpha = 1;
+      this.color = '#3498db';
+      this.radius = 4;
+    }
+  }
+
+  function resize() {
+    const dims = fitCanvas(canvas);
+    W = dims.w; H = dims.h;
+  }
+
+  function updateCounterDisplay() {
+    setCounters('counters-1', [
+      { label: 'Spawned', value: counters.spawned, color: '#3498db' },
+      { label: 'Fast Rejected', value: counters.fastRejected, color: '#e74c3c' },
+      { label: 'Fetched', value: counters.fetched, color: '#f1c40f' },
+      { label: 'Slow Rejected', value: counters.slowRejected, color: '#e67e22' },
+      { label: 'Yielded', value: counters.yielded, color: '#2ecc71' },
+    ]);
+  }
+
+  function update(dt) {
+    // Spawn dots
+    spawnTimer += dt;
+    if (spawnTimer > spawnInterval && counters.spawned < maxSpawned) {
+      dots.push(new Dot());
+      counters.spawned++;
+      spawnTimer = 0;
+    }
+
+    for (let i = dots.length - 1; i >= 0; i--) {
+      const d = dots[i];
+      if (d.phase === 'moving-to-fast') {
+        d.x += d.speed * (dt / 16);
+        if (d.x >= W * FAST_GATE) {
+          if (Math.random() < params.fastPass) {
+            d.phase = 'moving-to-fetch';
+            d.color = '#f1c40f';
+          } else {
+            d.phase = 'rejected';
+            d.color = '#e74c3c';
+            counters.fastRejected++;
+          }
+        }
+      } else if (d.phase === 'moving-to-fetch') {
+        d.x += d.speed * (dt / 16);
+        if (d.x >= W * FETCH_ZONE) {
+          d.phase = 'fetching';
+          d.timer = params.fetchLatency / 4; // scale for animation
+          d.color = '#f1c40f';
+          counters.fetched++;
+        }
+      } else if (d.phase === 'fetching') {
+        d.timer -= dt;
+        if (d.timer <= 0) {
+          d.phase = 'moving-to-slow';
+        }
+      } else if (d.phase === 'moving-to-slow') {
+        d.x += d.speed * (dt / 16);
+        if (d.x >= W * SLOW_GATE) {
+          if (Math.random() < params.slowPass) {
+            d.phase = 'yielded';
+            d.color = '#2ecc71';
+            counters.yielded++;
+          } else {
+            d.phase = 'rejected';
+            d.color = '#e67e22';
+            counters.slowRejected++;
+          }
+        }
+      } else if (d.phase === 'yielded') {
+        d.x += d.speed * (dt / 16);
+        if (d.x > W + 20) { dots.splice(i, 1); continue; }
+      } else if (d.phase === 'rejected') {
+        d.y += 2 * (dt / 16);
+        d.alpha -= 0.02 * (dt / 16);
+        if (d.alpha <= 0) { dots.splice(i, 1); continue; }
+      }
+    }
+    updateCounterDisplay();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+
+    // Background conveyor
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, W, H);
+
+    // Pipeline track
+    const trackY = H * 0.3, trackH = H * 0.4;
+    ctx.fillStyle = hexToRgba('#272727', 0.5);
+    ctx.fillRect(20, trackY, W - 40, trackH);
+
+    // Fast gate
+    const fgX = W * FAST_GATE;
+    drawRoundedRect(ctx, fgX - 3, trackY - 20, 6, trackH + 40, 3, '#e74c3c');
+    ctx.fillStyle = '#f1f1f1';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('FAST FILTERS', fgX, trackY - 28);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('view_count, duration, title', fgX, trackY - 10);
+
+    // Fetch zone
+    const fzX = W * FETCH_ZONE;
+    drawRoundedRect(ctx, fzX - 30, trackY + 5, 60, trackH - 10, 6, '#2c3e50', '#3498db');
+    ctx.fillStyle = '#f1f1f1';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('HTTP FETCH', fzX, trackY - 10);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('get_video_metadata()', fzX, trackY + trackH + 20);
+
+    // Slow gate
+    const sgX = W * SLOW_GATE;
+    drawRoundedRect(ctx, sgX - 3, trackY - 20, 6, trackH + 40, 3, '#e67e22');
+    ctx.fillStyle = '#f1f1f1';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('SLOW FILTERS', sgX, trackY - 28);
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#aaa';
+    ctx.fillText('like_count, category, keywords', sgX, trackY - 10);
+
+    // Labels
+    ctx.fillStyle = '#2ecc71';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Source', 10, trackY - 10);
+    ctx.textAlign = 'right';
+    ctx.fillText('Yielded', W - 10, trackY - 10);
+
+    // Dots
+    for (const d of dots) {
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+      ctx.fillStyle = hexToRgba(d.color, d.alpha);
+      ctx.fill();
+    }
+
+    // Spinner for fetching dots
+    for (const d of dots) {
+      if (d.phase === 'fetching') {
+        const t = performance.now() / 500;
+        ctx.beginPath();
+        ctx.arc(d.x, d.y - 10, 5, t, t + Math.PI * 1.2);
+        ctx.strokeStyle = '#3498db';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function loop(ts) {
+    if (!running) return;
+    const dt = ts - lastTime;
+    lastTime = ts;
+    if (dt < 100) { update(dt); render(); }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function play() {
+    running = true;
+    lastTime = performance.now();
+    document.getElementById('btn-play-1').textContent = 'Pause';
+    document.getElementById('btn-play-1').classList.add('active-btn');
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function pause() {
+    running = false;
+    cancelAnimationFrame(rafId);
+    document.getElementById('btn-play-1').textContent = 'Play';
+    document.getElementById('btn-play-1').classList.remove('active-btn');
+  }
+
+  function toggle() { running ? pause() : play(); }
+
+  function reset() {
+    pause();
+    dots = [];
+    counters = { spawned: 0, fastRejected: 0, fetched: 0, slowRejected: 0, yielded: 0 };
+    spawnTimer = 0;
+    updateCounterDisplay();
+    resize();
+    render();
+  }
+
+  function init() {
+    resize();
+    createSlider('sliders-1', { label: 'Total Videos', min: 50, max: 500, value: 200, onChange: v => { maxSpawned = v; } });
+    createSlider('sliders-1', { label: 'Fast Filter Pass Rate', min: 0, max: 100, value: 60, format: v => v + '%', onChange: v => { params.fastPass = v / 100; } });
+    createSlider('sliders-1', { label: 'Slow Filter Pass Rate', min: 0, max: 100, value: 80, format: v => v + '%', onChange: v => { params.slowPass = v / 100; } });
+    createSlider('sliders-1', { label: 'Fetch Latency', min: 50, max: 500, value: 200, format: v => v + 'ms', onChange: v => { params.fetchLatency = v; } });
+    updateCounterDisplay();
+    render();
+  }
+
+  window.addEventListener('resize', () => { resize(); if (!running) render(); });
+  init();
+
+  const api = { play, pause, toggle, reset };
+  controllers[1] = api;
+  return api;
+})();
+
+
+// ====================================================================
+// VIZ 2: PAGINATION / CONTINUATION TOKEN LOOP
+// ====================================================================
+const viz2 = (() => {
+  const canvas = document.getElementById('canvas-2');
+  let W, H;
+  const ctx = canvas.getContext('2d');
+
+  let params = { videosPerPage: 30, totalPages: 5, cacheHitRate: 0, apiLatency: 300 };
+  let running = false, rafId = null, lastTime = 0;
+  let currentPage = 0, pagePhase = 'idle', phaseTimer = 0;
+  let pages = [], slideOffset = 0;
+  let counters = { pagesLoaded: 0, cacheHits: 0, networkRequests: 0, totalVideos: 0 };
+
+  function resize() { const d = fitCanvas(canvas); W = d.w; H = d.h; }
+
+  function updateCounterDisplay() {
+    setCounters('counters-2', [
+      { label: 'Pages Loaded', value: counters.pagesLoaded, color: '#3498db' },
+      { label: 'Cache Hits', value: counters.cacheHits, color: '#2ecc71' },
+      { label: 'Network Requests', value: counters.networkRequests, color: '#f1c40f' },
+      { label: 'Total Videos', value: counters.totalVideos, color: '#f1f1f1' },
+    ]);
+  }
+
+  function update(dt) {
+    if (pagePhase === 'idle' && currentPage < params.totalPages) {
+      pagePhase = 'requesting';
+      const isCacheHit = Math.random() < params.cacheHitRate / 100;
+      pages.push({ index: currentPage, isCacheHit, videos: params.videosPerPage });
+      phaseTimer = isCacheHit ? 200 : params.apiLatency;
+      if (isCacheHit) counters.cacheHits++;
+      else counters.networkRequests++;
+    }
+
+    if (pagePhase === 'requesting') {
+      phaseTimer -= dt;
+      if (phaseTimer <= 0) {
+        pagePhase = 'sliding';
+        slideOffset = 0;
+        counters.pagesLoaded++;
+        counters.totalVideos += params.videosPerPage;
+      }
+    }
+
+    if (pagePhase === 'sliding') {
+      slideOffset += dt * 0.3;
+      if (slideOffset >= 100) {
+        slideOffset = 100;
+        currentPage++;
+        pagePhase = currentPage >= params.totalPages ? 'done' : 'idle';
+      }
+    }
+
+    updateCounterDisplay();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, W, H);
+
+    const leftW = W * 0.55, rightW = W * 0.4;
+
+    // Left: page grid
+    const pageW = leftW - 40, pageH = H - 60;
+    const gridX = 20, gridY = 40;
+
+    // Draw current page
+    const cp = pages[pages.length - 1];
+    if (cp) {
+      const cols = 6, rows = Math.ceil(cp.videos / cols);
+      const cellW = (pageW - 10) / cols, cellH = Math.min(30, (pageH - 10) / rows);
+
+      drawRoundedRect(ctx, gridX, gridY, pageW, pageH, 8, '#272727', '#444');
+      ctx.fillStyle = '#f1f1f1';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`Page ${cp.index + 1}`, gridX + pageW / 2, gridY - 8);
+
+      if (cp.isCacheHit) {
+        drawRoundedRect(ctx, gridX + pageW - 90, gridY + 4, 80, 20, 4, '#2ecc71');
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillText('CACHE HIT', gridX + pageW - 50, gridY + 18);
+      }
+
+      for (let i = 0; i < Math.min(cp.videos, cols * rows); i++) {
+        const col = i % cols, row = Math.floor(i / cols);
+        const x = gridX + 5 + col * cellW, y = gridY + 5 + row * cellH;
+        drawRoundedRect(ctx, x + 1, y + 1, cellW - 3, cellH - 3, 3, '#3a3a3a');
+      }
+    }
+
+    // Right: state machine
+    const smX = leftW + 30, smY = 30;
+    const states = [
+      'GET /channel',
+      'Extract ytInitialData',
+      'Extract ytcfg',
+      'Parse renderers',
+      'Extract token',
+      'POST /browse'
+    ];
+
+    const stepH = (H - 80) / states.length;
+    let activeStep = -1;
+    if (pagePhase === 'requesting') activeStep = cp && cp.index === 0 ? 0 : 5;
+    else if (pagePhase === 'sliding') activeStep = 3;
+    else if (pagePhase === 'done') activeStep = -1;
+    else if (currentPage === 0) activeStep = 0;
+    else activeStep = 4;
+
+    states.forEach((s, i) => {
+      const y = smY + i * stepH;
+      const isActive = i === activeStep;
+      drawRoundedRect(ctx, smX, y, rightW - 20, stepH - 10, 6,
+        isActive ? '#2c3e50' : '#272727',
+        isActive ? '#3498db' : '#444');
+      ctx.fillStyle = isActive ? '#3498db' : '#aaa';
+      ctx.font = (isActive ? 'bold ' : '') + '12px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(s, smX + 12, y + stepH / 2 - 2);
+
+      if (i < states.length - 1) {
+        drawArrow(ctx, smX + (rightW - 20) / 2, y + stepH - 10,
+                  smX + (rightW - 20) / 2, y + stepH + 2, '#555', 5);
+      }
+    });
+
+    // Loop arrow from POST back to Extract token
+    if (currentPage > 0 || pagePhase !== 'idle') {
+      const loopX = smX + rightW - 10;
+      ctx.beginPath();
+      ctx.moveTo(loopX, smY + 5 * stepH - 5);
+      ctx.lineTo(loopX + 15, smY + 5 * stepH - 5);
+      ctx.lineTo(loopX + 15, smY + 4 * stepH - 5);
+      ctx.lineTo(loopX, smY + 4 * stepH - 5);
+      ctx.strokeStyle = '#f1c40f';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      drawArrow(ctx, loopX + 5, smY + 4 * stepH - 5, loopX, smY + 4 * stepH - 5, '#f1c40f', 5);
+      ctx.fillStyle = '#f1c40f';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('loop', loopX + 18, smY + 4.5 * stepH);
+    }
+
+    // Progress bar
+    if (params.totalPages > 0) {
+      const pct = counters.pagesLoaded / params.totalPages;
+      ctx.fillStyle = '#272727';
+      ctx.fillRect(20, H - 20, W - 40, 8);
+      ctx.fillStyle = '#3498db';
+      ctx.fillRect(20, H - 20, (W - 40) * pct, 8);
+    }
+  }
+
+  function loop(ts) {
+    if (!running) return;
+    const dt = ts - lastTime;
+    lastTime = ts;
+    if (dt < 100) { update(dt); render(); }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function play() {
+    running = true;
+    lastTime = performance.now();
+    document.getElementById('btn-play-2').textContent = 'Pause';
+    document.getElementById('btn-play-2').classList.add('active-btn');
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function pause() {
+    running = false;
+    cancelAnimationFrame(rafId);
+    document.getElementById('btn-play-2').textContent = 'Play';
+    document.getElementById('btn-play-2').classList.remove('active-btn');
+  }
+
+  function toggle() { running ? pause() : play(); }
+
+  function reset() {
+    pause();
+    currentPage = 0;
+    pagePhase = 'idle';
+    pages = [];
+    slideOffset = 0;
+    counters = { pagesLoaded: 0, cacheHits: 0, networkRequests: 0, totalVideos: 0 };
+    updateCounterDisplay();
+    resize();
+    render();
+  }
+
+  function init() {
+    resize();
+    createSlider('sliders-2', { label: 'Videos Per Page', min: 10, max: 50, value: 30, onChange: v => { params.videosPerPage = v; } });
+    createSlider('sliders-2', { label: 'Total Pages', min: 1, max: 20, value: 5, onChange: v => { params.totalPages = v; } });
+    createSlider('sliders-2', { label: 'Cache Hit Rate', min: 0, max: 100, value: 0, format: v => v + '%', onChange: v => { params.cacheHitRate = v; } });
+    createSlider('sliders-2', { label: 'API Latency', min: 100, max: 1000, value: 300, format: v => v + 'ms', onChange: v => { params.apiLatency = v; } });
+    updateCounterDisplay();
+    render();
+  }
+
+  window.addEventListener('resize', () => { resize(); if (!running) render(); });
+  init();
+
+  const api = { play, pause, toggle, reset };
+  controllers[2] = api;
+  return api;
+})();
+
+
+// ====================================================================
+// VIZ 3: COMMENT ENDPOINT CASCADING SEARCH
+// ====================================================================
+const viz3 = (() => {
+  const container = document.getElementById('svg-container-3');
+  let params = { depth: 10, successLayer: 1, branching: 3 };
+  let running = false, rafId = null, stepTimer = 0, stepIndex = 0;
+  let treeNodes = [], treeEdges = [], searchOrder = [];
+  let currentWave = 1, waveResults = { 1: null, 2: null, 3: null };
+  let counters = { nodesSearched: 0, wave1: 'pending', wave2: 'pending', wave3: 'pending' };
+
+  const TARGET_NAMES = {
+    1: 'sortFilterSubMenuRenderer',
+    2: 'engagementPanels',
+    3: 'continuationToken'
+  };
+
+  const WAVE_COLORS = { 1: '#2ecc71', 2: '#f1c40f', 3: '#e67e22' };
+
+  function generateTree() {
+    treeNodes = [];
+    treeEdges = [];
+    searchOrder = [];
+    let id = 0;
+
+    function addNode(depth, parentId, keyName) {
+      const nodeId = id++;
+      treeNodes.push({
+        id: nodeId, key: keyName, depth, parentId,
+        x: 0, y: 0, w: 0, h: 24, state: 'default'
+      });
+      if (parentId !== null) {
+        treeEdges.push({ from: parentId, to: nodeId, state: 'default' });
+      }
+
+      if (depth < params.depth) {
+        const numChildren = 1 + Math.floor(Math.random() * params.branching);
+        const keys = ['contents', 'renderers', 'items', 'data', 'tabs', 'panels',
+                       'actions', 'endpoints', 'command', 'metadata', 'text', 'runs',
+                       'overlay', 'section', 'continuation', 'subMenuItems'];
+        for (let i = 0; i < numChildren; i++) {
+          let childKey = keys[Math.floor(Math.random() * keys.length)] + (i > 0 ? i : '');
+          // Place target at specific depth
+          if (depth === Math.floor(params.depth * 0.6) && i === 0) {
+            childKey = TARGET_NAMES[params.successLayer];
+          }
+          addNode(depth + 1, nodeId, childKey);
+        }
+      }
+      return nodeId;
+    }
+
+    addNode(0, null, 'ytInitialData');
+
+    // Layout: simple tree layout
+    const depthCounts = {};
+    const depthIndex = {};
+    treeNodes.forEach(n => {
+      depthCounts[n.depth] = (depthCounts[n.depth] || 0) + 1;
+      depthIndex[n.depth] = 0;
+    });
+
+    // Limit visible nodes for readability
+    const maxVisible = 60;
+    if (treeNodes.length > maxVisible) {
+      treeNodes.length = maxVisible;
+      treeEdges = treeEdges.filter(e => e.from < maxVisible && e.to < maxVisible);
+    }
+
+    // Re-count after trimming
+    Object.keys(depthCounts).forEach(k => depthCounts[k] = 0);
+    treeNodes.forEach(n => depthCounts[n.depth] = (depthCounts[n.depth] || 0) + 1);
+
+    const nodeH = 28, vGap = 36;
+    treeNodes.forEach(n => {
+      if (!depthIndex[n.depth]) depthIndex[n.depth] = 0;
+      const count = depthCounts[n.depth];
+      const xSpacing = Math.max(120, 800 / count);
+      n.w = Math.max(80, n.key.length * 7 + 16);
+      n.x = 20 + depthIndex[n.depth] * xSpacing;
+      n.y = 10 + n.depth * (nodeH + vGap);
+      depthIndex[n.depth]++;
+    });
+
+    // BFS order for search animation
+    const queue = [0];
+    const visited = new Set();
+    while (queue.length > 0) {
+      const nid = queue.shift();
+      if (visited.has(nid)) continue;
+      visited.add(nid);
+      searchOrder.push(nid);
+      treeEdges.filter(e => e.from === nid).forEach(e => queue.push(e.to));
+    }
+  }
+
+  function renderTree() {
+    const maxX = Math.max(...treeNodes.map(n => n.x + n.w)) + 40;
+    const maxY = Math.max(...treeNodes.map(n => n.y + n.h)) + 40;
+
+    let svg = `<svg width="${Math.max(maxX, 800)}" height="${Math.max(maxY, 400)}" xmlns="http://www.w3.org/2000/svg">`;
+
+    // Edges
+    treeEdges.forEach(e => {
+      const from = treeNodes[e.from], to = treeNodes[e.to];
+      if (!from || !to) return;
+      const cls = e.state === 'default' ? 'tree-edge' : `tree-edge highlighted-${e.state}`;
+      svg += `<line class="${cls}" x1="${from.x + from.w / 2}" y1="${from.y + from.h}" x2="${to.x + to.w / 2}" y2="${to.y}" />`;
+    });
+
+    // Nodes
+    treeNodes.forEach(n => {
+      let fillColor = '#272727';
+      if (n.state === 'visited') fillColor = '#1a3a2a';
+      else if (n.state === 'current') fillColor = '#3498db';
+      else if (n.state === 'found') fillColor = '#2ecc71';
+      else if (n.state === 'skipped') fillColor = '#3a3a3a';
+
+      let strokeColor = '#555';
+      if (n.state === 'current') strokeColor = '#fff';
+      else if (n.state === 'found') strokeColor = '#fff';
+      else if (n.state === 'visited') strokeColor = '#2ecc71';
+
+      svg += `<g class="tree-node ${n.state}">`;
+      svg += `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="4" fill="${fillColor}" stroke="${strokeColor}" stroke-width="${n.state === 'current' || n.state === 'found' ? 2 : 1}" />`;
+      const textColor = n.state === 'skipped' ? '#666' : '#f1f1f1';
+      svg += `<text x="${n.x + n.w / 2}" y="${n.y + 16}" text-anchor="middle" fill="${textColor}" font-size="10" font-family="monospace">${n.key}</text>`;
+      svg += `</g>`;
+    });
+
+    // Wave legend
+    svg += `<text x="20" y="${maxY + 10}" fill="#2ecc71" font-size="12" font-family="sans-serif">Wave 1: sortFilterSubMenuRenderer</text>`;
+    svg += `<text x="280" y="${maxY + 10}" fill="#f1c40f" font-size="12" font-family="sans-serif">Wave 2: engagementPanels</text>`;
+    svg += `<text x="480" y="${maxY + 10}" fill="#e67e22" font-size="12" font-family="sans-serif">Wave 3: continuationTokens</text>`;
+
+    svg += '</svg>';
+    container.innerHTML = svg;
+  }
+
+  function updateCounterDisplay() {
+    const stateLabel = s => s === 'pending' ? 'Pending' : s === 'searching' ? 'Searching...' : s === 'found' ? 'Found!' : 'No match';
+    setCounters('counters-3', [
+      { label: 'Nodes Searched', value: counters.nodesSearched, color: '#3498db' },
+      { label: 'Wave 1', value: stateLabel(counters.wave1), color: '#2ecc71' },
+      { label: 'Wave 2', value: stateLabel(counters.wave2), color: '#f1c40f' },
+      { label: 'Wave 3', value: stateLabel(counters.wave3), color: '#e67e22' },
+    ]);
+  }
+
+  function stepAnimation() {
+    if (!running) return;
+
+    if (stepIndex < searchOrder.length) {
+      const nid = searchOrder[stepIndex];
+      const node = treeNodes[nid];
+
+      // Mark previous current as visited
+      treeNodes.forEach(n => { if (n.state === 'current') n.state = 'visited'; });
+
+      node.state = 'current';
+      counters.nodesSearched++;
+      counters[`wave${currentWave}`] = 'searching';
+
+      // Check if this node is the target
+      if (node.key === TARGET_NAMES[currentWave]) {
+        node.state = 'found';
+        counters[`wave${currentWave}`] = 'found';
+        waveResults[currentWave] = true;
+        // Mark remaining waves as skipped
+        for (let w = currentWave + 1; w <= 3; w++) {
+          counters[`wave${w}`] = 'skipped';
+        }
+        stepIndex = searchOrder.length; // stop
+      } else if (node.key === TARGET_NAMES[params.successLayer] && currentWave === params.successLayer) {
+        node.state = 'found';
+        counters[`wave${currentWave}`] = 'found';
+        for (let w = currentWave + 1; w <= 3; w++) counters[`wave${w}`] = 'skipped';
+        stepIndex = searchOrder.length;
+      } else {
+        stepIndex++;
+        // If we've exhausted search for current wave without finding target
+        if (stepIndex >= searchOrder.length && currentWave < 3) {
+          counters[`wave${currentWave}`] = 'no match';
+          currentWave++;
+          stepIndex = 0;
+          treeNodes.forEach(n => { if (n.state === 'visited' || n.state === 'current') n.state = 'default'; });
+        }
+      }
+
+      // Update edges
+      treeEdges.forEach(e => {
+        const fromNode = treeNodes[e.from], toNode = treeNodes[e.to];
+        if (fromNode && toNode && (fromNode.state === 'visited' || fromNode.state === 'found') &&
+            (toNode.state === 'visited' || toNode.state === 'current' || toNode.state === 'found')) {
+          e.state = 'green';
+        }
+      });
+
+      renderTree();
+      updateCounterDisplay();
+
+      if (stepIndex < searchOrder.length || currentWave <= 3) {
+        rafId = setTimeout(stepAnimation, 120);
+      }
+    }
+  }
+
+  function play() {
+    running = true;
+    document.getElementById('btn-play-3').textContent = 'Pause';
+    document.getElementById('btn-play-3').classList.add('active-btn');
+    stepAnimation();
+  }
+
+  function pause() {
+    running = false;
+    clearTimeout(rafId);
+    document.getElementById('btn-play-3').textContent = 'Play';
+    document.getElementById('btn-play-3').classList.remove('active-btn');
+  }
+
+  function toggle() { running ? pause() : play(); }
+
+  function reset() {
+    pause();
+    stepIndex = 0;
+    currentWave = 1;
+    waveResults = { 1: null, 2: null, 3: null };
+    counters = { nodesSearched: 0, wave1: 'pending', wave2: 'pending', wave3: 'pending' };
+    generateTree();
+    renderTree();
+    updateCounterDisplay();
+  }
+
+  function init() {
+    createSlider('sliders-3', { label: 'JSON Tree Depth', min: 3, max: 12, value: 6, onChange: v => { params.depth = v; reset(); } });
+    createSelect('sliders-3', {
+      label: 'Which Wave Succeeds',
+      options: ['Wave 1: sortFilterSubMenuRenderer', 'Wave 2: engagementPanels', 'Wave 3: continuationTokens'],
+      value: 0,
+      onChange: v => { params.successLayer = v + 1; reset(); }
+    });
+    createSlider('sliders-3', { label: 'Branching Factor', min: 2, max: 5, value: 3, onChange: v => { params.branching = v; reset(); } });
+    generateTree();
+    renderTree();
+    updateCounterDisplay();
+  }
+
+  init();
+
+  const api = { play, pause, toggle, reset };
+  controllers[3] = api;
+  return api;
+})();
+
+
+// ====================================================================
+// VIZ 4: CACHING - DUMMYCACHE vs SQLITECACHE
+// ====================================================================
+const viz4 = (() => {
+  const canvas = document.getElementById('canvas-4');
+  let W, H;
+  const ctx = canvas.getContext('2d');
+
+  let params = { ttl: 3600, requestRate: 5, uniqueKeys: 20, timeSpeed: 10 };
+  let running = false, rafId = null, lastTime = 0;
+  let simTime = 0;
+  let counters = {
+    dummyMisses: 0, dummyTotal: 0,
+    sqliteHits: 0, sqliteMisses: 0, sqliteExpired: 0, sqliteTotal: 0
+  };
+
+  // SQLite cache simulation
+  let cacheEntries = {}; // key -> { value, timestamp }
+  let requestQueue = []; // { key, startTime, side, phase, y }
+  let spawnAcc = 0;
+  let cacheTableEntries = []; // for display
+
+  function resize() { const d = fitCanvas(canvas); W = d.w; H = d.h; }
+
+  function updateCounterDisplay() {
+    setCounters('counters-4', [
+      { label: 'Dummy: Misses', value: counters.dummyMisses, color: '#e74c3c' },
+      { label: 'SQLite: Hits', value: counters.sqliteHits, color: '#2ecc71' },
+      { label: 'SQLite: Misses', value: counters.sqliteMisses, color: '#e74c3c' },
+      { label: 'SQLite: Expired', value: counters.sqliteExpired, color: '#f1c40f' },
+      { label: 'Sim Time', value: Math.floor(simTime) + 's', color: '#aaa' },
+    ]);
+  }
+
+  function spawnRequest() {
+    const keyIdx = Math.floor(Math.random() * params.uniqueKeys);
+    const key = `key_${keyIdx}`;
+
+    // Dummy side - always miss
+    counters.dummyMisses++;
+    counters.dummyTotal++;
+
+    // SQLite side
+    counters.sqliteTotal++;
+    const entry = cacheEntries[key];
+    let result;
+    if (entry && (simTime - entry.timestamp) < params.ttl) {
+      // Cache hit
+      counters.sqliteHits++;
+      result = 'hit';
+    } else if (entry) {
+      // Expired - delete and miss
+      delete cacheEntries[key];
+      counters.sqliteExpired++;
+      counters.sqliteMisses++;
+      result = 'expired';
+      cacheEntries[key] = { value: `data_${keyIdx}`, timestamp: simTime };
+    } else {
+      // Miss
+      counters.sqliteMisses++;
+      result = 'miss';
+      cacheEntries[key] = { value: `data_${keyIdx}`, timestamp: simTime };
+    }
+
+    requestQueue.push({
+      key, result, phase: 0,
+      dummyY: 0, sqliteY: 0,
+      timer: 40, alpha: 1
+    });
+
+    // Keep table display updated
+    cacheTableEntries = Object.entries(cacheEntries).slice(-8).map(([k, v]) => ({
+      key: k,
+      age: Math.floor(simTime - v.timestamp),
+      ttlPct: Math.min(1, (simTime - v.timestamp) / params.ttl),
+      expired: (simTime - v.timestamp) >= params.ttl
+    }));
+  }
+
+  function update(dt) {
+    simTime += (dt / 1000) * params.timeSpeed;
+    spawnAcc += dt;
+    const spawnMs = 1000 / params.requestRate;
+    while (spawnAcc >= spawnMs) {
+      spawnRequest();
+      spawnAcc -= spawnMs;
+    }
+
+    // Animate requests
+    for (let i = requestQueue.length - 1; i >= 0; i--) {
+      const r = requestQueue[i];
+      r.timer -= dt / 16;
+      if (r.timer <= 0) {
+        r.alpha -= 0.05;
+        if (r.alpha <= 0) { requestQueue.splice(i, 1); }
+      }
+    }
+    // Keep queue manageable
+    if (requestQueue.length > 30) requestQueue.splice(0, requestQueue.length - 30);
+
+    updateCounterDisplay();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(0, 0, W, H);
+
+    const midX = W / 2;
+
+    // Divider
+    ctx.beginPath();
+    ctx.moveTo(midX, 0);
+    ctx.lineTo(midX, H);
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Headers
+    ctx.fillStyle = '#e74c3c';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('DummyCache', midX / 2, 28);
+
+    ctx.fillStyle = '#2ecc71';
+    ctx.fillText('SQLiteCache', midX + midX / 2, 28);
+
+    // === Left: DummyCache ===
+    const lx = midX / 2;
+    // App box
+    drawRoundedRect(ctx, lx - 40, 50, 80, 30, 6, '#2c3e50', '#3498db');
+    ctx.fillStyle = '#f1f1f1'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('App', lx, 70);
+
+    // Cache box (X'd out)
+    drawRoundedRect(ctx, lx - 50, 130, 100, 50, 6, '#1a1a1a', '#555');
+    ctx.fillStyle = '#666'; ctx.font = '11px sans-serif';
+    ctx.fillText('Cache (null)', lx, 155);
+    ctx.strokeStyle = '#e74c3c'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(lx - 35, 135); ctx.lineTo(lx + 35, 175); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx + 35, 135); ctx.lineTo(lx - 35, 175); ctx.stroke();
+    ctx.lineWidth = 1;
+
+    // Network box
+    drawRoundedRect(ctx, lx - 40, 220, 80, 30, 6, '#7f8c8d', '#95a5a6');
+    ctx.fillStyle = '#f1f1f1'; ctx.font = '12px sans-serif';
+    ctx.fillText('Network', lx, 240);
+
+    // Arrow App -> Cache (always miss)
+    drawArrow(ctx, lx, 80, lx, 130, '#e74c3c', 6);
+    // Arrow Cache -> Network
+    drawArrow(ctx, lx, 180, lx, 220, '#e74c3c', 6);
+
+    ctx.fillStyle = '#e74c3c'; ctx.font = 'bold 11px sans-serif';
+    ctx.fillText('KeyError!', lx + 55, 115);
+
+    // Miss rate
+    ctx.fillStyle = '#aaa'; ctx.font = '12px sans-serif';
+    ctx.fillText(`Miss rate: 100%`, lx, 280);
+    ctx.fillText(`Total: ${counters.dummyMisses}`, lx, 300);
+
+    // === Right: SQLiteCache ===
+    const rx = midX + midX / 2;
+
+    // App box
+    drawRoundedRect(ctx, rx - 40, 50, 80, 30, 6, '#2c3e50', '#3498db');
+    ctx.fillStyle = '#f1f1f1'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('App', rx, 70);
+
+    // Cache box
+    drawRoundedRect(ctx, rx - 70, 120, 140, 30, 6, '#1a3a2a', '#2ecc71');
+    ctx.fillStyle = '#f1f1f1'; ctx.font = '11px sans-serif';
+    ctx.fillText('SQLite Cache', rx, 140);
+
+    // Network box
+    drawRoundedRect(ctx, rx - 40, 280, 80, 30, 6, '#7f8c8d', '#95a5a6');
+    ctx.fillStyle = '#f1f1f1'; ctx.font = '12px sans-serif';
+    ctx.fillText('Network', rx, 300);
+
+    // Arrow App -> Cache
+    const hitRate = counters.sqliteTotal > 0 ? counters.sqliteHits / counters.sqliteTotal : 0;
+    drawArrow(ctx, rx, 80, rx, 120, hitRate > 0.5 ? '#2ecc71' : '#f1c40f', 6);
+
+    // Arrow Cache -> Network (misses)
+    drawArrow(ctx, rx, 150, rx, 280, '#e74c3c', 6);
+
+    // Cache table
+    const tableX = rx - 80, tableY = 160;
+    ctx.fillStyle = '#272727';
+    ctx.fillRect(tableX, tableY, 160, 110);
+    ctx.strokeStyle = '#444';
+    ctx.strokeRect(tableX, tableY, 160, 110);
+
+    ctx.fillStyle = '#aaa'; ctx.font = '9px monospace'; ctx.textAlign = 'left';
+    ctx.fillText('KEY         AGE    TTL%', tableX + 4, tableY + 12);
+
+    cacheTableEntries.forEach((e, i) => {
+      const y = tableY + 24 + i * 11;
+      if (y > tableY + 105) return;
+      ctx.fillStyle = e.expired ? '#e74c3c' : '#aaa';
+      ctx.fillText(
+        `${e.key.padEnd(12)} ${String(e.age).padStart(5)}s  ${Math.floor(e.ttlPct * 100)}%`,
+        tableX + 4, y
+      );
+    });
+
+    // Hit rate display
+    ctx.fillStyle = '#aaa'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(`Hit rate: ${(hitRate * 100).toFixed(1)}%`, rx, 330);
+    ctx.fillText(`Total: ${counters.sqliteTotal}`, rx, 350);
+  }
+
+  function loop(ts) {
+    if (!running) return;
+    const dt = ts - lastTime;
+    lastTime = ts;
+    if (dt < 100) { update(dt); render(); }
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function play() {
+    running = true;
+    lastTime = performance.now();
+    document.getElementById('btn-play-4').textContent = 'Pause';
+    document.getElementById('btn-play-4').classList.add('active-btn');
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function pause() {
+    running = false;
+    cancelAnimationFrame(rafId);
+    document.getElementById('btn-play-4').textContent = 'Play';
+    document.getElementById('btn-play-4').classList.remove('active-btn');
+  }
+
+  function toggle() { running ? pause() : play(); }
+
+  function reset() {
+    pause();
+    simTime = 0;
+    counters = { dummyMisses: 0, dummyTotal: 0, sqliteHits: 0, sqliteMisses: 0, sqliteExpired: 0, sqliteTotal: 0 };
+    cacheEntries = {};
+    requestQueue = [];
+    cacheTableEntries = [];
+    spawnAcc = 0;
+    updateCounterDisplay();
+    resize();
+    render();
+  }
+
+  function init() {
+    resize();
+    createSlider('sliders-4', { label: 'TTL (seconds)', min: 10, max: 600, value: 60, step: 10, format: v => v + 's', onChange: v => { params.ttl = v; } });
+    createSlider('sliders-4', { label: 'Request Rate', min: 1, max: 20, value: 5, format: v => v + '/sec', onChange: v => { params.requestRate = v; } });
+    createSlider('sliders-4', { label: 'Unique Keys', min: 5, max: 100, value: 20, onChange: v => { params.uniqueKeys = v; } });
+    createSlider('sliders-4', { label: 'Time Speed', min: 1, max: 60, value: 10, format: v => v + 'x', onChange: v => { params.timeSpeed = v; } });
+    updateCounterDisplay();
+    render();
+  }
+
+  window.addEventListener('resize', () => { resize(); if (!running) render(); });
+  init();
+
+  const api = { play, pause, toggle, reset };
+  controllers[4] = api;
+  return api;
+})();
+
+
+// ====================================================================
+// VIZ 5: _deep_get JSON TRAVERSAL
+// ====================================================================
+const viz5 = (() => {
+  const container = document.getElementById('svg-container-5');
+
+  const PATHS = [
+    'contents.twoColumnBrowseResultsRenderer.tabs',
+    'content.richGridRenderer.contents',
+    'continuationItemRenderer.continuationEndpoint.continuationCommand.token',
+    'onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems',
+    'richItemRenderer.content.videoRenderer',
+    'title.runs.0.text',
+    'thumbnailOverlayTimeStatusRenderer.text.runs.0.text',
+    'metadata.channelMetadataRenderer',
+    'microformat.playerMicroformatRenderer',
+    'lengthText.accessibility.accessibilityData.label',
+    'frameworkUpdates.entityBatchUpdate.mutations',
+    'overlayMetadata.primaryText.content',
+    'contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.itemSectionRenderer.contents.0.playlistVideoListRenderer'
+  ];
+
+  let params = { pathIndex: 0, failurePoint: 0 };
+  let running = false, rafId = null, stepIndex = 0;
+  let nodes = [], edges = [];
+
+  function getCurrentPath() {
+    return PATHS[params.pathIndex];
+  }
+
+  function getKeys() {
+    return getCurrentPath().split('.');
+  }
+
+  function generateTreeFromPath() {
+    nodes = [];
+    edges = [];
+    const keys = getKeys();
+    const failAt = params.failurePoint;
+    let id = 0;
+
+    // Build tree along the path
+    for (let i = 0; i <= Math.min(keys.length, failAt > 0 ? failAt : keys.length); i++) {
+      const key = i === 0 ? '{root}' : keys[i - 1];
+      const isIndex = key.match(/^\d+$/);
+      const nodeLabel = isIndex ? `[${key}]` : key;
+      nodes.push({
+        id: id, key: nodeLabel,
+        isIndex,
+        depth: i,
+        x: 60 + i * 140,
+        y: 80,
+        w: Math.max(60, nodeLabel.length * 8 + 20),
+        h: 28,
+        state: 'default',
+        onPath: true
+      });
+
+      if (id > 0) {
+        edges.push({ from: id - 1, to: id, state: 'default' });
+      }
+
+      // Add sibling nodes (not on path) for visual context
+      if (i < keys.length && i < (failAt > 0 ? failAt : keys.length)) {
+        const siblings = ['other', 'metadata', 'config'];
+        for (let s = 0; s < 2; s++) {
+          const sid = ++id;
+          const skey = siblings[s % siblings.length] + (i > 2 ? i : '');
+          nodes.push({
+            id: sid, key: skey, depth: i,
+            x: 60 + i * 140,
+            y: 80 + (s + 1) * 40,
+            w: Math.max(60, skey.length * 8 + 20),
+            h: 28,
+            state: 'default',
+            onPath: false
+          });
+          edges.push({ from: id - s - 1 - (s > 0 ? 1 : 0), to: sid, state: 'default' });
+        }
+      }
+
+      id++;
+    }
+
+    // Add failure marker
+    if (failAt > 0 && failAt <= keys.length) {
+      const lastNode = nodes.find(n => n.onPath && n.depth === failAt);
+      if (lastNode) lastNode.state = 'will-fail';
+    }
+  }
+
+  function renderTree() {
+    const keys = getKeys();
+    const maxX = Math.max(...nodes.map(n => n.x + n.w), 800) + 40;
+    const maxY = Math.max(...nodes.map(n => n.y + n.h), 300) + 60;
+
+    let svg = `<svg width="${maxX}" height="${maxY}" xmlns="http://www.w3.org/2000/svg">`;
+
+    // Path display
+    const pathStr = getCurrentPath();
+    const pathKeys = pathStr.split('.');
+    let pathDisplay = '';
+    pathKeys.forEach((k, i) => {
+      const color = i < stepIndex ? '#2ecc71' : (i === stepIndex - 1 ? '#3498db' : (params.failurePoint > 0 && i === params.failurePoint - 1 ? '#e74c3c' : '#aaa'));
+      pathDisplay += `<tspan fill="${color}">${k}</tspan>`;
+      if (i < pathKeys.length - 1) pathDisplay += `<tspan fill="#555">.</tspan>`;
+    });
+    svg += `<text x="20" y="30" font-family="monospace" font-size="13">${pathDisplay}</text>`;
+
+    // Function signature
+    svg += `<text x="20" y="50" fill="#aaa" font-size="11" font-family="monospace">_deep_get(dictionary, "${pathStr.length > 60 ? pathStr.slice(0, 57) + '...' : pathStr}")</text>`;
+
+    // Edges
+    edges.forEach(e => {
+      const from = nodes.find(n => n.id === e.from);
+      const to = nodes.find(n => n.id === e.to);
+      if (!from || !to) return;
+      const cls = e.state === 'green' ? 'tree-edge highlighted-green' :
+                  e.state === 'red' ? 'tree-edge highlighted-red' : 'tree-edge';
+      svg += `<line class="${cls}" x1="${from.x + from.w}" y1="${from.y + from.h / 2}" x2="${to.x}" y2="${to.y + to.h / 2}" />`;
+    });
+
+    // Nodes
+    nodes.forEach(n => {
+      let fill = '#272727', stroke = '#555', sw = 1;
+      if (n.state === 'visited') { fill = '#1a3a2a'; stroke = '#2ecc71'; }
+      else if (n.state === 'current') { fill = '#3498db'; stroke = '#fff'; sw = 2; }
+      else if (n.state === 'success') { fill = '#2ecc71'; stroke = '#fff'; sw = 2; }
+      else if (n.state === 'failed') { fill = '#3a1a1a'; stroke = '#e74c3c'; sw = 2; }
+
+      if (!n.onPath && n.state === 'default') { fill = '#1a1a1a'; stroke = '#333'; }
+
+      svg += `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="4" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" />`;
+      const textColor = !n.onPath && n.state === 'default' ? '#555' : '#f1f1f1';
+      svg += `<text x="${n.x + n.w / 2}" y="${n.y + 18}" text-anchor="middle" fill="${textColor}" font-size="11" font-family="monospace">${n.key}</text>`;
+
+      // Type annotation
+      if (n.onPath) {
+        const typeLabel = n.isIndex ? 'list' : 'dict';
+        svg += `<text x="${n.x + n.w / 2}" y="${n.y - 5}" text-anchor="middle" fill="#666" font-size="9" font-family="sans-serif">${typeLabel}</text>`;
+      }
+    });
+
+    // Result display
+    if (stepIndex > 0) {
+      const lastOnPath = nodes.filter(n => n.onPath).sort((a, b) => b.depth - a.depth)[0];
+      if (lastOnPath && lastOnPath.state === 'failed') {
+        svg += `<text x="${lastOnPath.x + lastOnPath.w + 10}" y="${lastOnPath.y + 18}" fill="#e74c3c" font-size="12" font-family="monospace">=> default (None)</text>`;
+      } else if (lastOnPath && lastOnPath.state === 'success') {
+        svg += `<text x="${lastOnPath.x + lastOnPath.w + 10}" y="${lastOnPath.y + 18}" fill="#2ecc71" font-size="12" font-family="monospace">=> value found</text>`;
+      }
+    }
+
+    svg += '</svg>';
+    container.innerHTML = svg;
+  }
+
+  function updateCounterDisplay() {
+    const keys = getKeys();
+    setCounters('counters-5', [
+      { label: 'Step', value: `${stepIndex} / ${keys.length}`, color: '#3498db' },
+      { label: 'Path Segments', value: keys.length, color: '#aaa' },
+      { label: 'Status', value: stepIndex === 0 ? 'Ready' :
+        (nodes.some(n => n.state === 'failed') ? 'Failed' :
+         nodes.some(n => n.state === 'success') ? 'Success' : 'Traversing...'),
+        color: nodes.some(n => n.state === 'failed') ? '#e74c3c' :
+               nodes.some(n => n.state === 'success') ? '#2ecc71' : '#3498db' },
+    ]);
+  }
+
+  function stepAnimation() {
+    if (!running) return;
+
+    const pathNodes = nodes.filter(n => n.onPath).sort((a, b) => a.depth - b.depth);
+
+    if (stepIndex < pathNodes.length) {
+      // Mark previous as visited
+      pathNodes.forEach(n => { if (n.state === 'current') n.state = 'visited'; });
+
+      const current = pathNodes[stepIndex];
+
+      // Check for failure
+      if (params.failurePoint > 0 && stepIndex === params.failurePoint) {
+        current.state = 'failed';
+        // Mark edge as red
+        edges.forEach(e => {
+          if (e.to === current.id) e.state = 'red';
+        });
+        stepIndex = pathNodes.length; // stop
+      } else {
+        current.state = 'current';
+        // Mark edge as green
+        edges.forEach(e => {
+          if (e.to === current.id) e.state = 'green';
+        });
+
+        stepIndex++;
+
+        // If we reached the end, mark as success
+        if (stepIndex >= pathNodes.length) {
+          current.state = 'success';
+        }
+      }
+
+      renderTree();
+      updateCounterDisplay();
+
+      if (stepIndex < pathNodes.length) {
+        rafId = setTimeout(stepAnimation, 500);
+      }
+    }
+  }
+
+  function play() {
+    running = true;
+    document.getElementById('btn-play-5').textContent = 'Pause';
+    document.getElementById('btn-play-5').classList.add('active-btn');
+    stepAnimation();
+  }
+
+  function pause() {
+    running = false;
+    clearTimeout(rafId);
+    document.getElementById('btn-play-5').textContent = 'Play';
+    document.getElementById('btn-play-5').classList.remove('active-btn');
+  }
+
+  function toggle() { running ? pause() : play(); }
+
+  function reset() {
+    pause();
+    stepIndex = 0;
+    generateTreeFromPath();
+    renderTree();
+    updateCounterDisplay();
+  }
+
+  function init() {
+    createSelect('sliders-5', {
+      label: 'Example Path',
+      options: PATHS.map((p, i) => `${i + 1}. ${p.length > 50 ? p.slice(0, 47) + '...' : p}`),
+      value: 0,
+      onChange: v => { params.pathIndex = v; reset(); }
+    });
+    createSlider('sliders-5', {
+      label: 'Failure Point',
+      min: 0,
+      max: PATHS[0].split('.').length,
+      value: 0,
+      format: v => v === 0 ? 'Success' : `Fail at segment ${v}`,
+      onChange: v => { params.failurePoint = v; reset(); }
+    });
+    generateTreeFromPath();
+    renderTree();
+    updateCounterDisplay();
+  }
+
+  init();
+
+  const api = { play, pause, toggle, reset };
+  controllers[5] = api;
+  return api;
+})();
+
+</script>
+</body>
+</html>
