@@ -107,7 +107,9 @@ cache/
 # ... except for in these directories
 !tests/fixtures/*.json
 !tests/fixtures/*.html
-!examples/saved_responses/*.html# Development artifacts
+!examples/saved_responses/*.html
+!interactive-demo.html
+# Development artifacts
 benchmark_*.py
 dump_*.py
 *_ANALYSIS.md

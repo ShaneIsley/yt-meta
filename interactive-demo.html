@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yt-meta — Facade Pattern Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg-primary:     #0a0e17;
+  --bg-secondary:   #111827;
+  --bg-tertiary:    #1e293b;
+  --text-primary:   #e2e8f0;
+  --text-secondary: #94a3b8;
+  --accent-cyan:    #22d3ee;
+  --accent-amber:   #f59e0b;
+  --accent-emerald: #34d399;
+  --accent-rose:    #fb7185;
+  --accent-violet:  #a78bfa;
+  --border-subtle:  #1e293b;
+  --border-focus:   #22d3ee33;
+  --font-display:   'Inter', system-ui, sans-serif;
+  --font-mono:      'JetBrains Mono', 'Fira Code', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 15px;
+  line-height: 1.7;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-tertiary); border-radius: 3px; }
+
+/* ── Header ── */
+header {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: 16px 24px;
+}
+.header-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.repo-link {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--accent-cyan);
+  text-decoration: none;
+  font-weight: 500;
+}
+.repo-link:hover { text-decoration: underline; }
+.header-desc {
+  color: var(--text-secondary);
+  font-size: 14px;
+  flex: 1;
+}
+.lang-badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #0f1a2e;
+  color: #3572a5;
+  border: 1px solid #3572a533;
+}
+
+/* ── Main ── */
+main {
+  flex: 1;
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+h2 {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+/* ── Card ── */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ── Controls ── */
+.controls-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 600px) { .controls-grid { grid-template-columns: 1fr; } }
+
+.control-group { display: flex; flex-direction: column; gap: 8px; }
+.control-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.control-label span {
+  color: var(--accent-cyan);
+  font-weight: 500;
+}
+
+/* Range input */
+input[type=range] {
+  width: 100%;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-cyan);
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.2); }
+
+/* Toggle */
+.toggle-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.toggle {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-track {
+  position: absolute;
+  inset: 0;
+  background: var(--bg-tertiary);
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  border: 1px solid var(--border-subtle);
+}
+.toggle input:checked + .toggle-track { background: var(--accent-cyan); }
+.toggle-track::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  transition: transform 0.2s ease;
+}
+.toggle input:checked + .toggle-track::after { transform: translateX(18px); }
+.toggle-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+.toggle-value {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-cyan);
+  min-width: 32px;
+}
+
+/* Request type selector */
+.req-selector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.req-btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+.req-btn:hover {
+  border-color: var(--accent-cyan);
+  color: var(--text-primary);
+}
+.req-btn.active {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  box-shadow: 0 0 8px var(--border-focus);
+}
+
+/* ── SVG Diagram ── */
+#diagram-wrap {
+  width: 100%;
+  overflow: visible;
+  position: relative;
+}
+svg#arch {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+/* Node styles */
+.node-facade { fill: #1e293b; stroke: var(--accent-cyan); stroke-width: 1.5; rx: 6; }
+.node-fetcher { fill: #1e293b; stroke: #334155; stroke-width: 1.5; }
+.node-fetcher.active-fetcher { stroke: var(--accent-cyan); }
+.node-system { fill: #0f172a; stroke: #334155; stroke-width: 1; }
+.node-system.cache-node { stroke: var(--accent-violet); }
+.node-system.api-node { stroke: var(--accent-amber); }
+
+.node-label {
+  fill: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+.node-label-sub {
+  fill: var(--text-secondary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+}
+.edge { fill: none; stroke: #334155; stroke-width: 1; }
+.edge-active { fill: none; stroke: var(--accent-cyan); stroke-width: 1.5; stroke-dasharray: 4 3; }
+
+/* Animated pulse dot */
+.pulse-dot {
+  r: 5;
+  fill: var(--accent-cyan);
+  filter: drop-shadow(0 0 4px var(--accent-cyan));
+  opacity: 0;
+}
+.pulse-dot.hit { fill: var(--accent-emerald); filter: drop-shadow(0 0 4px var(--accent-emerald)); }
+.pulse-dot.paginate { fill: var(--accent-amber); filter: drop-shadow(0 0 4px var(--accent-amber)); }
+
+/* Pagination counter badge */
+#page-counter {
+  display: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent-amber);
+  background: #1a1200;
+  border: 1px solid #f59e0b44;
+  border-radius: 4px;
+  padding: 2px 8px;
+  margin-left: 8px;
+}
+
+/* ── Code panel ── */
+.code-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 600px) { .code-split { grid-template-columns: 1fr; } }
+
+.code-col-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+}
+.consumer-label { color: var(--accent-emerald); }
+.internal-label { color: var(--accent-amber); }
+
+.code-block {
+  background: var(--bg-tertiary);
+  border-radius: 6px;
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent-cyan);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  white-space: pre;
+  overflow-x: auto;
+  min-height: 100px;
+}
+.code-block.internal { border-left-color: var(--accent-amber); }
+
+/* syntax highlight helpers */
+.kw { color: var(--accent-violet); }
+.fn { color: var(--accent-cyan); }
+.str { color: var(--accent-emerald); }
+.cm { color: #4a5568; font-style: italic; }
+.num { color: var(--accent-amber); }
+
+/* ── Status strip ── */
+#status-strip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+  min-height: 24px;
+  transition: color 0.2s;
+}
+#status-strip.active { color: var(--accent-cyan); }
+
+/* ── Footer ── */
+footer {
+  border-top: 1px solid var(--border-subtle);
+  padding: 16px 24px;
+  margin-top: auto;
+}
+.footer-inner {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.footer-inner a { color: var(--text-secondary); text-decoration: none; }
+.footer-inner a:hover { color: var(--accent-cyan); }
+
+/* Entry animation */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card { animation: fadeUp 0.3s ease both; }
+.card:nth-child(1) { animation-delay: 0ms; }
+.card:nth-child(2) { animation-delay: 50ms; }
+.card:nth-child(3) { animation-delay: 100ms; }
+.card:nth-child(4) { animation-delay: 150ms; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <a class="repo-link" href="#">yt-meta</a>
+    <span class="header-desc">Facade pattern — animated architecture &amp; request flow</span>
+    <span class="lang-badge">Python</span>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Request Type</h2>
+    <div class="req-selector" id="req-selector">
+      <button class="req-btn active" data-type="video">Video</button>
+      <button class="req-btn" data-type="channel">Channel</button>
+      <button class="req-btn" data-type="playlist">Playlist</button>
+      <button class="req-btn" data-type="comments">Comments</button>
+      <button class="req-btn" data-type="transcript">Transcript</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Controls</h2>
+    <div class="controls-grid">
+      <div class="control-group">
+        <div class="toggle-row">
+          <label class="toggle">
+            <input type="checkbox" id="toggle-cache">
+            <div class="toggle-track"></div>
+          </label>
+          <span class="toggle-label">Cache Hit</span>
+          <span class="toggle-value" id="cache-val">OFF</span>
+        </div>
+        <div class="toggle-row" style="margin-top:8px">
+          <label class="toggle">
+            <input type="checkbox" id="toggle-pagination">
+            <div class="toggle-track"></div>
+          </label>
+          <span class="toggle-label">Pagination</span>
+          <span class="toggle-value" id="pagination-val">OFF</span>
+          <span id="page-counter">page <span id="page-num">1</span></span>
+        </div>
+      </div>
+      <div class="control-group">
+        <div class="control-label">
+          Animation Speed <span id="speed-val">1×</span>
+        </div>
+        <input type="range" id="speed-slider" min="0.25" max="3" step="0.25" value="1">
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="diagram-card">
+    <h2>Architecture Diagram <span id="status-strip"></span></h2>
+    <div id="diagram-wrap">
+      <svg id="arch" viewBox="0 0 760 420" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arr" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#334155"/>
+          </marker>
+          <marker id="arr-active" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="#22d3ee"/>
+          </marker>
+        </defs>
+
+        <!-- ── Facade node ── -->
+        <rect id="n-facade" x="255" y="20" width="250" height="52" rx="6"
+              fill="#1e293b" stroke="#22d3ee" stroke-width="1.5"/>
+        <text class="node-label" x="380" y="40">YtMeta</text>
+        <text class="node-label-sub" x="380" y="56">Facade · client.py</text>
+
+        <!-- ── Fetcher nodes ── -->
+        <!-- Video -->
+        <rect id="n-video" x="20" y="132" width="116" height="50" rx="5"
+              fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <text class="node-label" x="78" y="152">VideoFetcher</text>
+        <text class="node-label-sub" x="78" y="166">fetchers.py</text>
+
+        <!-- Channel -->
+        <rect id="n-channel" x="155" y="132" width="116" height="50" rx="5"
+              fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <text class="node-label" x="213" y="152">ChannelFetcher</text>
+        <text class="node-label-sub" x="213" y="166">fetchers.py</text>
+
+        <!-- Playlist -->
+        <rect id="n-playlist" x="290" y="132" width="116" height="50" rx="5"
+              fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <text class="node-label" x="348" y="152">PlaylistFetcher</text>
+        <text class="node-label-sub" x="348" y="166">fetchers.py</text>
+
+        <!-- Comments -->
+        <rect id="n-comments" x="425" y="132" width="116" height="50" rx="5"
+              fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <text class="node-label" x="483" y="152">CommentFetcher</text>
+        <text class="node-label-sub" x="483" y="166">comment_fetcher.py</text>
+
+        <!-- Transcript -->
+        <rect id="n-transcript" x="560" y="132" width="140" height="50" rx="5"
+              fill="#1e293b" stroke="#334155" stroke-width="1.5"/>
+        <text class="node-label" x="630" y="152">TranscriptFetcher</text>
+        <text class="node-label-sub" x="630" y="166">transcript_fetcher.py</text>
+
+        <!-- ── System nodes ── -->
+        <!-- Cache -->
+        <rect id="n-cache" x="155" y="310" width="200" height="48" rx="5"
+              fill="#0f172a" stroke="#a78bfa" stroke-width="1"/>
+        <text class="node-label" x="255" y="330" fill="#a78bfa">SQLiteCache</text>
+        <text class="node-label-sub" x="255" y="346">caching.py · TTL 24h</text>
+
+        <!-- YouTube API -->
+        <rect id="n-api" x="390" y="310" width="200" height="48" rx="5"
+              fill="#0f172a" stroke="#f59e0b" stroke-width="1"/>
+        <text class="node-label" x="490" y="330" fill="#f59e0b">YouTube Internal API</text>
+        <text class="node-label-sub" x="490" y="346">youtubei/v1/browse</text>
+
+        <!-- ── Static edges: facade → fetchers ── -->
+        <!-- facade → video -->
+        <line id="e-facade-video" x1="316" y1="72" x2="105" y2="132" stroke="#334155" stroke-width="1"/>
+        <!-- facade → channel -->
+        <line id="e-facade-channel" x1="340" y1="72" x2="213" y2="132" stroke="#334155" stroke-width="1"/>
+        <!-- facade → playlist -->
+        <line id="e-facade-playlist" x1="370" y1="72" x2="348" y2="132" stroke="#334155" stroke-width="1"/>
+        <!-- facade → comments -->
+        <line id="e-facade-comments" x1="400" y1="72" x2="483" y2="132" stroke="#334155" stroke-width="1"/>
+        <!-- facade → transcript -->
+        <line id="e-facade-transcript" x1="430" y1="72" x2="610" y2="132" stroke="#334155" stroke-width="1"/>
+
+        <!-- ── Static edges: fetchers → cache (video, channel, playlist share cache) ── -->
+        <line id="e-video-cache"    x1="78"  y1="182" x2="200" y2="310" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/>
+        <line id="e-channel-cache"  x1="213" y1="182" x2="220" y2="310" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/>
+        <line id="e-playlist-cache" x1="348" y1="182" x2="270" y2="310" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/>
+
+        <!-- fetchers → YouTube API -->
+        <line id="e-video-api"    x1="105"  y1="182" x2="420" y2="310" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/>
+        <line id="e-channel-api"  x1="240"  y1="182" x2="435" y2="310" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/>
+        <line id="e-playlist-api" x1="360"  y1="182" x2="460" y2="310" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/>
+        <line id="e-comments-api" x1="483"  y1="182" x2="490" y2="310" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/>
+        <line id="e-transcript-api" x1="630" y1="182" x2="555" y2="310" stroke="#334155" stroke-width="1" stroke-dasharray="3 3"/>
+
+        <!-- ── Pagination loop arrow (hidden initially) ── -->
+        <path id="page-loop" d="M 348,132 C 348,112 290,112 290,132" fill="none"
+              stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4 3" opacity="0"/>
+
+        <!-- ── Animated pulse dot ── -->
+        <circle id="pulse" cx="0" cy="0" r="5" fill="#22d3ee"
+                filter="url(#glow)" opacity="0"/>
+
+        <defs>
+          <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+      </svg>
+    </div>
+    <div id="status-strip">▶ Select a request type and press trigger</div>
+  </div>
+
+  <!-- Trigger button -->
+  <div style="display:flex; align-items:center; gap:12px;">
+    <button id="trigger-btn" class="req-btn active" style="font-size:13px; padding:8px 24px;">
+      ▶ Trigger Request
+    </button>
+    <span id="page-counter" style="display:none; font-family:var(--font-mono); font-size:11px;
+          color:var(--accent-amber); background:#1a1200; border:1px solid #f59e0b44;
+          border-radius:4px; padding:3px 10px;">
+      page <span id="page-num">1</span>
+    </span>
+  </div>
+
+  <!-- Code panel -->
+  <div class="card">
+    <h2>Consumer Code vs. Internal Flow</h2>
+    <div class="code-split">
+      <div>
+        <div class="code-col-label consumer-label">▸ What the caller writes</div>
+        <div class="code-block" id="consumer-code"></div>
+      </div>
+      <div>
+        <div class="code-col-label internal-label">▸ What happens internally</div>
+        <div class="code-block internal" id="internal-code"></div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <span>Part of Shane Isley's project portfolio</span>
+    <span>
+      <a href="#">Portfolio</a> &nbsp;·&nbsp;
+      <a href="https://github.com/shaneisley/yt-meta" target="_blank">GitHub ↗</a>
+    </span>
+  </div>
+</footer>
+
+<script>
+// ─────────────────────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────────────────────
+const state = {
+  type: 'video',
+  cacheHit: false,
+  pagination: false,
+  speed: 1,
+  running: false,
+};
+
+// ─────────────────────────────────────────────────────────────
+// Config per request type
+// ─────────────────────────────────────────────────────────────
+const TYPES = {
+  video: {
+    fetcherId: 'n-video',
+    fetcherCx: 78,  fetcherCy: 157,
+    hasCache: true,
+    hasPagination: false,
+    consumerCode: [
+      '<span class="kw">from</span> yt_meta <span class="kw">import</span> YtMeta',
+      '',
+      'client = <span class="fn">YtMeta</span>(cache_path=<span class="str">"cache.db"</span>)',
+      'meta = client.<span class="fn">get_video_metadata</span>(',
+      '    <span class="str">"https://youtube.com/watch?v=abc"</span>',
+      ')',
+    ],
+    internalCode: [
+      '<span class="cm"># VideoFetcher.get_video_metadata()</span>',
+      'cache_key = <span class="fn">f</span><span class="str">"video_meta:{video_id}"</span>',
+      '<span class="kw">if</span> cache_key <span class="kw">in</span> self.cache:',
+      '    <span class="kw">return</span> self.cache[cache_key]   <span class="cm"># hit</span>',
+      '',
+      'html = self.session.<span class="fn">get</span>(url).text',
+      'result = parsing.<span class="fn">parse_video_metadata</span>(html)',
+      'self.cache[cache_key] = result   <span class="cm"># store</span>',
+      '<span class="kw">return</span> result',
+    ],
+  },
+  channel: {
+    fetcherId: 'n-channel',
+    fetcherCx: 213, fetcherCy: 157,
+    hasCache: true,
+    hasPagination: true,
+    consumerCode: [
+      '<span class="kw">for</span> video <span class="kw">in</span> client.<span class="fn">get_channel_videos</span>(',
+      '    <span class="str">"https://youtube.com/@MrBeast"</span>,',
+      '    start_date=<span class="str">"2024-01-01"</span>,',
+      '    max_videos=<span class="num">50</span>,',
+      '):',
+      '    <span class="fn">process</span>(video)',
+    ],
+    internalCode: [
+      '<span class="cm"># ChannelFetcher — pagination loop</span>',
+      '<span class="kw">while</span> continuation_token:',
+      '    data = <span class="fn">_get_continuation_data</span>(token)',
+      '    <span class="kw">for</span> renderer <span class="kw">in</span> data[<span class="str">"items"</span>]:',
+      '        video = parsing.<span class="fn">parse_video_renderer</span>(r)',
+      '        <span class="kw">if</span> video.publish_date &lt; start_date:',
+      '            <span class="kw">return</span>   <span class="cm"># early stop</span>',
+      '        <span class="kw">yield</span> video',
+      '    token = <span class="fn">_get_continuation_token</span>(data)',
+    ],
+  },
+  playlist: {
+    fetcherId: 'n-playlist',
+    fetcherCx: 348, fetcherCy: 157,
+    hasCache: true,
+    hasPagination: true,
+    consumerCode: [
+      '<span class="kw">for</span> video <span class="kw">in</span> client.<span class="fn">get_playlist_videos</span>(',
+      '    playlist_id=<span class="str">"PL8dPuuaLjXt..."</span>,',
+      '    max_videos=<span class="num">20</span>,',
+      '):',
+      '    <span class="fn">print</span>(video[<span class="str">"title"</span>])',
+    ],
+    internalCode: [
+      '<span class="cm"># PlaylistFetcher — same _BaseFetcher loop</span>',
+      'renderer = _deep_get(initial_data, path)',
+      'videos, token = <span class="fn">extract_videos_from_renderer</span>(',
+      '    renderer)',
+      '<span class="kw">while</span> <span class="kw">True</span>:',
+      '    <span class="kw">yield from</span> videos',
+      '    <span class="kw">if not</span> token: <span class="kw">break</span>',
+      '    data = <span class="fn">_get_continuation_data</span>(token)',
+      '    videos, token = <span class="fn">extract_videos</span>(data)',
+    ],
+  },
+  comments: {
+    fetcherId: 'n-comments',
+    fetcherCx: 483, fetcherCy: 157,
+    hasCache: false,
+    hasPagination: true,
+    consumerCode: [
+      '<span class="kw">for</span> comment <span class="kw">in</span> client.<span class="fn">get_video_comments</span>(',
+      '    youtube_url=<span class="str">"https://..."</span>,',
+      '    limit=<span class="num">100</span>,',
+      '    sort_by=<span class="str">"top"</span>,',
+      '):',
+      '    <span class="fn">print</span>(comment[<span class="str">"text"</span>])',
+    ],
+    internalCode: [
+      '<span class="cm"># CommentFetcher — no diskcache</span>',
+      '<span class="cm"># uses youtube comment API directly</span>',
+      'video_id = video_fetcher.<span class="fn">get_video_id</span>(url)',
+      '<span class="kw">yield from</span> comment_fetcher.<span class="fn">get_comments</span>(',
+      '    video_id,',
+      '    limit=limit,',
+      '    sort_by=sort_by,',
+      '    since_date=resolved_date,',
+      ')',
+    ],
+  },
+  transcript: {
+    fetcherId: 'n-transcript',
+    fetcherCx: 630, fetcherCy: 157,
+    hasCache: false,
+    hasPagination: false,
+    consumerCode: [
+      'snippets = client.<span class="fn">get_video_transcript</span>(',
+      '    video_id=<span class="str">"dQw4w9WgXcQ"</span>,',
+      '    languages=[<span class="str">"en"</span>],',
+      ')',
+      '<span class="kw">for</span> s <span class="kw">in</span> snippets:',
+      '    <span class="fn">print</span>(s[<span class="str">"text"</span>])',
+    ],
+    internalCode: [
+      '<span class="cm"># TranscriptFetcher — thin wrapper</span>',
+      '<span class="cm"># around youtube-transcript-api</span>',
+      '<span class="kw">return</span> self._transcript_fetcher',
+      '    .<span class="fn">get_transcript</span>(',
+      '        video_id,',
+      '        languages=languages,',
+      '    )',
+      '<span class="cm"># No caching — transcripts rarely change</span>',
+    ],
+  },
+};
+
+// ─────────────────────────────────────────────────────────────
+// DOM refs
+// ─────────────────────────────────────────────────────────────
+const svg       = document.getElementById('arch');
+const pulse     = document.getElementById('pulse');
+const pageLoop  = document.getElementById('page-loop');
+const statusEl  = document.getElementById('status-strip');
+const pageCounter = document.getElementById('page-counter');
+const pageNumEl = document.getElementById('page-num');
+const triggerBtn = document.getElementById('trigger-btn');
+const consumerEl = document.getElementById('consumer-code');
+const internalEl = document.getElementById('internal-code');
+
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+function svgPt(x, y) {
+  const p = svg.createSVGPoint();
+  p.x = x; p.y = y;
+  return p;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// Animate a dot along a polyline of [x,y] waypoints
+// Returns a Promise that resolves when done
+function animateDot(waypoints, durationMs, color, glowColor) {
+  return new Promise(resolve => {
+    if (document.hidden) { resolve(); return; }
+    pulse.setAttribute('fill', color);
+    pulse.style.filter = `drop-shadow(0 0 5px ${glowColor})`;
+    pulse.setAttribute('opacity', '1');
+
+    const segs = [];
+    let totalLen = 0;
+    for (let i = 1; i < waypoints.length; i++) {
+      const dx = waypoints[i][0] - waypoints[i-1][0];
+      const dy = waypoints[i][1] - waypoints[i-1][1];
+      const len = Math.sqrt(dx*dx + dy*dy);
+      segs.push({ x0: waypoints[i-1][0], y0: waypoints[i-1][1],
+                  x1: waypoints[i][0],   y1: waypoints[i][1], len });
+      totalLen += len;
+    }
+
+    let start = null;
+    function step(ts) {
+      if (!start) start = ts;
+      const elapsed = ts - start;
+      let t = Math.min(elapsed / durationMs, 1);
+      // ease in-out
+      t = t < 0.5 ? 2*t*t : -1 + (4-2*t)*t;
+
+      const dist = t * totalLen;
+      let acc = 0;
+      for (const seg of segs) {
+        if (acc + seg.len >= dist || seg === segs[segs.length-1]) {
+          const s = Math.min((dist - acc) / seg.len, 1);
+          pulse.setAttribute('cx', lerp(seg.x0, seg.x1, s));
+          pulse.setAttribute('cy', lerp(seg.y0, seg.y1, s));
+          break;
+        }
+        acc += seg.len;
+      }
+
+      if (elapsed < durationMs) {
+        requestAnimationFrame(step);
+      } else {
+        pulse.setAttribute('opacity', '0');
+        resolve();
+      }
+    }
+    requestAnimationFrame(step);
+  });
+}
+
+function wait(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+function setStatus(msg, active = true) {
+  statusEl.textContent = msg;
+  statusEl.className = active ? 'active' : '';
+}
+
+function highlightFetcher(id) {
+  // Reset all fetchers
+  ['n-video','n-channel','n-playlist','n-comments','n-transcript'].forEach(fid => {
+    const el = document.getElementById(fid);
+    el.setAttribute('stroke', '#334155');
+  });
+  if (id) {
+    document.getElementById(id).setAttribute('stroke', '#22d3ee');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Animation waypoints
+// ─────────────────────────────────────────────────────────────
+// Fixed coordinates for nodes
+const PTS = {
+  facade:     { x: 380, y: 46 },
+  video:      { x: 78,  y: 157 },
+  channel:    { x: 213, y: 157 },
+  playlist:   { x: 348, y: 157 },
+  comments:   { x: 483, y: 157 },
+  transcript: { x: 630, y: 157 },
+  cache:      { x: 255, y: 334 },
+  api:        { x: 490, y: 334 },
+};
+
+function fetcherPt(type) {
+  const map = { video:'video', channel:'channel', playlist:'playlist',
+                comments:'comments', transcript:'transcript' };
+  return PTS[map[type]];
+}
+
+async function runAnimation() {
+  if (state.running) return;
+  state.running = true;
+  triggerBtn.disabled = true;
+
+  const cfg = TYPES[state.type];
+  const fp = fetcherPt(state.type);
+  const baseDur = 600 / state.speed;
+
+  highlightFetcher(cfg.fetcherId);
+
+  // 1. Facade → Fetcher
+  setStatus(`YtMeta → ${cfg.fetcherId.replace('n-', '')} ...`);
+  await animateDot(
+    [[PTS.facade.x, PTS.facade.y], [fp.x, fp.y]],
+    baseDur, '#22d3ee', '#22d3ee'
+  );
+  await wait(120 / state.speed);
+
+  if (state.cacheHit && cfg.hasCache) {
+    // 2. Fetcher → Cache (hit)
+    setStatus('Cache lookup → HIT ✓');
+    await animateDot(
+      [[fp.x, fp.y], [PTS.cache.x, PTS.cache.y]],
+      baseDur * 0.8, '#34d399', '#34d399'
+    );
+    await wait(120 / state.speed);
+    // 3. Cache → Fetcher → Facade
+    setStatus('Returning cached data ...');
+    await animateDot(
+      [[PTS.cache.x, PTS.cache.y], [fp.x, fp.y], [PTS.facade.x, PTS.facade.y]],
+      baseDur * 1.2, '#34d399', '#34d399'
+    );
+    setStatus('✓ Cache hit — no HTTP request made', false);
+  } else {
+    // 2. Fetcher → API
+    setStatus('Cache miss → fetching YouTube API ...');
+    await animateDot(
+      [[fp.x, fp.y], [PTS.api.x, PTS.api.y]],
+      baseDur, '#22d3ee', '#22d3ee'
+    );
+    await wait(150 / state.speed);
+
+    if (state.pagination && cfg.hasPagination) {
+      // Pagination: API → Fetcher loop
+      pageLoop.setAttribute('opacity', '1');
+      pageCounter.style.display = 'inline-block';
+      const pages = 3;
+      for (let p = 1; p <= pages; p++) {
+        pageNumEl.textContent = p;
+        setStatus(`Pagination — page ${p} of ${pages} ...`);
+        // API → Fetcher
+        await animateDot(
+          [[PTS.api.x, PTS.api.y], [fp.x, fp.y]],
+          baseDur * 0.7, '#f59e0b', '#f59e0b'
+        );
+        await wait(80 / state.speed);
+        if (p < pages) {
+          // Fetcher loops back to API
+          await animateDot(
+            [[fp.x, fp.y], [PTS.api.x, PTS.api.y]],
+            baseDur * 0.7, '#f59e0b', '#f59e0b'
+          );
+          await wait(60 / state.speed);
+        }
+      }
+      pageLoop.setAttribute('opacity', '0');
+      pageCounter.style.display = 'none';
+    } else {
+      // API → Fetcher (response)
+      await animateDot(
+        [[PTS.api.x, PTS.api.y], [fp.x, fp.y]],
+        baseDur * 0.8, '#22d3ee', '#22d3ee'
+      );
+    }
+
+    await wait(80 / state.speed);
+
+    if (cfg.hasCache) {
+      // Store in cache
+      setStatus('Storing in cache ...');
+      await animateDot(
+        [[fp.x, fp.y], [PTS.cache.x, PTS.cache.y]],
+        baseDur * 0.6, '#a78bfa', '#a78bfa'
+      );
+      await wait(80 / state.speed);
+      // Return to facade
+      setStatus('Returning data to caller ...');
+      await animateDot(
+        [[fp.x, fp.y], [PTS.facade.x, PTS.facade.y]],
+        baseDur * 0.8, '#22d3ee', '#22d3ee'
+      );
+    } else {
+      // Return directly
+      setStatus('Returning data to caller ...');
+      await animateDot(
+        [[fp.x, fp.y], [PTS.facade.x, PTS.facade.y]],
+        baseDur * 0.8, '#22d3ee', '#22d3ee'
+      );
+    }
+
+    const paginMsg = (state.pagination && cfg.hasPagination) ? ' · paginated 3 pages' : '';
+    const cacheMsg = cfg.hasCache ? ' · result cached' : ' · no cache';
+    setStatus(`✓ Done${paginMsg}${cacheMsg}`, false);
+  }
+
+  highlightFetcher(null);
+  triggerBtn.disabled = false;
+  state.running = false;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Code panel update
+// ─────────────────────────────────────────────────────────────
+function updateCodePanel() {
+  const cfg = TYPES[state.type];
+  consumerEl.innerHTML = cfg.consumerCode.join('\n');
+  internalEl.innerHTML = cfg.internalCode.join('\n');
+}
+
+// ─────────────────────────────────────────────────────────────
+// Control wiring
+// ─────────────────────────────────────────────────────────────
+document.getElementById('req-selector').addEventListener('click', e => {
+  const btn = e.target.closest('.req-btn');
+  if (!btn || state.running) return;
+  document.querySelectorAll('.req-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.type = btn.dataset.type;
+  const cfg = TYPES[state.type];
+  // Disable pagination toggle for types that don't support it
+  const pagToggle = document.getElementById('toggle-pagination');
+  pagToggle.disabled = !cfg.hasPagination;
+  pagToggle.parentElement.style.opacity = cfg.hasPagination ? '1' : '0.4';
+  if (!cfg.hasPagination) { state.pagination = false; pagToggle.checked = false; document.getElementById('pagination-val').textContent = 'OFF'; }
+  // Disable cache toggle for types without cache
+  const cacheToggle = document.getElementById('toggle-cache');
+  cacheToggle.disabled = !cfg.hasCache;
+  cacheToggle.parentElement.style.opacity = cfg.hasCache ? '1' : '0.4';
+  if (!cfg.hasCache) { state.cacheHit = false; cacheToggle.checked = false; document.getElementById('cache-val').textContent = 'OFF'; }
+  updateCodePanel();
+  setStatus(`▶ ${btn.textContent} request selected`, false);
+});
+
+document.getElementById('toggle-cache').addEventListener('change', e => {
+  state.cacheHit = e.target.checked;
+  document.getElementById('cache-val').textContent = state.cacheHit ? 'ON' : 'OFF';
+});
+
+document.getElementById('toggle-pagination').addEventListener('change', e => {
+  state.pagination = e.target.checked;
+  document.getElementById('pagination-val').textContent = state.pagination ? 'ON' : 'OFF';
+});
+
+document.getElementById('speed-slider').addEventListener('input', e => {
+  state.speed = parseFloat(e.target.value);
+  const label = state.speed === 1 ? '1×' : `${state.speed}×`;
+  document.getElementById('speed-val').textContent = label;
+});
+
+triggerBtn.addEventListener('click', runAnimation);
+
+// Pause on hidden tab
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && state.running) {
+    // just let it complete naturally (dot goes invisible)
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────────────────────
+updateCodePanel();
+setStatus('▶ Select a request type and press Trigger Request', false);
+</script>
+</body>
+</html>
