@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>yt-meta: Facade Pattern Architecture</title>
+<link href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<style>
+:root {
+  --bg: #FAFAF7;
+  --bg-inset: #F0EDE6;
+  --ink: #111111;
+  --ink-mid: #555555;
+  --ink-light: #888888;
+  --ink-ghost: rgba(17,17,17,0.18);
+  --border: #CCCCCC;
+  --border-heavy: #111111;
+  --fig-bg: #FFFFFF;
+  --font-body: 'IM Fell English', 'Times New Roman', Georgia, serif;
+  --font-mono: 'Courier Prime', 'Courier New', monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.content {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* HEADER */
+header {
+  border-bottom: 0.5px solid var(--border);
+  padding: 24px 0 16px;
+  margin-bottom: 32px;
+}
+header .repo-name {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  color: var(--ink);
+  text-decoration: none;
+}
+header .repo-name:hover { text-decoration: underline; }
+header .description {
+  color: var(--ink-mid);
+  font-style: italic;
+  font-size: 15px;
+  margin-top: 4px;
+}
+header .badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mid);
+  border: 1px dotted var(--ink-mid);
+  padding: 3px 8px;
+  margin-top: 8px;
+}
+
+h1 {
+  font-family: var(--font-body);
+  font-size: 26px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+
+h2 {
+  font-family: var(--font-body);
+  font-size: 20px;
+  font-weight: 700;
+  margin-top: 48px;
+  margin-bottom: 16px;
+}
+
+p { margin-bottom: 16px; }
+
+/* FIGURE CONTAINER */
+.figure-container {
+  background: var(--fig-bg);
+  border: 0.5px solid var(--border);
+  padding: 24px;
+  margin: 24px 0 8px;
+  text-align: center;
+}
+.figure-container svg { display: block; margin: 0 auto; }
+
+figcaption {
+  text-align: center;
+  font-style: italic;
+  font-size: 0.82em;
+  color: var(--ink-mid);
+  margin-bottom: 24px;
+}
+
+/* CONTROLS */
+.controls-panel {
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  padding: 24px;
+  margin: 24px 0;
+}
+.controls-heading {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-variant: small-caps;
+  letter-spacing: 0.05em;
+  color: var(--ink-mid);
+  margin-bottom: 16px;
+}
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.control-row:last-child { margin-bottom: 0; }
+.control-row label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mid);
+  min-width: 120px;
+}
+.control-row select {
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  background: var(--fig-bg);
+  color: var(--ink);
+}
+.control-row select:hover { border-color: var(--border-heavy); }
+.control-row input[type="checkbox"] { margin: 0; }
+.control-row .value-display {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-mid);
+}
+button {
+  font-family: var(--font-body);
+  font-size: 14px;
+  padding: 6px 16px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  color: var(--ink);
+  cursor: pointer;
+}
+button:hover { border-color: var(--border-heavy); }
+
+/* SECONDARY PANEL (Fig. 2) */
+.split-panel {
+  display: flex;
+  gap: 0;
+  border: 0.5px solid var(--border);
+  background: var(--fig-bg);
+  margin: 24px 0 8px;
+}
+.split-panel .panel-left,
+.split-panel .panel-right {
+  flex: 1;
+  padding: 20px;
+}
+.split-panel .panel-left {
+  border-right: 0.5px solid var(--border);
+}
+.panel-label {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.code-block {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--bg-inset);
+  border-left: 1px solid var(--border);
+  padding: 10px 14px;
+  white-space: pre;
+  overflow-x: auto;
+}
+.internal-desc {
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-mid);
+}
+
+/* FOOTER */
+footer {
+  border-top: 0.5px solid var(--border);
+  padding: 24px 0;
+  margin-top: 48px;
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-mid);
+}
+footer a {
+  color: var(--ink-mid);
+  text-decoration: underline;
+}
+
+/* SVG TEXT */
+svg text {
+  font-family: var(--font-body);
+}
+svg text.label-serif {
+  font-family: var(--font-body);
+  font-size: 13px;
+  fill: var(--ink);
+  text-anchor: middle;
+}
+svg text.label-mono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  fill: var(--ink-mid);
+  text-anchor: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+svg text.counter-text {
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 12px;
+  fill: var(--ink-mid);
+}
+
+@media (max-width: 768px) {
+  .split-panel { flex-direction: column; }
+  .split-panel .panel-left { border-right: none; border-bottom: 0.5px solid var(--border); }
+  .figure-container { padding: 12px; }
+  .controls-panel { padding: 16px; }
+}
+@media (max-width: 480px) {
+  body { font-size: 15px; }
+  .code-block { font-size: 12px; }
+  .control-row label { min-width: 90px; font-size: 10px; }
+}
+</style>
+</head>
+<body>
+
+<div class="content">
+
+<header>
+  <a class="repo-name" href="https://github.com/shaneisley/yt-meta">shaneisley/yt-meta</a>
+  <div class="description">Facade pattern architecture &mdash; interactive request flow visualisation</div>
+  <span class="badge">Python</span>
+</header>
+
+<h1>Facade Pattern as API Design Philosophy</h1>
+
+<p>
+  <strong>yt-meta</strong> exposes a single <code>YtMeta</code> class that delegates to five
+  specialised fetcher classes. The diagram below shows the full request flow: from the
+  consumer&rsquo;s method call, through the facade, into the fetcher, through the cache layer,
+  and out to YouTube&rsquo;s API when needed.
+</p>
+<p>
+  Select a request type and toggle cache behaviour to see how data flows through the system.
+</p>
+
+<!-- Fig. 1: Architecture Diagram -->
+<div class="figure-container" id="fig1-container">
+  <svg id="arch-svg" width="672" height="520" viewBox="0 0 672 520" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#111"/>
+      </marker>
+      <marker id="arrowhead-grey" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="#CCC"/>
+      </marker>
+      <marker id="arrowhead-ghost" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+        <polygon points="0 0, 8 3, 0 6" fill="rgba(17,17,17,0.18)"/>
+      </marker>
+    </defs>
+
+    <!-- YtMeta client box -->
+    <rect id="box-client" x="236" y="16" width="200" height="44" fill="none" stroke="#111" stroke-width="1.5"/>
+    <text class="label-serif" x="336" y="43" font-weight="700">YtMeta</text>
+    <text class="label-mono" x="336" y="8" font-size="9" fill="#888">FACADE</text>
+
+    <!-- Fetcher boxes (row) -->
+    <!-- Video -->
+    <rect id="box-video" x="12" y="130" width="112" height="40" fill="none" stroke="#CCC" stroke-width="1"/>
+    <text class="label-serif" x="68" y="155" font-size="12">VideoFetcher</text>
+    <!-- Channel -->
+    <rect id="box-channel" x="148" y="130" width="112" height="40" fill="none" stroke="#CCC" stroke-width="1"/>
+    <text class="label-serif" x="204" y="155" font-size="12">ChannelFetcher</text>
+    <!-- Playlist -->
+    <rect id="box-playlist" x="280" y="130" width="112" height="40" fill="none" stroke="#CCC" stroke-width="1"/>
+    <text class="label-serif" x="336" y="155" font-size="12">PlaylistFetcher</text>
+    <!-- Comment -->
+    <rect id="box-comment" x="412" y="130" width="120" height="40" fill="none" stroke="#CCC" stroke-width="1"/>
+    <text class="label-serif" x="472" y="155" font-size="12">CommentFetcher</text>
+    <!-- Transcript -->
+    <rect id="box-transcript" x="552" y="130" width="112" height="40" fill="none" stroke="#CCC" stroke-width="1"/>
+    <text class="label-serif" x="608" y="155" font-size="12">TranscriptFetcher</text>
+
+    <!-- Lines from client to fetchers (drawn dynamically but static placeholders) -->
+    <line id="line-client-video" x1="336" y1="60" x2="68" y2="130" stroke="#CCC" stroke-width="0.8" marker-end="url(#arrowhead-grey)"/>
+    <line id="line-client-channel" x1="336" y1="60" x2="204" y2="130" stroke="#CCC" stroke-width="0.8" marker-end="url(#arrowhead-grey)"/>
+    <line id="line-client-playlist" x1="336" y1="60" x2="336" y2="130" stroke="#CCC" stroke-width="0.8" marker-end="url(#arrowhead-grey)"/>
+    <line id="line-client-comment" x1="336" y1="60" x2="472" y2="130" stroke="#CCC" stroke-width="0.8" marker-end="url(#arrowhead-grey)"/>
+    <line id="line-client-transcript" x1="336" y1="60" x2="608" y2="130" stroke="#CCC" stroke-width="0.8" marker-end="url(#arrowhead-grey)"/>
+
+    <!-- Cache box (shared, centre-left) -->
+    <rect id="box-cache" x="120" y="260" width="160" height="44" fill="none" stroke="#CCC" stroke-width="1" stroke-dasharray="5,3"/>
+    <text class="label-serif" x="200" y="287" font-size="12">SQLiteCache</text>
+    <text class="label-mono" x="200" y="251" font-size="9" fill="#888">DISKCACHE</text>
+
+    <!-- YouTube API box (centre-right) -->
+    <rect id="box-api" x="392" y="260" width="160" height="44" fill="none" stroke="#CCC" stroke-width="1" stroke-dasharray="5,3"/>
+    <text class="label-serif" x="472" y="287" font-size="12">YouTube API</text>
+    <text class="label-mono" x="472" y="251" font-size="9" fill="#888">EXTERNAL</text>
+
+    <!-- Pagination counter (hidden by default) -->
+    <text id="pagination-counter" class="counter-text" x="560" y="287" visibility="hidden">page 1</text>
+
+    <!-- PATH SEGMENTS: we draw these as <path> elements for animation -->
+    <!-- Fetcher -> Cache (check) -->
+    <path id="path-fetcher-cache" d="" fill="none" stroke="none" stroke-width="1.5"/>
+    <!-- Cache -> Fetcher (hit return) -->
+    <path id="path-cache-return" d="" fill="none" stroke="none" stroke-width="1.5"/>
+    <!-- Fetcher -> API (miss) -->
+    <path id="path-fetcher-api" d="" fill="none" stroke="none" stroke-width="1.5"/>
+    <!-- API -> Fetcher (response) -->
+    <path id="path-api-return" d="" fill="none" stroke="none" stroke-width="1.5"/>
+    <!-- Fetcher -> Cache (store) -->
+    <path id="path-store-cache" d="" fill="none" stroke="none" stroke-width="1.5"/>
+
+    <!-- Return path: fetcher -> client -->
+    <path id="path-return-client" d="" fill="none" stroke="none" stroke-width="1.5"/>
+
+    <!-- Animated dot -->
+    <circle id="anim-dot" cx="0" cy="0" r="4.5" fill="#111" visibility="hidden"/>
+
+    <!-- Ghost trail circles (pool of reusable ghosts) -->
+    <g id="ghost-trail"></g>
+
+    <!-- Status text -->
+    <text id="status-text" class="counter-text" x="336" y="510" text-anchor="middle" fill="#888" font-size="12"></text>
+
+    <!-- Flow stage labels -->
+    <text id="stage-label" x="336" y="400" text-anchor="middle" font-family="'IM Fell English', serif" font-style="italic" font-size="13" fill="#555" visibility="hidden"></text>
+  </svg>
+</div>
+<figcaption>
+  <em>Fig. 1 &mdash; Request flow through the Facade. Solid path: active flow. Dashed boxes: infrastructure. Select a request type below to animate.</em>
+</figcaption>
+
+<!-- Controls -->
+<div class="controls-panel">
+  <div class="controls-heading">Interactive Controls</div>
+
+  <div class="control-row">
+    <label for="request-type">Request type</label>
+    <select id="request-type">
+      <option value="video">Video</option>
+      <option value="channel">Channel</option>
+      <option value="playlist">Playlist</option>
+      <option value="comment">Comments</option>
+      <option value="transcript">Transcripts</option>
+    </select>
+    <button id="btn-run">Run</button>
+  </div>
+
+  <div class="control-row">
+    <label for="cache-hit">Cache hit</label>
+    <input type="checkbox" id="cache-hit" checked>
+    <span class="value-display" id="cache-label">hit</span>
+  </div>
+
+  <div class="control-row">
+    <label for="pagination">Pagination</label>
+    <input type="checkbox" id="pagination">
+    <span class="value-display" id="pagination-label">off</span>
+  </div>
+
+  <div class="control-row">
+    <label for="speed">Speed</label>
+    <input type="range" id="speed" min="0.3" max="3" step="0.1" value="1">
+    <span class="value-display" id="speed-label">1.0x</span>
+  </div>
+</div>
+
+<!-- Fig. 2: Split panel -->
+<div class="split-panel" id="fig2-panel">
+  <div class="panel-left">
+    <div class="panel-label">Consumer sees:</div>
+    <div class="code-block" id="consumer-code">client = YtMeta("./cache.db")
+meta = client.get_video_metadata(url)</div>
+  </div>
+  <div class="panel-right">
+    <div class="panel-label">Internally:</div>
+    <div class="internal-desc" id="internal-desc">VideoFetcher checks SQLiteCache for key
+&ldquo;video_meta:{id}&rdquo;. On hit, returns
+the pickled dict. On miss, fetches the
+YouTube page, parses ytInitialPlayerResponse,
+caches the result, and returns.</div>
+  </div>
+</div>
+<figcaption>
+  <em>Fig. 2 &mdash; The Facade hides complexity. Consumer code vs. internal flow.</em>
+</figcaption>
+
+<footer>
+  <em>Part of <a href="https://github.com/shaneisley">Shane Isley&rsquo;s</a> project portfolio</em>
+  &nbsp;&middot;&nbsp;
+  <a href="https://github.com/shaneisley/yt-meta">GitHub repo</a>
+</footer>
+
+</div><!-- .content -->
+
+<script>
+(function() {
+  "use strict";
+
+  // ── Element references ──
+  const svg = document.getElementById("arch-svg");
+  const dot = document.getElementById("anim-dot");
+  const ghostGroup = document.getElementById("ghost-trail");
+  const statusText = document.getElementById("status-text");
+  const stageLabel = document.getElementById("stage-label");
+  const paginationCounter = document.getElementById("pagination-counter");
+
+  const selectType = document.getElementById("request-type");
+  const chkCacheHit = document.getElementById("cache-hit");
+  const chkPagination = document.getElementById("pagination");
+  const rangeSpeed = document.getElementById("speed");
+  const btnRun = document.getElementById("btn-run");
+
+  const cacheLabel = document.getElementById("cache-label");
+  const paginationLabel = document.getElementById("pagination-label");
+  const speedLabel = document.getElementById("speed-label");
+  const consumerCode = document.getElementById("consumer-code");
+  const internalDesc = document.getElementById("internal-desc");
+
+  // ── Fetcher geometry ──
+  const fetchers = {
+    video:      { cx: 68,  box: "box-video",      line: "line-client-video" },
+    channel:    { cx: 204, box: "box-channel",     line: "line-client-channel" },
+    playlist:   { cx: 336, box: "box-playlist",    line: "line-client-playlist" },
+    comment:    { cx: 472, box: "box-comment",     line: "line-client-comment" },
+    transcript: { cx: 608, box: "box-transcript",  line: "line-client-transcript" }
+  };
+  const clientCx = 336, clientCy = 38;
+  const fetcherY = 150; // centre of fetcher boxes
+  const cacheBoxCx = 200, cacheBoxTop = 260, cacheBoxBot = 304;
+  const apiBoxCx = 472, apiBoxTop = 260, apiBoxBot = 304;
+
+  // ── Content data per request type ──
+  const contentData = {
+    video: {
+      consumer: 'client = YtMeta("./cache.db")\nmeta = client.get_video_metadata(url)',
+      internal: 'VideoFetcher checks SQLiteCache for key\n\u201cvideo_meta:{id}\u201d. On hit, returns\nthe pickled dict. On miss, fetches the\nYouTube page, parses ytInitialPlayerResponse,\ncaches the result, and returns.'
+    },
+    channel: {
+      consumer: 'client = YtMeta("./cache.db")\nfor v in client.get_channel_videos(url):\n    print(v["title"])',
+      internal: 'ChannelFetcher checks cache for\n\u201cchannel_page:{url}\u201d. Extracts ytInitialData\nand ytcfg from HTML. Yields videos via\ngenerator, following continuation tokens.\nEach page cached by its token.'
+    },
+    playlist: {
+      consumer: 'client = YtMeta("./cache.db")\nfor v in client.get_playlist_videos(pid):\n    print(v["title"])',
+      internal: 'PlaylistFetcher builds the playlist URL,\nextracts playlistVideoListRenderer. Yields\nvideos and follows continuation tokens.\nContinuation responses are cached; the\ninitial playlist page is not.'
+    },
+    comment: {
+      consumer: 'client = YtMeta("./cache.db")\nfor c in client.get_video_comments(url):\n    print(c["text"])',
+      internal: 'CommentFetcher extracts the comment\nendpoint from the video page. Paginates\nthrough comment batches via continuation\ntokens. Deduplicates by comment ID.\nSupports top/recent sort ordering.'
+    },
+    transcript: {
+      consumer: 'client = YtMeta("./cache.db")\nsegs = client.get_video_transcript(vid)',
+      internal: 'TranscriptFetcher delegates to\nyoutube-transcript-api. Lists available\ntranscripts, selects by language preference,\nreturns [{text, start, duration}, ...].\nReturns [] on any error (graceful degradation).'
+    }
+  };
+
+  // ── State ──
+  let animRunning = false;
+  let animId = null;
+  let ghosts = [];
+  const MAX_GHOSTS = 30;
+
+  // ── Helpers ──
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function setBoxActive(id, active) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.setAttribute("stroke", active ? "#111" : "#CCC");
+    el.setAttribute("stroke-width", active ? "1.5" : "1");
+  }
+  function setLineActive(id, active) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.setAttribute("stroke", active ? "#111" : "#CCC");
+    el.setAttribute("stroke-width", active ? "1.5" : "0.8");
+    el.setAttribute("marker-end", active ? "url(#arrowhead)" : "url(#arrowhead-grey)");
+  }
+
+  function resetAllVisuals() {
+    Object.values(fetchers).forEach(f => {
+      setBoxActive(f.box, false);
+      setLineActive(f.line, false);
+    });
+    setBoxActive("box-client", true); // always active
+    setBoxActive("box-cache", false);
+    setBoxActive("box-api", false);
+    dot.setAttribute("visibility", "hidden");
+    stageLabel.setAttribute("visibility", "hidden");
+    paginationCounter.setAttribute("visibility", "hidden");
+    statusText.textContent = "";
+    clearGhosts();
+  }
+
+  function addGhost(cx, cy) {
+    if (ghosts.length >= MAX_GHOSTS) {
+      const old = ghosts.shift();
+      if (old.parentNode) old.parentNode.removeChild(old);
+    }
+    const g = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    g.setAttribute("cx", cx);
+    g.setAttribute("cy", cy);
+    g.setAttribute("r", "2.5");
+    g.setAttribute("fill", "rgba(17,17,17,0.18)");
+    ghostGroup.appendChild(g);
+    ghosts.push(g);
+    // Fade out after a bit
+    setTimeout(() => {
+      g.setAttribute("fill", "rgba(17,17,17,0.08)");
+      setTimeout(() => {
+        if (g.parentNode) g.parentNode.removeChild(g);
+        const idx = ghosts.indexOf(g);
+        if (idx !== -1) ghosts.splice(idx, 1);
+      }, 400);
+    }, 600);
+  }
+
+  function clearGhosts() {
+    ghosts.forEach(g => { if (g.parentNode) g.parentNode.removeChild(g); });
+    ghosts = [];
+  }
+
+  function showDot(cx, cy) {
+    dot.setAttribute("cx", cx);
+    dot.setAttribute("cy", cy);
+    dot.setAttribute("visibility", "visible");
+  }
+
+  function setStage(text) {
+    stageLabel.textContent = text;
+    stageLabel.setAttribute("visibility", "visible");
+  }
+
+  // ── Update side panels on type change ──
+  function updatePanels() {
+    const t = selectType.value;
+    const d = contentData[t];
+    consumerCode.textContent = d.consumer;
+    internalDesc.innerHTML = d.internal;
+  }
+
+  selectType.addEventListener("change", updatePanels);
+  chkCacheHit.addEventListener("change", () => {
+    cacheLabel.textContent = chkCacheHit.checked ? "hit" : "miss";
+  });
+  chkPagination.addEventListener("change", () => {
+    paginationLabel.textContent = chkPagination.checked ? "on" : "off";
+  });
+  rangeSpeed.addEventListener("input", () => {
+    speedLabel.textContent = parseFloat(rangeSpeed.value).toFixed(1) + "x";
+  });
+
+  // ── Animation engine ──
+  // A sequence of animation steps, each a function(onDone) that calls onDone when complete.
+
+  function animateAlongLine(x1, y1, x2, y2, durationBase, onDone) {
+    const speed = parseFloat(rangeSpeed.value);
+    const duration = durationBase / speed;
+    const start = performance.now();
+    let frameCount = 0;
+    function tick(now) {
+      if (document.hidden) { animId = requestAnimationFrame(tick); return; }
+      const elapsed = now - start;
+      const t = Math.min(elapsed / duration, 1);
+      const px = lerp(x1, x2, t);
+      const py = lerp(y1, y2, t);
+      showDot(px, py);
+      frameCount++;
+      if (t < 1 && frameCount % 4 === 0) {
+        addGhost(px, py);
+      }
+      if (t >= 1) {
+        onDone();
+      } else {
+        animId = requestAnimationFrame(tick);
+      }
+    }
+    animId = requestAnimationFrame(tick);
+  }
+
+  function pause(ms, onDone) {
+    const speed = parseFloat(rangeSpeed.value);
+    setTimeout(onDone, ms / speed);
+  }
+
+  function runSequence(steps, idx) {
+    if (idx >= steps.length) {
+      animRunning = false;
+      btnRun.textContent = "Run";
+      return;
+    }
+    steps[idx](() => runSequence(steps, idx + 1));
+  }
+
+  function buildSteps() {
+    const type = selectType.value;
+    const cacheHit = chkCacheHit.checked;
+    const paginate = chkPagination.checked;
+    const f = fetchers[type];
+    const fcx = f.cx;
+    const fcy = fetcherY;
+    const steps = [];
+
+    // Step 1: client -> fetcher
+    steps.push(done => {
+      setLineActive(f.line, true);
+      setBoxActive(f.box, true);
+      setStage("client delegates to fetcher");
+      statusText.textContent = "YtMeta \u2192 " + type.charAt(0).toUpperCase() + type.slice(1) + "Fetcher";
+      animateAlongLine(clientCx, clientCy + 22, fcx, fcy - 20, 800, done);
+    });
+
+    // Step 2: fetcher -> cache check
+    steps.push(done => {
+      setBoxActive("box-cache", true);
+      setStage("checking cache\u2026");
+      statusText.textContent = "cache lookup: " + getCacheKey(type);
+      animateAlongLine(fcx, fcy + 20, cacheBoxCx, cacheBoxTop, 600, done);
+    });
+
+    if (cacheHit) {
+      // Step 3a: cache hit -> return to fetcher
+      steps.push(done => {
+        setStage("cache hit \u2014 returning data");
+        statusText.textContent = "cache HIT \u2014 returning pickled result";
+        pause(400, done);
+      });
+      steps.push(done => {
+        animateAlongLine(cacheBoxCx, cacheBoxTop, fcx, fcy + 20, 600, done);
+      });
+    } else {
+      // Step 3b: cache miss
+      steps.push(done => {
+        setStage("cache miss \u2014 fetching from API");
+        statusText.textContent = "cache MISS \u2014 KeyError raised";
+        pause(400, done);
+      });
+
+      const pageCount = paginate ? 3 : 1;
+      for (let p = 0; p < pageCount; p++) {
+        // fetcher -> API
+        steps.push(done => {
+          setBoxActive("box-api", true);
+          if (paginate) {
+            paginationCounter.setAttribute("visibility", "visible");
+            paginationCounter.textContent = "page " + (p + 1);
+          }
+          setStage(paginate ? "fetching page " + (p + 1) + " from YouTube" : "fetching from YouTube API");
+          statusText.textContent = paginate
+            ? "continuation request (page " + (p + 1) + ")"
+            : "GET youtube.com \u2192 parse response";
+          animateAlongLine(fcx, fcy + 20, apiBoxCx, apiBoxTop, 700, done);
+        });
+        // API -> fetcher (response)
+        steps.push(done => {
+          setStage(paginate ? "received page " + (p + 1) : "received API response");
+          animateAlongLine(apiBoxCx, apiBoxTop, fcx, fcy + 20, 700, done);
+        });
+        // fetcher -> cache (store)
+        steps.push(done => {
+          setStage("storing in cache");
+          statusText.textContent = "cache SET: " + getCacheKey(type) + (paginate && p > 0 ? " (cont:" + (p+1) + ")" : "");
+          animateAlongLine(fcx, fcy + 20, cacheBoxCx, cacheBoxTop, 500, done);
+        });
+        // small pause between pages
+        if (p < pageCount - 1) {
+          steps.push(done => {
+            setStage("following continuation token\u2026");
+            animateAlongLine(cacheBoxCx, cacheBoxTop, fcx, fcy + 20, 400, done);
+          });
+        }
+      }
+      // return from cache to fetcher
+      steps.push(done => {
+        animateAlongLine(cacheBoxCx, cacheBoxTop, fcx, fcy + 20, 400, done);
+      });
+    }
+
+    // Final: fetcher -> client (return)
+    steps.push(done => {
+      setStage("returning result to caller");
+      statusText.textContent = "result \u2192 caller";
+      animateAlongLine(fcx, fcy - 20, clientCx, clientCy + 22, 800, done);
+    });
+
+    // Done
+    steps.push(done => {
+      setStage("complete");
+      statusText.textContent = "done";
+      pause(1200, () => {
+        resetAllVisuals();
+        setBoxActive("box-client", true);
+        done();
+      });
+    });
+
+    return steps;
+  }
+
+  function getCacheKey(type) {
+    switch (type) {
+      case "video": return '"video_meta:{id}"';
+      case "channel": return '"channel_page:{url}"';
+      case "playlist": return '"continuation:{token}"';
+      case "comment": return '"(no cache)"';
+      case "transcript": return '"(no cache)"';
+    }
+  }
+
+  // ── Run button ──
+  btnRun.addEventListener("click", () => {
+    if (animRunning) {
+      // Cancel
+      if (animId) cancelAnimationFrame(animId);
+      animRunning = false;
+      resetAllVisuals();
+      setBoxActive("box-client", true);
+      btnRun.textContent = "Run";
+      return;
+    }
+    animRunning = true;
+    btnRun.textContent = "Stop";
+    resetAllVisuals();
+    setBoxActive("box-client", true);
+    updatePanels();
+    const steps = buildSteps();
+    runSequence(steps, 0);
+  });
+
+  // ── Initial state ──
+  resetAllVisuals();
+  setBoxActive("box-client", true);
+  updatePanels();
+
+  // ── Pause on hidden ──
+  // (handled inside animation tick)
+
+  // ── Resize handler for responsive SVG ──
+  function resizeSvg() {
+    const container = document.getElementById("fig1-container");
+    const w = container.clientWidth - 48; // padding
+    if (w < 672) {
+      svg.setAttribute("width", w);
+      svg.setAttribute("height", Math.round(w * 520 / 672));
+    } else {
+      svg.setAttribute("width", 672);
+      svg.setAttribute("height", 520);
+    }
+  }
+  window.addEventListener("resize", resizeSvg);
+  resizeSvg();
+})();
+</script>
+
+</body>
+</html>
