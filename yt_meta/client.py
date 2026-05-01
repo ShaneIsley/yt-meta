@@ -22,15 +22,31 @@ class YtMeta:
     This class acts as a Facade, delegating calls to specialized fetcher classes.
     """
 
-    def __init__(self, cache_path: str | None = None):
+    def __init__(
+        self,
+        cache_path: str | None = None,
+        consent: str | None = None,
+    ):
         """
         Initializes the yt-meta client.
 
         Args:
             cache_path: If provided, the path to a SQLite file for persistent,
                         on-disk caching. If None (the default), caching is disabled.
+            consent: Controls how the client handles YouTube's EU/UK cookie
+                     consent gate. ``None`` (the default) sends no consent
+                     cookie — requests from regions that enforce consent will
+                     be redirected to ``consent.youtube.com`` and fail.
+                     ``"minimum"`` pre-seeds ``SOCS=CAI`` on ``.youtube.com``,
+                     bypassing the gate at the lowest consent setting.
         """
+        if consent is not None and consent != "minimum":
+            raise ValueError(
+                f"consent={consent!r} not supported; use None or 'minimum'"
+            )
         self.session = Client(headers={"Accept-Language": "en-US,en;q=0.5"})
+        if consent == "minimum":
+            self.session.cookies.set("SOCS", "CAI", domain=".youtube.com")
         if cache_path:
             self.cache = SQLiteCache(path=cache_path)
             logger.info(f"Using SQLite cache at: {cache_path}")

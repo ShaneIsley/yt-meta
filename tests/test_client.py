@@ -186,6 +186,24 @@ def test_ytmeta_initialization_with_cache():
     assert isinstance(client.cache, SQLiteCache)
 
 
+def test_ytmeta_default_has_no_consent_cookie():
+    """Default YtMeta() must not set any consent cookie."""
+    client = YtMeta()
+    assert client.session.cookies.get("SOCS", domain=".youtube.com") is None
+
+
+def test_ytmeta_consent_minimum_sets_socs_cookie():
+    """consent='minimum' must pre-seed SOCS=CAI on .youtube.com."""
+    client = YtMeta(consent="minimum")
+    assert client.session.cookies.get("SOCS", domain=".youtube.com") == "CAI"
+
+
+def test_ytmeta_consent_invalid_raises():
+    """Unknown consent values must raise ValueError, not silently accept."""
+    with pytest.raises(ValueError, match="consent="):
+        YtMeta(consent="accept_all")
+
+
 def test_clear_cache(tmp_path):
     """Test clearing the cache."""
     cache_file = tmp_path / "cache.db"
