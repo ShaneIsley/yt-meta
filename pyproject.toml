@@ -50,6 +50,9 @@ filterwarnings = [
 
 [dependency-groups]
 dev = [
+    "marimo>=0.23.4",
+    "pandas>=2.3.3",
+    "plotly>=6.7.0",
     "pytest>=8.4.1",
     "tqdm>=4.67.1",
 ]
