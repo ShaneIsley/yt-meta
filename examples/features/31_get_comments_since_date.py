@@ -58,13 +58,13 @@ def main():
         )
         if comments_since:
             print("Most recent comment found:")
-            if "publish_date" in comments_since[0]:
+            if comments_since[0].get("publish_date"):
                 print(f"  Date: {comments_since[0]['publish_date'].isoformat()}")
             print(f"  Author: {comments_since[0]['author']}")
             print(f"  Text: '{comments_since[0]['text'][:80]}...'")
 
             print("\nOldest comment fetched (should be on or after the target date):")
-            if "publish_date" in comments_since[-1]:
+            if comments_since[-1].get("publish_date"):
                 print(f"  Date: {comments_since[-1]['publish_date'].isoformat()}")
             print(f"  Author: {comments_since[-1]['author']}")
             print(f"  Text: '{comments_since[-1]['text'][:80]}...'")

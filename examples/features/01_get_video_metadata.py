@@ -12,8 +12,7 @@ Key concepts:
 """
 
 import logging
-
-from rich.pretty import pprint
+from pprint import pprint
 
 from yt_meta import YtMeta
 from yt_meta.exceptions import VideoUnavailableError

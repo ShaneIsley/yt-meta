@@ -252,11 +252,13 @@ else:
 By default, `YtMeta` uses a simple in-memory dictionary to cache results. This cache is temporary and only lasts for the lifetime of the client instance.
 
 ```python
+from yt_meta import YtMeta
+
 client = YtMeta()
 # The first call will fetch from the network
-meta1 = client.get_video_metadata("some_url") 
+meta1 = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
 # This second call will be instant, served from the in-memory cache
-meta2 = client.get_video_metadata("some_url") 
+meta2 = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
 ```
 
 ### Persistent Caching
@@ -282,10 +284,10 @@ client = YtMeta(cache=persistent_cache)
 
 # The first time this script runs, it will be slow (fetches from network).
 # Subsequent runs will be very fast, reading directly from the disk cache.
-metadata = client.get_video_metadata("some_url")
+metadata = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
 ```
 
-Any object implementing the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) works as a cache. See `examples/features/19_alternative_caching_sqlite.py` for a demonstration using `sqlitedict`.
+Any object implementing the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) works as a cache via the `cache=` kwarg — plain `dict` for in-memory, `diskcache.Cache` for disk-backed, or `sqlitedict.SqliteDict` if you `pip install sqlitedict` yourself. See `examples/features/19_alternative_caching_sqlite.py` for the built-in SQLite path via `cache_path=`.
 
 ## Advanced Features
 
