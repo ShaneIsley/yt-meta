@@ -34,6 +34,13 @@ class DummyCache(MutableMapping):
     def __len__(self):
         return 0
 
+    def close(self) -> None:
+        """No-op — there's nothing to release. Present so callers can
+        treat any cache the same way (YtMeta.close() calls cache.close()
+        unconditionally).
+        """
+        pass
+
 
 class SQLiteCache(MutableMapping):
     """
@@ -64,6 +71,13 @@ class SQLiteCache(MutableMapping):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self) -> None:
+        """Close the underlying SQLite connection. Idempotent —
+        sqlite3.Connection.close() on an already-closed connection is
+        a no-op.
+        """
         with self._lock:
             self._conn.close()
 

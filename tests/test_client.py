@@ -488,3 +488,106 @@ def test_m10_default_cache_ttl_is_one_day(tmp_path):
     cache_file = tmp_path / "cache.db"
     c = YtMeta(cache_path=str(cache_file))
     assert c.cache.ttl_seconds == 86400
+
+
+def test_h5_ytmeta_is_a_context_manager_closing_session():
+    """H5: YtMeta owns an httpx.Client (and historically a CommentAPIClient
+    httpx.Client and a SQLite connection). None of them were reliably
+    closed — the comment client relied on __del__ (unreliable at
+    interpreter shutdown / reference cycles) and YtMeta had no close()
+    at all. Now `with YtMeta() as client:` closes everything on exit.
+    """
+    with YtMeta() as c:
+        assert not c.session.is_closed
+    assert c.session.is_closed
+
+
+def test_h5_explicit_close_works_too():
+    """H5: not every codebase wants a context manager. `client.close()`
+    must work as the explicit cleanup entry point.
+    """
+    c = YtMeta()
+    assert not c.session.is_closed
+    c.close()
+    assert c.session.is_closed
+
+
+def test_h5_close_is_idempotent():
+    """H5: calling close() twice (e.g. inside __exit__ after an explicit
+    close in the body) must not raise.
+    """
+    c = YtMeta()
+    c.close()
+    c.close()  # must not raise
+
+
+def test_h5_close_cascades_to_comment_fetcher_client():
+    """H5: YtMeta.close() must reach into the comment subsystem and
+    close its private httpx.Client. Until M1/L2 unifies the comment
+    subsystem under the main session, the comment client is a separate
+    owned resource and must be tracked.
+    """
+    c = YtMeta()
+    inner_client = c._comment_fetcher.api_client.client
+    assert not inner_client.is_closed
+    c.close()
+    assert inner_client.is_closed
+
+
+def test_h5_close_closes_sqlite_cache(tmp_path):
+    """H5: when YtMeta owns a SQLiteCache (cache_path given), close()
+    must close the SQLite connection. On Windows this releases the
+    .db file lock; on every OS it returns the file descriptor.
+    """
+    import sqlite3
+
+    cache_file = tmp_path / "cache.db"
+    c = YtMeta(cache_path=str(cache_file))
+    c.cache["k"] = "v"
+    c.close()
+    # After close, operations on the cache must fail. sqlite3 raises
+    # ProgrammingError ("Cannot operate on a closed database").
+    with pytest.raises(sqlite3.ProgrammingError):
+        c.cache["other"] = "x"
+
+
+def test_m12_comment_classes_have_no_del_hooks():
+    """REGRESSION (M12): __del__ on CommentFetcher and CommentAPIClient
+    was the only cleanup path — unreliable at interpreter shutdown,
+    skipped on reference cycles, suppressed exceptions silently. With
+    H5's explicit close()/__enter__/__exit__ in place, __del__ is now
+    redundant AND actively harmful. Remove it. Defense-in-depth: this
+    test guards against a future refactor silently re-adding it.
+    """
+    from yt_meta.comment_api_client import CommentAPIClient
+    from yt_meta.comment_fetcher import CommentFetcher
+
+    assert "__del__" not in vars(CommentFetcher), (
+        "CommentFetcher.__del__ removed by M12; explicit close() is the "
+        "only cleanup path"
+    )
+    assert "__del__" not in vars(CommentAPIClient), (
+        "CommentAPIClient.__del__ removed by M12; explicit close() is "
+        "the only cleanup path"
+    )
+
+
+def test_m12_comment_classes_have_explicit_close():
+    """REGRESSION (M12): the replacement for __del__ is explicit close()
+    on both classes. CommentFetcher.close() delegates to its
+    CommentAPIClient; CommentAPIClient.close() closes its httpx.Client.
+    """
+    from yt_meta.comment_api_client import CommentAPIClient
+    from yt_meta.comment_fetcher import CommentFetcher
+
+    cf = CommentFetcher()
+    ac = cf.api_client
+    assert hasattr(cf, "close") and callable(cf.close)
+    assert hasattr(ac, "close") and callable(ac.close)
+
+    cf.close()
+    assert ac.client.is_closed
+
+    # Idempotent
+    cf.close()
+    ac.close()

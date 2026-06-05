@@ -36,10 +36,19 @@ class CommentAPIClient:
             follow_redirects=True,
         )
 
-    def __del__(self):
-        """Cleanup HTTP client on destruction."""
+    def close(self) -> None:
+        """Close the underlying httpx.Client. Idempotent — safe to call
+        multiple times. Replaces the prior ``__del__`` hook which was
+        unreliable at interpreter shutdown and on reference cycles.
+        """
         if hasattr(self, "client"):
             self.client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
     def get_initial_video_data(self, video_id: str) -> tuple[dict, dict]:
         """Get initial video page data and ytcfg."""

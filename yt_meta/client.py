@@ -71,6 +71,36 @@ class YtMeta:
     def comment_fetcher(self) -> CommentFetcher:
         return self._comment_fetcher
 
+    def close(self) -> None:
+        """Release all resources owned by this client — the main
+        httpx.Client, the comment subsystem's separate httpx.Client, and
+        the SQLite cache connection (when ``cache_path`` was given).
+
+        Idempotent. Safe to call multiple times. Prefer the context
+        manager pattern (``with YtMeta() as client:``) which calls this
+        automatically on exit; explicit ``close()`` works for code that
+        doesn't structure around context managers.
+
+        Until M1/L2 unifies the comment subsystem under the main
+        session, ``CommentFetcher`` owns its own httpx.Client and must
+        be tracked separately. After unification this method will only
+        need to close one client.
+        """
+        if hasattr(self, "session"):
+            self.session.close()
+        if hasattr(self, "_comment_fetcher"):
+            self._comment_fetcher.close()
+        if hasattr(self, "cache"):
+            close = getattr(self.cache, "close", None)
+            if callable(close):
+                close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def clear_cache(self, prefix: str | None = None):
         """
         Clears the cache.

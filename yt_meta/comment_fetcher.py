@@ -30,10 +30,18 @@ class CommentFetcher:
         self.api_client = CommentAPIClient(timeout, retries, user_agent)
         self.parser = CommentParser()
 
-    def __del__(self):
-        """Cleanup resources on destruction."""
+    def close(self) -> None:
+        """Close the underlying CommentAPIClient (which closes its
+        httpx.Client). Idempotent. Replaces the prior ``__del__`` hook.
+        """
         if hasattr(self, "api_client"):
-            del self.api_client
+            self.api_client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
     def get_comments(
         self,
