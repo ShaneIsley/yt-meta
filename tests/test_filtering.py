@@ -326,6 +326,37 @@ def test_apply_filters_keywords():
     assert filtered_all[0]["keywords"] == ["python", "programming", "tutorial"]
 
 
+def test_m6_apply_filters_skips_video_with_missing_field_and_logs(caplog):
+    """REGRESSION (M6): apply_filters treats a missing field
+    (``video[key] is None``) as a filter failure — the video is
+    silently dropped from the result. This is the right default for
+    the common case ("give me videos with publish_date >= 2023" should
+    not match videos with no publish_date), but it can surprise users
+    debugging "why is this video missing from my results?".
+
+    v0.6.0 keeps the behavior (skip-on-missing) and adds a DEBUG-level
+    log when the drop happens so users can investigate. Documented in
+    the apply_filters docstring and the README filter section.
+    """
+    import logging
+
+    video = {"video_id": "dQw4w9WgXcQ", "title": "Test"}  # no publish_date
+    filters = {"publish_date": {"gte": "2023-01-01"}}
+
+    with caplog.at_level(logging.DEBUG, logger="yt_meta.filtering"):
+        result = apply_filters(video, filters)
+
+    assert result is False
+    matching = [
+        r for r in caplog.records
+        if "publish_date" in r.message and r.levelno == logging.DEBUG
+    ]
+    assert matching, (
+        "expected a DEBUG log mentioning the missing field; got "
+        f"{[r.message for r in caplog.records]!r}"
+    )
+
+
 def test_apply_filters_publish_date():
     """Tests filtering by publish_date."""
     videos = [

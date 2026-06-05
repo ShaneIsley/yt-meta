@@ -200,12 +200,31 @@ def apply_filters(video: dict, filters: dict | None) -> bool:
 
     Returns:
         True if the video passes all filters, False otherwise.
+
+    Missing-field semantics (M6): if ``video[key]`` is ``None`` or the
+    key is absent, the video is treated as failing the filter — it
+    cannot match. This is the right default for the common case
+    ("``publish_date >= 2023``" should not include videos with no
+    publish_date), but it can surprise users debugging "where did my
+    video go?". A DEBUG log is emitted on each drop so the cause is
+    discoverable; enable ``logging.DEBUG`` on ``yt_meta.filtering`` to
+    see them.
     """
     if filters is None:
         return True  # If no filters are provided, consider the video as passing
 
     for key, condition in filters.items():
         if video.get(key) is None:
+            # M6: explicit "missing field == filter fail" semantic.
+            # Log at DEBUG so users debugging "where did my video go?"
+            # can find it without spamming INFO/WARNING for the common
+            # case.
+            logger.debug(
+                "apply_filters: dropping video %s — filter field %r is "
+                "missing or None on this video",
+                video.get("video_id", "<no id>"),
+                key,
+            )
             return False  # If the key doesn't exist, it can't match
 
         schema_type = FILTER_SCHEMA[key]["schema_type"]

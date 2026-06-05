@@ -312,6 +312,10 @@ The client automatically detects when a slow filter is used and sets `fetch_full
 > [!NOTE]
 > Comment filtering does not use the fast/slow system. All comment filters apply after fetching comment data.
 
+#### Missing-field semantics
+
+If a filter targets a field that's missing or `None` on a particular video, the video is **dropped** from the result — it can't match the filter. This is the right default for the common case (`publish_date >= 2023` should not include videos with no publish_date), but it can surprise users who expect "filter on a field that doesn't exist on every video" to behave differently. To investigate when drops happen, enable `logging.DEBUG` on the `yt_meta.filtering` logger — each drop emits a debug line with the video id and the missing field. See M6 in the v0.6.0 CHANGELOG.
+
 #### Supported Fields and Operators
 
 The following table lists supported fields and their valid operators. Validation enforces these rules.
