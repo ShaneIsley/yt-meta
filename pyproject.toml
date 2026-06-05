@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "yt-meta"
-version = "0.4.0"
+version = "0.5.0"
 description = "A lightweight library for fetching YouTube metadata."
 readme = "README.md"
 authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
