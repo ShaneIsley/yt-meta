@@ -12,6 +12,7 @@ from .comment_fetcher import CommentFetcher
 from .date_utils import parse_relative_date_string
 from .fetchers import ChannelFetcher, PlaylistFetcher, VideoFetcher
 from .transcript_fetcher import TranscriptFetcher
+from .utils import extract_video_id
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +252,7 @@ class YtMeta:
             dict: A dictionary representing a single comment.
         """
         resolved_date = self._resolve_date(since_date)
-        video_id = self._video_fetcher.get_video_id(youtube_url)
+        video_id = extract_video_id(youtube_url)
         comments_generator = self._comment_fetcher.get_comments(
             video_id,
             limit=limit,
@@ -283,7 +284,7 @@ class YtMeta:
             dict: A dictionary representing a single comment, including 'reply_continuation_token'
                   field for comments that have replies.
         """
-        video_id = self._video_fetcher.get_video_id(youtube_url)
+        video_id = extract_video_id(youtube_url)
         comments_generator = self._comment_fetcher.get_comments(
             video_id,
             limit=limit,
@@ -314,7 +315,7 @@ class YtMeta:
         Yields:
             dict: A dictionary representing a single reply comment.
         """
-        video_id = self._video_fetcher.get_video_id(youtube_url)
+        video_id = extract_video_id(youtube_url)
         replies_generator = self._comment_fetcher.get_comment_replies(
             video_id,
             reply_continuation_token=reply_continuation_token,

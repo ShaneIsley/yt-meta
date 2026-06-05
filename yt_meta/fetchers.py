@@ -1,4 +1,5 @@
 import logging
+import warnings
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
@@ -8,7 +9,7 @@ from . import parsing
 from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
 from .filtering import apply_filters, partition_filters
-from .utils import _deep_get
+from .utils import _deep_get, extract_video_id
 from .validators import validate_filters
 
 if TYPE_CHECKING:
@@ -138,13 +139,13 @@ class VideoFetcher:
         return result
 
     def get_video_id(self, youtube_url: str) -> str:
-        # Basic parsing of video ID from URL
-        if "v=" in youtube_url:
-            return youtube_url.split("v=")[1].split("&")[0]
-        # Handle shorts URLs
-        if "/shorts/" in youtube_url:
-            return youtube_url.split("/shorts/")[1].split("?")[0]
-        raise ValueError(f"Could not extract video ID from URL: {youtube_url}")
+        warnings.warn(
+            "VideoFetcher.get_video_id is deprecated and will be removed in "
+            "v0.6.0; use yt_meta.utils.extract_video_id directly.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return extract_video_id(youtube_url)
 
 
 class ChannelFetcher(_BaseFetcher):

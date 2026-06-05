@@ -299,3 +299,24 @@ def test_get_comment_replies_live(isolated_client: YtMeta):
     assert found_replies, (
         "Could not find any comments with replies in the first 50 comments."
     )
+
+
+def test_regression_m17_get_video_comments_accepts_youtu_be_url(client, mocker):
+    """REGRESSION (M17): the Facade previously called
+    VideoFetcher.get_video_id, which crashed on `youtu.be/` URLs. The Facade
+    now uses utils.extract_video_id directly, so the common short-form URL
+    works end-to-end.
+    """
+    seen_video_ids = []
+
+    def fake_get_comments(video_id, **kwargs):
+        seen_video_ids.append(video_id)
+        return iter([])
+
+    mocker.patch.object(
+        client._comment_fetcher, "get_comments", side_effect=fake_get_comments
+    )
+
+    list(client.get_video_comments("https://youtu.be/dQw4w9WgXcQ", limit=0))
+
+    assert seen_video_ids == ["dQw4w9WgXcQ"]
