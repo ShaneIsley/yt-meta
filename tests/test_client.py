@@ -632,3 +632,22 @@ def test_m14_public_surface_unchanged():
         YtMeta,
         parse_relative_date_string,
     )
+
+
+def test_m8_ytmetaerror_base_class_is_exported():
+    """REGRESSION (M8): exceptions.YtMetaError is the base class of
+    MetadataParsingError and VideoUnavailableError but was never exported
+    from the top-level package, so callers couldn't write the natural
+    ``except YtMetaError:`` to catch any library error broadly. README
+    Error Handling docs reference it. Now reachable from
+    ``from yt_meta import YtMetaError``.
+    """
+    from yt_meta import (
+        MetadataParsingError,
+        VideoUnavailableError,
+        YtMetaError,
+    )
+
+    # And the hierarchy actually works as the README implies
+    assert issubclass(MetadataParsingError, YtMetaError)
+    assert issubclass(VideoUnavailableError, YtMetaError)
