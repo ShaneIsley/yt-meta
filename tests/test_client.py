@@ -634,6 +634,64 @@ def test_m14_public_surface_unchanged():
     )
 
 
+def test_m9_get_video_metadata_accepts_video_id_kwarg(client, mocker):
+    """M9 (partial): the video-targeting methods used inconsistent
+    parameter names — get_video_metadata(youtube_url) vs
+    get_video_transcript(video_id) vs get_video_comments(youtube_url).
+    M9 makes both keyword names accepted everywhere so callers aren't
+    tripped by which name a given method happens to use. Additive;
+    positional callers are unaffected.
+    """
+    captured = {}
+
+    def fake_meta(url):
+        captured["url"] = url
+        return {"ok": True}
+
+    mocker.patch.object(
+        client._video_fetcher, "get_video_metadata", side_effect=fake_meta
+    )
+    # video_id= keyword works on a method whose positional name is youtube_url
+    result = client.get_video_metadata(video_id="dQw4w9WgXcQ")
+    assert result == {"ok": True}
+    assert captured["url"] == "dQw4w9WgXcQ"
+
+
+def test_m9_get_video_transcript_accepts_url_and_resolves_id(client, mocker):
+    """M9: get_video_transcript(video_id) passed its argument straight
+    to the transcript API without extract_video_id, so a full URL
+    silently failed (the API got a URL where it expected an 11-char
+    id). M9 routes the input through extract_video_id so URLs, youtu.be
+    links, and bare ids all work — and accepts a youtube_url= kwarg
+    alias.
+    """
+    captured = {}
+    mocker.patch.object(
+        client._transcript_fetcher,
+        "get_transcript",
+        side_effect=lambda vid, langs: captured.setdefault("vid", vid) or [],
+    )
+    client.get_video_transcript("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    assert captured["vid"] == "dQw4w9WgXcQ", (
+        "transcript fetcher should receive the resolved 11-char id, not the URL"
+    )
+
+    captured.clear()
+    client.get_video_transcript(youtube_url="https://youtu.be/dQw4w9WgXcQ")
+    assert captured["vid"] == "dQw4w9WgXcQ"
+
+
+def test_m9_methods_reject_both_or_neither_target(client):
+    """M9: passing both youtube_url and video_id, or neither, is a
+    programmer error — raise ValueError rather than silently picking
+    one.
+    """
+    with pytest.raises(ValueError):
+        client.get_video_metadata()  # neither
+    with pytest.raises(ValueError):
+        client.get_video_metadata("a", video_id="b")  # both
+
+
 def test_m8_ytmetaerror_base_class_is_exported():
     """REGRESSION (M8): exceptions.YtMetaError is the base class of
     MetadataParsingError and VideoUnavailableError but was never exported

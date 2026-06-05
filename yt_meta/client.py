@@ -136,33 +136,67 @@ class YtMeta:
         """
         return self._channel_fetcher.get_channel_metadata(channel_url, force_refresh)
 
-    def get_video_metadata(self, youtube_url: str) -> dict:
+    @staticmethod
+    def _resolve_video_target(
+        youtube_url: str | None, video_id: str | None
+    ) -> str:
+        """M9: video-targeting methods accept either ``youtube_url`` or
+        ``video_id`` as a keyword. Exactly one must be provided. Returns
+        the raw value (a URL or a bare id) — callers run it through
+        ``extract_video_id`` as needed.
+        """
+        provided = [v for v in (youtube_url, video_id) if v is not None]
+        if len(provided) != 1:
+            raise ValueError(
+                "Provide exactly one of youtube_url or video_id "
+                f"(got youtube_url={youtube_url!r}, video_id={video_id!r})"
+            )
+        return provided[0]
+
+    def get_video_metadata(
+        self, youtube_url: str | None = None, *, video_id: str | None = None
+    ) -> dict | None:
         """
         Fetches and parses comprehensive metadata for a given YouTube video.
 
         Args:
-            youtube_url: The full URL of the YouTube video.
+            youtube_url: The video URL (or a bare 11-char id).
+            video_id: Alias — pass the id (or a URL) by this keyword
+                instead. Exactly one of youtube_url / video_id is
+                required.
 
         Returns:
-            A dictionary containing detailed video metadata.
+            A dictionary of metadata, or ``None`` if the page was
+            fetched but couldn't be parsed (see M7).
         """
-        return self._video_fetcher.get_video_metadata(youtube_url)
+        target = self._resolve_video_target(youtube_url, video_id)
+        return self._video_fetcher.get_video_metadata(target)
 
     def get_video_transcript(
-        self, video_id: str, languages: List[str] = None
+        self,
+        video_id: str | None = None,
+        languages: List[str] = None,
+        *,
+        youtube_url: str | None = None,
     ) -> List[Dict]:
         """
         Fetches the transcript for a given video.
 
         Args:
-            video_id: The ID of the YouTube video.
-            languages: A list of language codes to prioritize (e.g., ['en', 'de']).
-                       If None, it will default to English.
+            video_id: The video id (or a full URL — M9 routes it through
+                extract_video_id, so URLs and youtu.be links work too).
+            languages: A list of language codes to prioritize (e.g.,
+                ['en', 'de']). If None, defaults to English.
+            youtube_url: Alias for ``video_id``. Exactly one of the two
+                is required.
 
         Returns:
             A list of transcript snippets, or an empty list if not found.
         """
-        return self._transcript_fetcher.get_transcript(video_id, languages)
+        target = self._resolve_video_target(youtube_url, video_id)
+        return self._transcript_fetcher.get_transcript(
+            extract_video_id(target), languages
+        )
 
     def get_channel_videos(
         self,
@@ -284,12 +318,14 @@ class YtMeta:
 
     def get_video_comments(
         self,
-        youtube_url: str,
+        youtube_url: str | None = None,
         limit: int | None = 100,
         sort_by: str = "recent",
         progress_callback: Callable[[int], None] | None = None,
         since_date: date | str | None = None,
         filters: dict | None = None,
+        *,
+        video_id: str | None = None,
     ):
         """
         Get comments for a specific YouTube video.
@@ -307,6 +343,7 @@ class YtMeta:
         Yields:
             dict: A dictionary representing a single comment.
         """
+        youtube_url = self._resolve_video_target(youtube_url, video_id)
         resolved_date = self._resolve_date(since_date)
         if (limit is None or limit < 0) and resolved_date is None:
             raise ValueError(
@@ -315,9 +352,9 @@ class YtMeta:
                 "since_date (works with the default sort_by='recent') or use "
                 "a finite limit."
             )
-        video_id = extract_video_id(youtube_url)
+        resolved_id = extract_video_id(youtube_url)
         comments_generator = self._comment_fetcher.get_comments(
-            video_id,
+            resolved_id,
             limit=limit,
             sort_by=sort_by,
             progress_callback=progress_callback,
@@ -329,12 +366,14 @@ class YtMeta:
 
     def get_video_comments_with_reply_tokens(
         self,
-        youtube_url: str,
+        youtube_url: str | None = None,
         limit: int | None = 100,
         sort_by: str = "recent",
         progress_callback: Callable[[int], None] | None = None,
         since_date: date | str | None = None,
         filters: dict | None = None,
+        *,
+        video_id: str | None = None,
     ):
         """
         Get comments for a specific YouTube video, including reply continuation tokens.
@@ -352,15 +391,16 @@ class YtMeta:
             dict: A dictionary representing a single comment, including 'reply_continuation_token'
                   field for comments that have replies.
         """
+        youtube_url = self._resolve_video_target(youtube_url, video_id)
         resolved_date = self._resolve_date(since_date)
         if (limit is None or limit < 0) and resolved_date is None:
             raise ValueError(
                 "Unbounded comment fetching (limit=None or limit<0) requires "
                 "since_date to be set, to cap the request count."
             )
-        video_id = extract_video_id(youtube_url)
+        resolved_id = extract_video_id(youtube_url)
         comments_generator = self._comment_fetcher.get_comments(
-            video_id,
+            resolved_id,
             limit=limit,
             sort_by=sort_by,
             progress_callback=progress_callback,
@@ -373,16 +413,19 @@ class YtMeta:
 
     def get_comment_replies(
         self,
-        youtube_url: str,
-        reply_continuation_token: str,
+        youtube_url: str | None = None,
+        reply_continuation_token: str | None = None,
         limit: int = 100,
         progress_callback: Callable[[int], None] | None = None,
+        *,
+        video_id: str | None = None,
     ):
         """
         Get replies for a specific comment.
 
         Args:
-            youtube_url (str): The full URL of the YouTube video.
+            youtube_url (str): The video URL (or a bare id). Alias:
+                ``video_id=``. Exactly one is required.
             reply_continuation_token (str): The continuation token for the specific reply thread.
             limit (int, optional): The maximum number of replies to fetch. Defaults to 100.
             progress_callback (Callable[[int], None], optional): A function to be called
@@ -391,9 +434,10 @@ class YtMeta:
         Yields:
             dict: A dictionary representing a single reply comment.
         """
-        video_id = extract_video_id(youtube_url)
+        youtube_url = self._resolve_video_target(youtube_url, video_id)
+        resolved_id = extract_video_id(youtube_url)
         replies_generator = self._comment_fetcher.get_comment_replies(
-            video_id,
+            resolved_id,
             reply_continuation_token=reply_continuation_token,
             limit=limit,
             progress_callback=progress_callback,
