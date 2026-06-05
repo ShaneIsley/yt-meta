@@ -592,15 +592,13 @@ class PlaylistFetcher(_BaseFetcher):
         validate_filters(filters)
         if not filters:
             filters = {}
+        date_filter_conditions = {}
         if start_date:
-            filters["publish_date"] = (">=", start_date)
+            date_filter_conditions["gte"] = start_date
         if end_date:
-            if "publish_date" in filters:
-                existing_op, existing_date = filters["publish_date"]
-                if existing_op == ">=":
-                    filters["publish_date"] = ("between", (existing_date, end_date))
-            else:
-                filters["publish_date"] = ("<=", end_date)
+            date_filter_conditions["lte"] = end_date
+        if date_filter_conditions:
+            filters["publish_date"] = date_filter_conditions
         fast_filters, slow_filters = partition_filters(filters, content_type="videos")
         yield from self._process_videos_generator(
             video_generator=self._get_raw_playlist_videos_generator(playlist_id),
