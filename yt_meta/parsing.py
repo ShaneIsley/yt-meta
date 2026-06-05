@@ -13,6 +13,24 @@ from .utils import _deep_get
 
 logger = logging.getLogger(__name__)
 
+
+def _parse_iso_datetime(value):
+    """Parse an ISO-formatted datetime string (e.g. YouTube's
+    microformat.publishDate ``"2023-06-19T11:00:10-07:00"``) into a
+    ``datetime``. Returns ``None`` for missing / unparseable values
+    instead of raising — parsing.py's job is to extract data, not
+    enforce input invariants.
+
+    See M4: parse_video_metadata used to return this field as the raw
+    string while parse_video_renderer returned it as datetime, breaking
+    the type contract after the two were merged in
+    _process_videos_generator.
+    """
+    if not value:
+        return None
+    return dateparser.parse(value)
+
+
 # Regex patterns adopted from the parent youtube-comment-downloader library
 # for proven robustness.
 YT_CFG_RE = r"ytcfg\.set\s*\(\s*({.+?})\s*\)\s*;"
@@ -527,7 +545,7 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
         "channel_id": video_details.get("channelId"),
         "duration_seconds": int(video_details.get("lengthSeconds", 0)),
         "view_count": int(video_details.get("viewCount", 0)),
-        "publish_date": microformat.get("publishDate"),
+        "publish_date": _parse_iso_datetime(microformat.get("publishDate")),
         "upload_date": microformat.get("uploadDate"),
         "category": microformat.get("category"),
         "like_count": find_like_count(player_response_data),

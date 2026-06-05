@@ -50,6 +50,60 @@ def test_m2_parse_video_renderer_handles_all_none_badges():
     result = parsing.parse_video_renderer(renderer)
     assert result is not None
     assert result["is_live"] is False
+
+
+def test_m4_parse_video_metadata_returns_datetime_publish_date():
+    """REGRESSION (M4): parse_video_metadata previously returned
+    publish_date as a raw ISO string from microformat.publishDate, but
+    parse_video_renderer returned it as a datetime. Same key, two
+    types. When _process_videos_generator merges full metadata over a
+    renderer dict, the datetime got REPLACED by a string — a silent
+    type contract break for any downstream code that relied on
+    datetime methods.
+
+    v0.6.0 normalizes to datetime everywhere. Aligns with yt-meta's
+    analysis-tool identity (datetime supports comparison, arithmetic,
+    formatting natively).
+    """
+    from datetime import datetime
+
+    player_response_data = {
+        "videoDetails": {"videoId": "dQw4w9WgXcQ"},
+        "microformat": {
+            "playerMicroformatRenderer": {
+                "publishDate": "2023-06-19T11:00:10-07:00",
+                "uploadDate": "2023-06-19T11:00:10-07:00",
+            }
+        },
+    }
+    initial_data = {
+        "contents": {},
+        "frameworkUpdates": {"entityBatchUpdate": {"mutations": []}},
+    }
+    result = parsing.parse_video_metadata(player_response_data, initial_data)
+    assert isinstance(result["publish_date"], datetime), (
+        f"expected datetime, got {type(result['publish_date']).__name__}"
+    )
+    assert result["publish_date"].year == 2023
+    assert result["publish_date"].month == 6
+    assert result["publish_date"].day == 19
+
+
+def test_m4_parse_video_metadata_handles_none_publish_date():
+    """REGRESSION (M4): when microformat has no publishDate (live
+    streams, deleted videos), publish_date stays None — not a crash
+    from dateparser.
+    """
+    player_response_data = {
+        "videoDetails": {"videoId": "dQw4w9WgXcQ"},
+        "microformat": {"playerMicroformatRenderer": {}},
+    }
+    initial_data = {
+        "contents": {},
+        "frameworkUpdates": {"entityBatchUpdate": {"mutations": []}},
+    }
+    result = parsing.parse_video_metadata(player_response_data, initial_data)
+    assert result["publish_date"] is None
 from yt_meta.parsing import (
     extract_and_parse_json,
     extract_shorts_from_renderers,
@@ -214,7 +268,10 @@ def test_parse_video_metadata(initial_data, player_response_data):
     assert metadata["channel_id"] == "UCw49uOTAJjGUdoAeUcp7tOg"
     assert metadata["duration_seconds"] == 3582
     assert int(metadata["view_count"]) > 300000
-    assert metadata["publish_date"] == "2023-06-19T11:00:10-07:00"
+    # M4: publish_date is now a datetime, not the raw ISO string.
+    assert metadata["publish_date"].year == 2023
+    assert metadata["publish_date"].month == 6
+    assert metadata["publish_date"].day == 19
     assert metadata["category"] == "Music"
     assert isinstance(metadata["view_count"], int)
     assert metadata["view_count"] > 300000
