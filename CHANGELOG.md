@@ -6,6 +6,99 @@ All notable changes to this project are documented in this file.
 
 - (Add new changes here)
 
+## [0.6.0] - 2026-06-05
+
+The "pay down the debt" release — the terminal release from the
+ultra-review roadmap. Rehabilitates the comment subsystem (unified
+under the Facade's shared session+cache, continuation-token extraction
+rewritten, pagination fixed, real-fixture test coverage), reduces
+architectural strain (date-filter and video-pipeline logic extracted
+into testable helpers), clears the deprecations from v0.4.0, hardens
+parsing against real-world payload variation, and adds retry/backoff.
+After this the project sits at a stable pre-1.0 line.
+
+### Added
+- In-house HTTP retry/backoff (``yt_meta/_retry.py``). Retries on
+  429/5xx and connection errors with exponential backoff + full
+  jitter, honoring ``Retry-After``. Wired into the channel/playlist
+  continuation loop and the comment API loop;
+  ``CommentAPIClient(retries=...)`` is now actually used. **H9**.
+- ``YtMetaError`` base exception exported from the package top-level —
+  ``except YtMetaError:`` now works as the README documents. **M8**.
+- Video-targeting methods accept ``youtube_url`` and ``video_id``
+  interchangeably (keyword aliases). ``get_video_transcript`` now
+  routes its input through ``extract_video_id`` so URLs and youtu.be
+  links work (previously a URL silently failed). **M9**.
+- ``after`` / ``before`` are now valid operators on ``publish_date``
+  filters (readable aliases for ``gt`` / ``lt``), accepted by
+  ``validate_filters``. **M22**.
+- Real-fixture test coverage for ``CommentParser`` using the 2.4 MB of
+  previously-unused captured payloads in ``tests/fixtures/``. **H17/L6**.
+
+### Changed
+- Comment subsystem unified under the Facade's resources:
+  ``CommentFetcher`` / ``CommentAPIClient`` accept an injected
+  ``session`` and ``cache``, and ``YtMeta`` passes its own in. The
+  library now uses ONE ``httpx.Client`` and ONE cache end-to-end;
+  watch-page parses are cached under a shared ``video_initial:{id}``
+  key. **M1/L2**.
+- ``extract_continuation_token`` rewritten to walk the documented
+  ``onResponseReceivedEndpoints`` path explicitly instead of a
+  free-form DFS that could pick up a nested reply-continuation token
+  and silently truncate the comment stream. **H3**.
+- Comment pagination tolerates transient all-duplicate pages (a
+  consecutive-empty-page counter) instead of breaking on the first
+  one. **H4**.
+- ``parse_video_metadata`` returns ``publish_date`` as a ``datetime``
+  (was a raw ISO string), matching ``parse_video_renderer`` and the
+  rest of the library. **M4** — see Breaking changes.
+- Date-filter construction extracted into a single
+  ``filtering.build_date_filter`` helper shared by the channel and
+  playlist fetchers (eliminates the divergence that allowed the
+  v0.4.0 H1 bug). **L1/M5**.
+- The filter-pipeline epilogue (partition → fetch-decision → per-video
+  loop) extracted into module-level ``_run_filtered_pipeline`` /
+  ``_process_videos``, unit-testable without a fetcher instance.
+  ``_BaseFetcher`` slimmed to its genuinely-shared members. **L5**.
+- ``get_video_metadata`` annotation corrected to ``-> dict | None`` and
+  docstring/README aligned: parse failures return ``None``, fetch
+  failures raise ``VideoUnavailableError``. **M7**.
+- ``apply_filters`` emits a DEBUG log when a video is dropped for a
+  missing filter field (behavior unchanged; now discoverable). **M6**.
+- The comment-fetch error handler narrowed from ``except Exception`` to
+  httpx errors, so programmer bugs (KeyError etc.) surface unwrapped
+  instead of being mislabeled "video unavailable". **M23**.
+
+### Fixed
+- ``parse_video_renderer`` no longer crashes on a badge entry with an
+  explicit ``metadataBadgeRenderer: None``. **M2**.
+- ``_get_raw_shorts_generator`` no longer raises ``IndexError`` when
+  the shorts parser returns an empty result for an unexpected
+  renderer shape (in-feed ads, A/B-test wrappers). **M3**.
+
+### Removed
+- ``CommentAPIClient``, ``CommentParser``, and the ``BestCommentFetcher``
+  alias are no longer re-exported from the package top-level. Import
+  them from their submodules if you need the internals. **M14**.
+- ``VideoFetcher.get_video_id`` (deprecated in v0.4.0) is removed. Use
+  ``yt_meta.utils.extract_video_id``. **M17**.
+
+### Breaking changes
+- **``publish_date`` is now a ``datetime``** in ``get_video_metadata``
+  results (was a raw ISO string). Code doing string operations on the
+  field must switch to datetime methods. **M4**.
+- **Top-level imports of ``CommentAPIClient`` / ``CommentParser`` /
+  ``BestCommentFetcher`` raise ``ImportError``** — use the submodule
+  path. **M14**.
+- **``VideoFetcher.get_video_id`` removed.** **M17**.
+- **``CommentFetcher.__init__`` signature changed** (gained
+  ``session`` / ``cache`` parameters). Standard usage via ``YtMeta``
+  is unaffected; only direct constructors that relied on the exact
+  prior signature need review. **M1/L2**.
+- **``extract_video_id`` (and therefore the transcript path) rejects
+  non-11-char inputs** more strictly via M9's routing — placeholder
+  strings that previously slipped through now raise ``ValueError``.
+
 ## [0.5.0] - 2026-06-05
 
 The "honor the values" release. Closes the on-disk cache RCE vector
