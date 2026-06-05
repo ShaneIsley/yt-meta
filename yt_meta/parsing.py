@@ -341,6 +341,108 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
     return shorts, continuation_token
 
 
+def parse_lockup_view_model(lvm: dict) -> dict | None:
+    """Parse a single ``lockupViewModel`` (the channel 'Videos' tab item
+    shape YouTube migrated to, replacing ``videoRenderer``).
+
+    Returns a video dict with the same keys the renderer parser produced
+    (video_id, title, view_count, publish_date, duration_seconds, url),
+    or ``None`` if the lockup is not a video (playlist/other content
+    types) or has no usable id.
+
+    Field locations were established by probing live pages:
+      - video_id      : contentId
+      - title         : metadata.lockupMetadataViewModel.title.content
+      - view_count    : a "<n> views"/"watching" part anywhere in the
+                        metadataRows (None for members-only videos,
+                        which YouTube publishes without a view count)
+      - publish_date  : a "<n> ... ago" part anywhere in the rows
+                        (collab videos push it to the second row)
+      - duration      : the thumbnail overlay badge text containing ':'
+    """
+    if not isinstance(lvm, dict):
+        return None
+    if lvm.get("contentType") != "LOCKUP_CONTENT_TYPE_VIDEO":
+        return None
+    video_id = lvm.get("contentId")
+    if not video_id:
+        return None
+
+    meta = _deep_get(lvm, "metadata.lockupMetadataViewModel", {}) or {}
+    title = _deep_get(meta, "title.content")
+
+    # Flatten every text part across every metadata row — collab videos
+    # use row 0 for the byline and row 1 for views/date.
+    rows = _deep_get(meta, "metadata.contentMetadataViewModel.metadataRows", []) or []
+    texts = []
+    for row in rows:
+        for part in row.get("metadataParts", []) or []:
+            content = _deep_get(part, "text.content")
+            if content:
+                texts.append(content)
+
+    view_count_text = next(
+        (t for t in texts if "view" in t.lower() or "watching" in t.lower()), None
+    )
+    publish_text = next((t for t in texts if "ago" in t.lower()), None)
+
+    # The duration badge carries both a clock-format text ("7:06") and an
+    # accessibility label ("7 minutes, 6 seconds"). parse_duration expects
+    # the labelled form, so prefer the accessibility label.
+    duration_label = None
+    for overlay in _deep_get(lvm, "contentImage.thumbnailViewModel.overlays", []) or []:
+        for badge in (
+            _deep_get(overlay, "thumbnailBottomOverlayViewModel.badges", []) or []
+        ):
+            badge_vm = badge.get("thumbnailBadgeViewModel") or {}
+            text = badge_vm.get("text")
+            if text and ":" in text:
+                duration_label = _deep_get(
+                    badge_vm, "rendererContext.accessibilityContext.label"
+                )
+
+    publish_date = None
+    if publish_text:
+        publish_date = dateparser.parse(
+            publish_text, settings={"PREFER_DATES_FROM": "past"}
+        )
+
+    return {
+        "video_id": video_id,
+        "title": title,
+        "view_count": parse_view_count(view_count_text) if view_count_text else None,
+        "publish_date": publish_date,
+        "duration_seconds": parse_duration(duration_label) if duration_label else None,
+        "url": f"https://www.youtube.com/watch?v={video_id}",
+    }
+
+
+def extract_videos_from_lockup_renderers(
+    renderers: list,
+) -> tuple[list, str | None]:
+    """Parse a list of channel 'Videos' tab renderers in the
+    ``lockupViewModel`` shape, returning (videos, continuation_token).
+
+    Mirrors extract_shorts_from_renderers / extract_videos_from_renderers
+    so the channel-videos generator can branch on the renderer shape.
+    Non-video lockups and the continuation renderer are skipped.
+    """
+    videos = []
+    continuation_token = None
+    for renderer in renderers or []:
+        lvm = _deep_get(renderer, "richItemRenderer.content.lockupViewModel")
+        if lvm:
+            video = parse_lockup_view_model(lvm)
+            if video:
+                videos.append(video)
+        if "continuationItemRenderer" in renderer:
+            continuation_token = _deep_get(
+                renderer,
+                "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
+            )
+    return videos, continuation_token
+
+
 def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:
     """
     Parses a `playlistVideoListRenderer` from a playlist page.

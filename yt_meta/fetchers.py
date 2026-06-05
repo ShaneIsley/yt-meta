@@ -380,10 +380,16 @@ class ChannelFetcher(_BaseFetcher):
             for renderer in renderers:
                 if "richItemRenderer" not in renderer:
                     continue
-                video_data = renderer["richItemRenderer"]["content"]
-                if "videoRenderer" not in video_data:
+                content = renderer["richItemRenderer"]["content"]
+                # YouTube migrated channel video items from videoRenderer to
+                # lockupViewModel. Handle both: lockup is the current shape;
+                # videoRenderer is kept for older cached pages / fallback.
+                if "lockupViewModel" in content:
+                    video = parsing.parse_lockup_view_model(content["lockupViewModel"])
+                elif "videoRenderer" in content:
+                    video = parsing.parse_video_renderer(content["videoRenderer"])
+                else:
                     continue
-                video = parsing.parse_video_renderer(video_data["videoRenderer"])
                 if not video:
                     continue
                 if final_start_date and video.get("publish_date"):
