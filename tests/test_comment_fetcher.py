@@ -19,6 +19,88 @@ def test_h14_default_sort_for_comment_fetcher_get_comments_is_recent():
     assert sig.parameters["sort_by"].default == "recent"
 
 
+def test_h17_extract_complete_comments_from_real_fixture(
+    comment_continuation_response,
+):
+    """REGRESSION (H17 / L6): comment_parser.py was 551 lines of code
+    covered exclusively by synthetic in-line dict stubs. Meanwhile a
+    real 622 KB captured API response sat unused in
+    ``tests/fixtures/comment_continuation_response.json``. v0.6.0
+    wires the fixture in so the parser is exercised against an actual
+    YouTube payload shape — the kind of shape future YouTube changes
+    will quietly break.
+    """
+    from yt_meta.comment_parser import CommentParser
+
+    parser = CommentParser()
+    comments = parser.extract_complete_comments(comment_continuation_response)
+
+    # The fixture contains 20 top-level comments (verified during the
+    # M19 / minimal-requests analysis where we walked the same file).
+    assert len(comments) == 20
+
+    # Every comment has the canonical fields with the canonical types
+    # — guards against silent shape changes (e.g. like_count flipping
+    # back to str).
+    for c in comments:
+        assert isinstance(c["id"], str) and c["id"]
+        assert isinstance(c["author"], str)
+        assert isinstance(c["text"], str)
+        assert isinstance(c["like_count"], int)
+        assert isinstance(c["reply_count"], int)
+        assert isinstance(c["is_reply"], bool)
+
+    # IDs unique within the page — protects against the deduplication
+    # logic in CommentFetcher (seen_ids set) accidentally relying on
+    # the parser uniquifying.
+    ids = [c["id"] for c in comments]
+    assert len(set(ids)) == len(ids), "fixture contains duplicate ids"
+
+    # Spot-check known values from the fixture (these come from the
+    # actual captured page — see the M19 walkthrough that enumerated
+    # 4 distinct publish times and like counts ranging 5-412).
+    like_counts = [c["like_count"] for c in comments]
+    assert max(like_counts) >= 400  # the 412-like comment is in there
+    assert min(like_counts) >= 0
+
+
+def test_l6_extract_reply_continuations_from_real_fixture(
+    comment_continuation_response,
+):
+    """REGRESSION (L6): extract_reply_continuations is the backbone of
+    the reply-token API path (client.get_video_comments_with_reply_tokens
+    and client.get_comment_replies) and was completely untested.
+    Verify it produces a comment_id → reply_token mapping on a real
+    payload.
+    """
+    from yt_meta.comment_parser import CommentParser
+
+    parser = CommentParser()
+    reply_tokens = parser.extract_reply_continuations(
+        comment_continuation_response
+    )
+
+    assert isinstance(reply_tokens, dict)
+    # If the captured page has threads with replies, we should pick up
+    # at least one mapping. The fixture had 10 replies on the top
+    # comment, so the count is non-zero.
+    assert len(reply_tokens) > 0, (
+        "expected at least one reply_continuation_token in the fixture"
+    )
+    # Every key is a comment id present in the same fixture's comments
+    parser2 = CommentParser()
+    comment_ids = {
+        c["id"] for c in parser2.extract_complete_comments(comment_continuation_response)
+    }
+    for comment_id in reply_tokens:
+        assert comment_id in comment_ids, (
+            f"reply token for {comment_id!r} but no matching comment"
+        )
+    # Every value is a non-empty string token
+    for token in reply_tokens.values():
+        assert isinstance(token, str) and len(token) > 10
+
+
 def test_m1_l2_comment_api_client_uses_injected_session():
     """REGRESSION (M1/L2): CommentAPIClient used to build its own
     httpx.Client with its own (different) headers and follow_redirects

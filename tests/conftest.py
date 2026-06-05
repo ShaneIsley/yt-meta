@@ -97,6 +97,24 @@ def video_html():
 
 
 @pytest.fixture
+def comment_continuation_response():
+    """Real captured API response for a comments-continuation request
+    (~622 KB). Used by H17 fixture-driven parser tests in v0.6.0 to
+    cover CommentParser.extract_complete_comments end-to-end against
+    a real-shape payload rather than synthetic dict stubs."""
+    with open(FIXTURES_DIR / "comment_continuation_response.json") as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def comment_reply_response():
+    """Real captured API response for a comment replies request.
+    Smaller fixture covering extract_reply_continuations."""
+    with open(FIXTURES_DIR / "comment_reply_response.json") as f:
+        return json.load(f)
+
+
+@pytest.fixture
 def player_response_data(video_html):
     return parsing.extract_and_parse_json(video_html, "ytInitialPlayerResponse")
 
