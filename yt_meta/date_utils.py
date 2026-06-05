@@ -2,27 +2,33 @@
 import re
 from datetime import date, datetime, timedelta
 
+import dateparser
+
 
 def parse_relative_date_string(date_str: str) -> date:
     """
-    Parses a relative date string into a date object.
+    Parses a date string into a date object.
 
-    Handles two main formats:
+    Handles three formats:
     1. Shorthand notation (e.g., "1d", "2w", "3m", "4y" for days, weeks,
        months, and years).
     2. Human-readable notation (e.g., "1 day ago", "2 weeks ago").
+    3. Absolute dates parseable by ``dateparser`` (e.g., "2023-01-01",
+       "January 1 2023").
 
-    Note:
-    - Months are approximated as 30 days.
-    - Years are approximated as 365 days.
-    - Returns today's date if the string format is unrecognized.
+    Notes:
+    - Months are approximated as 30 days, years as 365 days.
+    - Non-str inputs (e.g. ``None``) return today's date as a defensive
+      fallback for callers using ``dict.get(...)``-style lookups.
+    - Unrecognized strings raise ``ValueError`` — failing loudly is preferred
+      to silently returning today, which corrupted downstream date filters
+      (see review H2).
     """
     if not isinstance(date_str, str):
         return datetime.today().date()
 
     date_str = date_str.lower().strip()
 
-    # --- Handle Shorthand Notation (e.g., "1d", "2w", "3m", "4y") ---
     shorthand_match = re.match(r"(\d+)\s*([dwmy])", date_str)
     if shorthand_match:
         value = int(shorthand_match.group(1))
@@ -33,13 +39,10 @@ def parse_relative_date_string(date_str: str) -> date:
         elif unit == "w":
             return datetime.today().date() - timedelta(weeks=value)
         elif unit == "m":
-            # Approximate months as 30 days
             return datetime.today().date() - timedelta(days=value * 30)
         elif unit == "y":
-            # Approximate years as 365 days
             return datetime.today().date() - timedelta(days=value * 365)
 
-    # --- Handle Human-Readable Notation (e.g., "1 day ago", "2 weeks ago") ---
     human_readable_match = re.match(r"(\d+)\s*(day|week|month|year)s?\s*ago", date_str)
     if human_readable_match:
         value = int(human_readable_match.group(1))
@@ -54,8 +57,11 @@ def parse_relative_date_string(date_str: str) -> date:
         elif unit == "year":
             return datetime.today().date() - timedelta(days=value * 365)
 
-    # Fallback for unrecognized formats
-    return datetime.today().date()
+    parsed = dateparser.parse(date_str, settings={"PREFER_DATES_FROM": "past"})
+    if parsed is not None:
+        return parsed.date() if isinstance(parsed, datetime) else parsed
+
+    raise ValueError(f"Could not parse date string: {date_str!r}")
 
 
 parse_human_readable_date = parse_relative_date_string

@@ -1,6 +1,8 @@
 # tests/test_date_utils.py
 from datetime import date, timedelta
 
+import pytest
+
 from yt_meta.date_utils import parse_relative_date_string
 
 
@@ -70,8 +72,29 @@ def test_parse_zero_value():
     assert parse_relative_date_string("0 weeks ago") == expected
 
 
-def test_parse_invalid_string_returns_today():
-    """Tests that an invalid or empty string returns today's date."""
-    assert parse_relative_date_string("invalid date") == date.today()
-    assert parse_relative_date_string("") == date.today()
+def test_regression_h2_parses_iso_date_string():
+    """REGRESSION (H1/H2): YYYY-MM-DD inputs previously hit the silent fallback
+    and returned today. The function must accept ISO dates so the documented
+    `start_date='2023-01-01'` form (used in YtMeta._resolve_date and
+    ChannelFetcher.get_channel_videos) works as advertised.
+    """
+    assert parse_relative_date_string("2023-01-01") == date(2023, 1, 1)
+    assert parse_relative_date_string("2024-12-31") == date(2024, 12, 31)
+
+
+def test_regression_h2_unrecognized_string_raises_valueerror():
+    """REGRESSION (H2): unrecognized formats previously returned today's date
+    silently, corrupting downstream date filters with no error. The function
+    must now fail loudly.
+    """
+    with pytest.raises(ValueError):
+        parse_relative_date_string("not a date at all")
+    with pytest.raises(ValueError):
+        parse_relative_date_string("")
+
+
+def test_parse_none_returns_today():
+    """Non-str inputs (e.g. None from callers using dict.get) preserve the
+    defensive today-fallback. Behavior intentionally retained.
+    """
     assert parse_relative_date_string(None) == date.today()
