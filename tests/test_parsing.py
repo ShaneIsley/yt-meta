@@ -6,6 +6,50 @@ import json
 
 from tests.conftest import get_fixture
 from yt_meta import parsing
+
+
+def test_m2_parse_video_renderer_handles_explicit_none_badge():
+    """REGRESSION (M2): parse_video_renderer crashed on YouTube payloads
+    where a badge entry had ``metadataBadgeRenderer: None`` (explicit
+    None value, not a missing key). The defensive idiom
+
+        b.get("metadataBadgeRenderer", {}).get("label", "")
+
+    only falls back to ``{}`` for *missing* keys. When the key exists
+    with value None, ``.get`` returns None, then ``.get("label", "")``
+    on None raises AttributeError. YouTube payloads occasionally
+    include explicit None badges.
+
+    Fix uses ``(b.get(...) or {})`` so explicit None falls back too.
+    """
+    renderer = {
+        "videoId": "dQw4w9WgXcQ",
+        "badges": [
+            {"metadataBadgeRenderer": None},
+            {"metadataBadgeRenderer": {"label": "LIVE NOW"}},
+        ],
+        "title": {"runs": [{"text": "Test"}]},
+    }
+    result = parsing.parse_video_renderer(renderer)
+    assert result is not None
+    assert result["is_live"] is True
+
+
+def test_m2_parse_video_renderer_handles_all_none_badges():
+    """REGRESSION (M2): when *every* badge has explicit None, is_live
+    must be False, not raise.
+    """
+    renderer = {
+        "videoId": "dQw4w9WgXcQ",
+        "badges": [
+            {"metadataBadgeRenderer": None},
+            {"metadataBadgeRenderer": None},
+        ],
+        "title": {"runs": [{"text": "Test"}]},
+    }
+    result = parsing.parse_video_renderer(renderer)
+    assert result is not None
+    assert result["is_live"] is False
 from yt_meta.parsing import (
     extract_and_parse_json,
     extract_shorts_from_renderers,

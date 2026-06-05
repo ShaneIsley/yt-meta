@@ -386,7 +386,8 @@ def parse_video_renderer(renderer: dict) -> dict:
 
     badges = _deep_get(renderer, "badges", [])
     is_live = any(
-        "LIVE" in b.get("metadataBadgeRenderer", {}).get("label", "") for b in badges
+        "LIVE" in (b.get("metadataBadgeRenderer") or {}).get("label", "")
+        for b in badges
     )
     is_premiere = "PREMIERE" in _deep_get(
         renderer, "upcomingEventData.upcomingEventText.runs.0.text", ""
