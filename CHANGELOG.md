@@ -6,6 +6,35 @@ All notable changes to this project are documented in this file.
 
 - (Add new changes here)
 
+## [0.6.1] - 2026-06-05
+
+A critical fast-follow fix for ``get_channel_videos``, which was
+returning zero videos for every channel.
+
+### Fixed
+- **``get_channel_videos`` parses YouTube's new ``lockupViewModel``
+  channel-video format.** YouTube migrated the channel "Videos" tab
+  from ``videoRenderer`` to ``lockupViewModel``; the extraction loop
+  only recognized the old shape, so every item was skipped — the
+  method returned nothing and then paginated fruitlessly (up to ~100
+  wasted continuation requests per channel). This was the real cause
+  of the long-standing "flaky" channel integration failures
+  (``assert 0 == N``), not rate-limiting. A 10-channel live harness
+  confirmed 0/10 → 10/10 after the fix, with a single page fetch and
+  no wasted pagination.
+
+  New ``parsing.parse_lockup_view_model`` /
+  ``parsing.extract_videos_from_lockup_renderers``; the channel-videos
+  generator now branches on the renderer shape (``lockupViewModel``
+  current, ``videoRenderer`` fallback). Handles the collab-byline and
+  members-only (no view count) edge cases found by directly probing
+  live pages. Playlists were probed too and are unaffected (still
+  ``playlistVideoRenderer``).
+
+  Covered by 5 offline regression tests against a captured real
+  channel page (``tests/fixtures/channel_videos_lockup_renderers.json``),
+  turning the previously-untestable path into provable coverage.
+
 ## [0.6.0] - 2026-06-05
 
 The "pay down the debt" release — the terminal release from the
