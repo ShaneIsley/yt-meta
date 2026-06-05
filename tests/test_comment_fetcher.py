@@ -1,10 +1,22 @@
+import inspect
 from datetime import date
 from unittest.mock import Mock, patch
 
 import pytest
 
-from yt_meta.comment_fetcher import BestCommentFetcher
+from yt_meta.comment_fetcher import BestCommentFetcher, CommentFetcher
 from yt_meta.exceptions import VideoUnavailableError
+
+
+def test_h14_default_sort_for_comment_fetcher_get_comments_is_recent():
+    """H14 (default-sort half): CommentFetcher.get_comments defaults sort_by
+    to 'recent' so since_date short-circuits work out of the box and the raw
+    chronological stream is returned by default (yt-meta is a
+    metadata-retrieval tool; YouTube's 'Top' ranking is editorial, not raw
+    data).
+    """
+    sig = inspect.signature(CommentFetcher.get_comments)
+    assert sig.parameters["sort_by"].default == "recent"
 
 
 class TestBestCommentFetcher:

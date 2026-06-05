@@ -37,7 +37,7 @@ class CommentFetcher:
         self,
         video_id: str,
         limit: int | None = None,
-        sort_by: str = "top",
+        sort_by: str = "recent",
         since_date: date | None = None,
         progress_callback: Callable[[int], None] | None = None,
         include_reply_continuation: bool = False,
@@ -48,7 +48,7 @@ class CommentFetcher:
         Args:
             video_id: YouTube video ID or URL
             limit: Maximum number of comments to fetch
-            sort_by: Sort order ("top" or "recent")
+            sort_by: Sort order ("recent" — default, chronological; or "top" — YouTube's editorial ranking)
             since_date: Only fetch comments after this date (requires sort_by="recent")
             progress_callback: Callback function called with comment count
             include_reply_continuation: Include reply continuation tokens for comments with replies

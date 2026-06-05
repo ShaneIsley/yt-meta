@@ -232,7 +232,7 @@ class YtMeta:
         self,
         youtube_url: str,
         limit: int = 100,
-        sort_by: str = "top",
+        sort_by: str = "recent",
         progress_callback: Callable[[int], None] | None = None,
         since_date: date | str | None = None,
     ):
@@ -242,7 +242,7 @@ class YtMeta:
         Args:
             youtube_url (str): The full URL of the YouTube video.
             limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
-            sort_by (str, optional): The order to sort comments by. Can be 'top' or 'recent'. Defaults to "top".
+            sort_by (str, optional): The order to sort comments by. Can be 'recent' (default — chronological, required for `since_date` short-circuit) or 'top' (YouTube's editorial ranking).
             progress_callback (Callable[[int], None], optional): A function to be called
                 with the number of comments fetched so far. Defaults to None.
             since_date (date | str | None, optional): The date from which to fetch comments.
@@ -267,7 +267,7 @@ class YtMeta:
         self,
         youtube_url: str,
         limit: int = 100,
-        sort_by: str = "top",
+        sort_by: str = "recent",
         progress_callback: Callable[[int], None] | None = None,
     ):
         """
@@ -276,7 +276,7 @@ class YtMeta:
         Args:
             youtube_url (str): The full URL of the YouTube video.
             limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
-            sort_by (str, optional): The order to sort comments by. Can be 'top' or 'recent'. Defaults to "top".
+            sort_by (str, optional): The order to sort comments by. Can be 'recent' (default — chronological) or 'top' (YouTube's editorial ranking).
             progress_callback (Callable[[int], None], optional): A function to be called
                 with the number of comments fetched so far. Defaults to None.
 

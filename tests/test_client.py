@@ -320,3 +320,48 @@ def test_regression_m17_get_video_comments_accepts_youtu_be_url(client, mocker):
     list(client.get_video_comments("https://youtu.be/dQw4w9WgXcQ", limit=0))
 
     assert seen_video_ids == ["dQw4w9WgXcQ"]
+
+
+def test_h14_default_sort_for_get_video_comments_is_recent(client, mocker):
+    """H14 (default-sort half): README declares sort_by=SORT_BY_RECENT as the
+    documented default (README.md:451, :454), but client.py defaulted to 'top'.
+    yt-meta is a metadata-retrieval tool; the raw chronological stream is the
+    appropriate default. 'Top' is YouTube's editorial ranking, which is an
+    opt-in concern. Flipping the default also makes since_date short-circuit
+    pagination out of the box.
+    """
+    seen_kwargs = {}
+
+    def fake_get_comments(video_id, **kwargs):
+        seen_kwargs.update(kwargs)
+        return iter([])
+
+    mocker.patch.object(
+        client._comment_fetcher, "get_comments", side_effect=fake_get_comments
+    )
+
+    list(client.get_video_comments("dQw4w9WgXcQ", limit=0))
+
+    assert seen_kwargs["sort_by"] == "recent"
+
+
+def test_h14_default_sort_for_get_video_comments_with_reply_tokens_is_recent(
+    client, mocker
+):
+    """Same as test_h14_default_sort_for_get_video_comments_is_recent but for
+    the reply-token variant. Defaults must stay aligned across both Facade
+    comment entrypoints.
+    """
+    seen_kwargs = {}
+
+    def fake_get_comments(video_id, **kwargs):
+        seen_kwargs.update(kwargs)
+        return iter([])
+
+    mocker.patch.object(
+        client._comment_fetcher, "get_comments", side_effect=fake_get_comments
+    )
+
+    list(client.get_video_comments_with_reply_tokens("dQw4w9WgXcQ", limit=0))
+
+    assert seen_kwargs["sort_by"] == "recent"
