@@ -27,6 +27,7 @@ class YtMeta:
         self,
         cache_path: str | None = None,
         cache: MutableMapping | None = None,
+        cache_ttl_seconds: int = 86400,
     ):
         """
         Initializes the yt-meta client.
@@ -38,14 +39,20 @@ class YtMeta:
                    in-memory cache, or ``diskcache.Cache`` for a persistent
                    one). Takes precedence over ``cache_path``. If both are
                    ``None`` (the default), caching is disabled.
+            cache_ttl_seconds: TTL applied to entries in the built-in
+                   SQLiteCache (used when ``cache_path`` is given). Default
+                   is 86400 (1 day). Ignored when ``cache`` is supplied —
+                   inject a cache with the TTL semantics you want.
         """
         self.session = Client(headers={"Accept-Language": "en-US,en;q=0.5"})
         if cache is not None:
             self.cache = cache
             logger.info(f"Using injected cache: {type(cache).__name__}")
         elif cache_path:
-            self.cache = SQLiteCache(path=cache_path)
-            logger.info(f"Using SQLite cache at: {cache_path}")
+            self.cache = SQLiteCache(path=cache_path, ttl_seconds=cache_ttl_seconds)
+            logger.info(
+                f"Using SQLite cache at: {cache_path} (TTL {cache_ttl_seconds}s)"
+            )
         else:
             self.cache = DummyCache()
             logger.info("Caching is disabled.")

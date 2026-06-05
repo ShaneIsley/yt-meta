@@ -465,3 +465,26 @@ def test_h13_ytmeta_with_no_cache_args_uses_dummycache():
 
     c = YtMeta()
     assert isinstance(c.cache, DummyCache)
+
+
+def test_m10_ytmeta_exposes_cache_ttl_seconds(tmp_path):
+    """M10: SQLiteCache supports a per-instance TTL (default 86400 s, 1
+    day) but YtMeta never surfaced it — the constructor unconditionally
+    used the SQLiteCache default. Expose `cache_ttl_seconds` on YtMeta so
+    callers can pick a TTL appropriate to their workload (long for
+    video_meta — effectively immutable; short for channel_page — fresh
+    uploads). This is the user-facing knob; per-prefix TTL is the
+    follow-up Longer-term #4 work.
+    """
+    cache_file = tmp_path / "cache.db"
+    c = YtMeta(cache_path=str(cache_file), cache_ttl_seconds=60)
+    assert c.cache.ttl_seconds == 60
+
+
+def test_m10_default_cache_ttl_is_one_day(tmp_path):
+    """M10: backward compat — the default TTL is 86400 (1 day) when not
+    specified. Matches SQLiteCache's own default.
+    """
+    cache_file = tmp_path / "cache.db"
+    c = YtMeta(cache_path=str(cache_file))
+    assert c.cache.ttl_seconds == 86400
