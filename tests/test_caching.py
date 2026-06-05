@@ -1,7 +1,82 @@
+import json
+import sqlite3
+import time
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from tests.conftest import make_mock_html
 from yt_meta import YtMeta
+from yt_meta.caching import SQLiteCache
+
+
+def test_h7_sqlitecache_stores_json_blobs_not_pickle(tmp_path):
+    """REGRESSION (H7): SQLiteCache previously used pickle.{dumps,loads},
+    creating an RCE vector on tampered cache files
+    (.my_yt_meta_cache/cache.db). Switching to json closes the vector
+    because json.loads cannot execute arbitrary code. Verify the on-disk
+    blob is valid UTF-8 JSON and does not start with the pickle protocol
+    marker byte (0x80).
+    """
+    cache_file = tmp_path / "cache.db"
+    cache = SQLiteCache(path=str(cache_file))
+    cache["k"] = {"hello": "world", "n": 42}
+
+    conn = sqlite3.connect(str(cache_file))
+    raw = conn.execute("SELECT value FROM cache WHERE key='k'").fetchone()[0]
+    conn.close()
+
+    assert raw[:1] != b"\x80", "cache value still looks like pickle (H7 RCE)"
+    assert json.loads(raw.decode("utf-8")) == {"hello": "world", "n": 42}
+
+
+def test_h7_caching_module_does_not_import_pickle():
+    """REGRESSION (H7): defense in depth — ensure pickle is no longer
+    imported in caching.py so it cannot accidentally creep back in.
+    """
+    import yt_meta.caching as caching_mod
+
+    assert "pickle" not in vars(caching_mod), (
+        "caching.py should not import pickle (H7 RCE vector)"
+    )
+
+
+def test_h7_legacy_pickle_format_raises_migration_error(tmp_path):
+    """REGRESSION (H7): on first read of a v0.4-era cache file (pickle
+    blobs), raise a clean ValueError that tells the user to delete the
+    file. Detect-and-refuse migration — no silent rebuild that might
+    hide a schema problem.
+    """
+    import pickle  # only in the test, to construct the legacy blob
+
+    cache_file = tmp_path / "cache.db"
+    conn = sqlite3.connect(str(cache_file))
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS cache "
+        "(key TEXT PRIMARY KEY, value BLOB, timestamp REAL)"
+    )
+    legacy_value = pickle.dumps({"hello": "world"})
+    conn.execute(
+        "INSERT INTO cache VALUES (?, ?, ?)", ("k", legacy_value, time.time())
+    )
+    conn.commit()
+    conn.close()
+
+    cache = SQLiteCache(path=str(cache_file))
+    with pytest.raises(ValueError, match=r"[Dd]elete the file"):
+        cache["k"]
+
+
+def test_h7_tuple_roundtrips_as_list(tmp_path):
+    """REGRESSION (H7): JSON has no tuple type. Tuples round-trip as
+    lists. All current callers either unpack (works on lists) or index
+    (works on lists), so this is the right trade-off vs a custom
+    type-marker encoder. Documented behavior of the format change.
+    """
+    cache_file = tmp_path / "cache.db"
+    cache = SQLiteCache(path=str(cache_file))
+    cache["k"] = (1, 2, "three")
+    assert cache["k"] == [1, 2, "three"]
 
 
 def test_video_metadata_caching(tmp_path):

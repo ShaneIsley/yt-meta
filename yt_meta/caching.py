@@ -1,11 +1,18 @@
+import json
 import logging
-import pickle
 import sqlite3
 import time
 from collections.abc import MutableMapping
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+# Pickle protocol marker byte (PROTO opcode = 0x80, present in pickle
+# protocols 2+, which covers all output from Python's default pickling
+# since 2.x). Used to detect pre-0.5.0 cache files written by the prior
+# pickle-based SQLiteCache and refuse to deserialize them — closing the
+# RCE vector that pickle.loads on a tampered cache file would open.
+_LEGACY_PICKLE_MARKER = b"\x80"
 
 
 class DummyCache(MutableMapping):
@@ -58,12 +65,26 @@ class SQLiteCache(MutableMapping):
         if timestamp < time.time() - self.ttl_seconds:
             self.__delitem__(key)
             raise KeyError(key)
-        return pickle.loads(value)
+        if value[:1] == _LEGACY_PICKLE_MARKER:
+            raise ValueError(
+                f"yt-meta 0.5 changed the on-disk cache format from "
+                f"pickle to json (CVE-class fix). The cache file at "
+                f"{self.path!r} was written by an older version. Delete "
+                f"the file (or its containing directory) to let yt-meta "
+                f"rebuild the cache, or downgrade to yt-meta<0.5 if you "
+                f"need to keep using the existing data."
+            )
+        return json.loads(value.decode("utf-8"))
 
     def __setitem__(self, key, value):
+        # default=str is a graceful fallback for non-JSON-serializable
+        # types (e.g. datetime). All current cache shapes are JSON-safe;
+        # default=str just prevents future caching paths from crashing if
+        # something less-serializable sneaks in.
+        encoded = json.dumps(value, default=str).encode("utf-8")
         self._conn.execute(
             "INSERT OR REPLACE INTO cache (key, value, timestamp) VALUES (?, ?, ?)",
-            (key, pickle.dumps(value), time.time()),
+            (key, encoded, time.time()),
         )
         self._conn.commit()
 
