@@ -1,5 +1,46 @@
 # yt_meta/utils.py
 
+import re
+from urllib.parse import urlparse
+
+# Canonical YouTube video IDs are 11 characters from [A-Za-z0-9_-].
+_VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+# Hostnames the library is willing to issue requests to. Anything else
+# (evil.example.com, attacker.test, IDN-spoofed lookalikes) is rejected
+# at the boundary before the session.get happens.
+_YOUTUBE_HOSTNAMES = frozenset({
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+})
+
+
+def _is_valid_video_id(s: str) -> bool:
+    return isinstance(s, str) and _VIDEO_ID_RE.fullmatch(s) is not None
+
+
+def validate_youtube_url(url: str) -> str:
+    """Raise ValueError unless ``url`` points to a known YouTube hostname.
+
+    Defensive guard at the network boundary against SSRF / open-redirect
+    style abuse when a channel or playlist URL is forwarded from
+    untrusted input. Returns the URL unchanged on success so this can be
+    used inline as ``self.session.get(validate_youtube_url(url))``.
+    """
+    if not isinstance(url, str):
+        raise ValueError(f"Expected str URL, got {type(url).__name__}")
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host not in _YOUTUBE_HOSTNAMES:
+        raise ValueError(
+            f"URL hostname {host!r} is not a known YouTube domain. "
+            f"Expected one of {sorted(_YOUTUBE_HOSTNAMES)}."
+        )
+    return url
+
 
 def _deep_get(dictionary, keys, default=None):
     """
@@ -61,39 +102,37 @@ def parse_vote_count(vote_str: str) -> int:
 
 def extract_video_id(youtube_url: str) -> str:
     """
-    Extract video ID from a YouTube URL.
+    Extract the canonical 11-character video ID from a YouTube URL or
+    bare ID.
 
-    Args:
-        youtube_url: YouTube video URL (can be regular or shorts URL) or just the video ID
+    Accepts ``watch?v=ID``, ``/shorts/ID``, ``youtu.be/ID``, and a bare
+    11-char ID. Every return path validates the extracted ID against
+    ``[A-Za-z0-9_-]{11}``. The previous pass-through fallback that
+    accepted any non-``http`` string (M13) is removed — it allowed
+    "test_id", "../etc/passwd", and similar to flow into cache keys.
 
-    Returns:
-        The video ID
-
-    Raises:
-        ValueError: If the video ID cannot be extracted
+    Raises ValueError if the ID can't be extracted or fails validation.
     """
-    # If it's already just a video ID (11 characters, alphanumeric + _ and -)
-    if (
-        len(youtube_url) == 11
-        and youtube_url.replace("_", "").replace("-", "").isalnum()
-    ):
+    if not isinstance(youtube_url, str) or not youtube_url:
+        raise ValueError(f"Could not extract video ID from: {youtube_url!r}")
+
+    # Bare 11-char ID — fast path.
+    if _is_valid_video_id(youtube_url):
         return youtube_url
 
-    # Handle regular URLs
+    candidate: str | None = None
     if "v=" in youtube_url:
-        return youtube_url.split("v=")[1].split("&")[0]
+        candidate = youtube_url.split("v=")[1].split("&")[0]
+    elif "/shorts/" in youtube_url:
+        candidate = youtube_url.split("/shorts/")[1].split("?")[0]
+    elif "youtu.be/" in youtube_url:
+        candidate = youtube_url.split("youtu.be/")[1].split("?")[0]
 
-    # Handle shorts URLs
-    if "/shorts/" in youtube_url:
-        return youtube_url.split("/shorts/")[1].split("?")[0]
-
-    # Handle youtu.be URLs
-    if "youtu.be/" in youtube_url:
-        return youtube_url.split("youtu.be/")[1].split("?")[0]
-
-    # For testing purposes, allow any string that looks like it could be a video ID
-    # This includes test strings like "test_id", "invalid_id", etc.
-    if youtube_url and not youtube_url.startswith("http"):
-        return youtube_url
-
-    raise ValueError(f"Could not extract video ID from URL: {youtube_url}")
+    if candidate is None:
+        raise ValueError(f"Could not extract video ID from URL: {youtube_url}")
+    if not _is_valid_video_id(candidate):
+        raise ValueError(
+            f"Invalid video ID {candidate!r} extracted from URL: "
+            f"{youtube_url} (expected 11 chars [A-Za-z0-9_-])"
+        )
+    return candidate

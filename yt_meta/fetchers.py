@@ -9,7 +9,7 @@ from . import parsing
 from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
 from .filtering import apply_filters, partition_filters
-from .utils import _deep_get, extract_video_id
+from .utils import _deep_get, extract_video_id, validate_youtube_url
 from .validators import validate_filters
 
 if TYPE_CHECKING:
@@ -174,6 +174,7 @@ class ChannelFetcher(_BaseFetcher):
     def _get_channel_page_data(
         self, channel_url: str, force_refresh: bool = False
     ) -> tuple[dict, dict]:
+        validate_youtube_url(channel_url)
         key = self._get_channel_page_cache_key(channel_url)
         if not force_refresh and key in self.cache:
             self.logger.info(f"Using cached data for channel: {key}")
@@ -209,6 +210,7 @@ class ChannelFetcher(_BaseFetcher):
     def _get_channel_shorts_page_data(
         self, channel_url: str, force_refresh: bool = False
     ) -> tuple[dict, dict]:
+        validate_youtube_url(channel_url)
         key = self._get_channel_shorts_page_cache_key(channel_url)
         if not force_refresh and key in self.cache:
             return self.cache[key]

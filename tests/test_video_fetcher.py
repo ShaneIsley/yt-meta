@@ -57,6 +57,63 @@ def test_regression_m17_get_video_id_emits_deprecation_warning(mocked_video_fetc
         )
 
 
+def test_m13_extract_video_id_rejects_non_11_char_strings():
+    """REGRESSION (M13): extract_video_id had a pass-through fallback
+    that returned ANY non-http string unchanged — meaning "test_id",
+    "../etc/passwd", "1; DROP TABLE", and similar were silently accepted
+    as "video IDs". For a library whose extracted ID can flow into URLs
+    and cache keys, that's a real risk: the cache key becomes
+    `video_meta:../etc/passwd`, and downstream URL construction can
+    embed user-controlled data.
+
+    Tighten to require the canonical 11-character YouTube ID format
+    (alphanumeric + `_` and `-`). Garbage raises ValueError.
+    """
+    from yt_meta.utils import extract_video_id
+
+    for bad in ("test_id", "garbage", "../../etc/passwd", "abc", ""):
+        with pytest.raises(ValueError, match="(Could not extract|Invalid)"):
+            extract_video_id(bad)
+
+
+def test_m13_extract_video_id_accepts_valid_11_char_id():
+    """REGRESSION (M13): the strict check still accepts the canonical
+    11-char form callers pass directly (e.g. from cached metadata).
+    """
+    from yt_meta.utils import extract_video_id
+
+    assert extract_video_id("dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+    assert extract_video_id("jNQXAC9IVRw") == "jNQXAC9IVRw"
+
+
+def test_m13_channel_fetcher_rejects_non_youtube_host():
+    """REGRESSION (M13): ChannelFetcher.session.get used to fetch
+    whatever channel_url the caller passed, with no host check. A
+    `https://evil.example.com/@user/videos` URL would happily be fetched
+    — a tidy SSRF primitive for any code path that takes channel URLs
+    from user input (web forms, GETP params, queue payloads). Now
+    rejected before any network call.
+    """
+    from unittest.mock import MagicMock
+
+    from yt_meta.fetchers import ChannelFetcher, VideoFetcher
+
+    session = MagicMock()
+    session.get.side_effect = AssertionError("network must not be called")
+    fetcher = ChannelFetcher(
+        session=session, cache={}, video_fetcher=MagicMock(spec=VideoFetcher)
+    )
+
+    for bad in (
+        "https://evil.example.com/@user/videos",
+        "http://attacker.test/@user/videos",
+        "https://youtubee.com/@user/videos",
+        "file:///etc/passwd",
+    ):
+        with pytest.raises(ValueError, match="hostname"):
+            fetcher._get_channel_page_data(bad)
+
+
 def test_h6_video_metadata_cache_key_canonical_across_url_forms():
     """REGRESSION (H6): VideoFetcher.get_video_metadata built the cache
     key from `youtube_url.split("v=")[-1]`, so:

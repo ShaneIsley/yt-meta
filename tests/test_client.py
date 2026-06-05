@@ -68,7 +68,7 @@ def test_get_video_metadata_live_stream_unit(client):
     with patch.object(client.session, "get") as mock_get:
         mock_get.return_value.text = get_fixture("live_stream.html")
         mock_get.return_value.status_code = 200
-        result = client.get_video_metadata("LIVE_STREAM_VIDEO_ID")
+        result = client.get_video_metadata("dQw4w9WgXcQ")
         assert result is None, "Should return None for unparseable live stream pages"
 
 

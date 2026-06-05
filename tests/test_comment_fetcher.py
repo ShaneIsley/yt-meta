@@ -56,7 +56,7 @@ def test_m19_get_comments_applies_filters_to_yielded_comments(mocker):
     filters = {"is_by_owner": {"eq": True}}
     result = list(
         fetcher.get_comments(
-            "test_video", sort_by="recent", limit=10, filters=filters
+            "dQw4w9WgXcQ", sort_by="recent", limit=10, filters=filters
         )
     )
 
@@ -87,7 +87,7 @@ class TestBestCommentFetcher:
         ):
             list(
                 self.fetcher.get_comments(
-                    "test_id", sort_by="top", since_date=date(2023, 1, 1)
+                    "dQw4w9WgXcQ", sort_by="top", since_date=date(2023, 1, 1)
                 )
             )
 
@@ -101,7 +101,7 @@ class TestBestCommentFetcher:
         fetcher = BestCommentFetcher()
 
         with pytest.raises(VideoUnavailableError):
-            list(fetcher.get_comments("invalid_id"))
+            list(fetcher.get_comments("dQw4w9WgXcQ"))
 
     def test_comment_data_structure_completeness(self):
         """Test that returned comments have all expected fields with correct types"""
@@ -149,7 +149,7 @@ class TestBestCommentFetcher:
                 mock_response.raise_for_status.return_value = None
                 mock_get.return_value = mock_response
 
-                comments = list(self.fetcher.get_comments("test_id", limit=1))
+                comments = list(self.fetcher.get_comments("dQw4w9WgXcQ", limit=1))
 
                 assert len(comments) > 0
                 comment = comments[0]
@@ -317,7 +317,7 @@ class TestBestCommentFetcher:
 
                 list(
                     self.fetcher.get_comments(
-                        "test_id", limit=3, progress_callback=progress_callback
+                        "dQw4w9WgXcQ", limit=3, progress_callback=progress_callback
                     )
                 )
 
@@ -352,7 +352,7 @@ class TestBestCommentFetcher:
                 mock_response.raise_for_status.return_value = None
                 mock_get.return_value = mock_response
 
-                comments = list(self.fetcher.get_comments("test_id", limit=3))
+                comments = list(self.fetcher.get_comments("dQw4w9WgXcQ", limit=3))
 
                 assert len(comments) == 3
 
@@ -386,7 +386,7 @@ class TestBestCommentFetcher:
 
                 comments = list(
                     self.fetcher.get_comments(
-                        "test_id", sort_by="recent", since_date=cutoff_date
+                        "dQw4w9WgXcQ", sort_by="recent", since_date=cutoff_date
                     )
                 )
 
