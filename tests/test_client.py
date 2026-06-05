@@ -57,7 +57,7 @@ def test_get_channel_metadata_unit(
     """
     mocker.patch(
         "yt_meta.fetchers.ChannelFetcher._get_channel_page_data",
-        return_value=(bulwark_channel_initial_data, bulwark_channel_ytcfg, None),
+        return_value=(bulwark_channel_initial_data, bulwark_channel_ytcfg),
     )
     metadata = client.get_channel_metadata("https://any-url.com")
     assert metadata is not None
@@ -83,7 +83,7 @@ def test_get_channel_page_data_fails_on_request_error_unit(client, mocker):
 
 @patch(
     "yt_meta.fetchers.ChannelFetcher._get_channel_page_data",
-    return_value=(None, None, "bad data"),
+    return_value=(None, None),
 )
 def test_get_channel_videos_raises_for_bad_initial_data_unit(
     mock_get_page_data, client
@@ -102,7 +102,6 @@ def test_get_channel_videos_handles_continuation_errors_unit(
         return_value=(
             youtube_channel_initial_data,
             youtube_channel_ytcfg,
-            "<html></html>",
         ),
     )
     mocker.patch(
@@ -151,7 +150,6 @@ def test_get_channel_videos_paginates_correctly_unit(client):
                 }
             },
             {"INNERTUBE_API_KEY": "test_key"},
-            "<html></html>",
         )
         continuation_renderers = [
             {"richItemRenderer": {"content": {"videoRenderer": {"videoId": "video2"}}}}

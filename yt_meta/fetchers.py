@@ -173,7 +173,7 @@ class ChannelFetcher(_BaseFetcher):
 
     def _get_channel_page_data(
         self, channel_url: str, force_refresh: bool = False
-    ) -> tuple[dict, dict, str]:
+    ) -> tuple[dict, dict]:
         key = self._get_channel_page_cache_key(channel_url)
         if not force_refresh and key in self.cache:
             self.logger.info(f"Using cached data for channel: {key}")
@@ -199,13 +199,16 @@ class ChannelFetcher(_BaseFetcher):
                 "Could not extract ytcfg from channel page.", channel_url=key
             )
         self.logger.info(f"Caching data for channel: {key}")
-        result = (initial_data, ytcfg, html)
+        # html is intentionally not cached — it was unused by all three
+        # callers below (each unpacked with ``_`` on the third slot) and
+        # bloated each cache entry by ~200 KB. See M11.
+        result = (initial_data, ytcfg)
         self.cache[key] = result
         return result
 
     def _get_channel_shorts_page_data(
         self, channel_url: str, force_refresh: bool = False
-    ) -> tuple[dict, dict, str]:
+    ) -> tuple[dict, dict]:
         key = self._get_channel_shorts_page_cache_key(channel_url)
         if not force_refresh and key in self.cache:
             return self.cache[key]
@@ -230,14 +233,14 @@ class ChannelFetcher(_BaseFetcher):
             raise MetadataParsingError(
                 "Could not extract ytcfg from channel shorts page.", channel_url=key
             )
-        result = (initial_data, ytcfg, html)
+        result = (initial_data, ytcfg)
         self.cache[key] = result
         return result
 
     def get_channel_metadata(
         self, channel_url: str, force_refresh: bool = False
     ) -> dict:
-        initial_data, _, _ = self._get_channel_page_data(
+        initial_data, _ = self._get_channel_page_data(
             channel_url, force_refresh=force_refresh
         )
         return parsing.parse_channel_metadata(initial_data)
@@ -285,7 +288,7 @@ class ChannelFetcher(_BaseFetcher):
         self, channel_url, force_refresh, final_start_date
     ):
         try:
-            initial_data, ytcfg, _ = self._get_channel_page_data(
+            initial_data, ytcfg = self._get_channel_page_data(
                 channel_url, force_refresh=force_refresh
             )
         except VideoUnavailableError as e:
@@ -333,7 +336,7 @@ class ChannelFetcher(_BaseFetcher):
 
     def _get_raw_shorts_generator(self, channel_url, force_refresh):
         try:
-            initial_data, ytcfg, _ = self._get_channel_shorts_page_data(
+            initial_data, ytcfg = self._get_channel_shorts_page_data(
                 channel_url, force_refresh=force_refresh
             )
         except VideoUnavailableError as e:

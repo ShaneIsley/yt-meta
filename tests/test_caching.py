@@ -160,6 +160,59 @@ def test_h8_journal_mode_is_wal(tmp_path):
     assert mode.lower() == "wal", f"expected WAL, got {mode!r}"
 
 
+def test_m11_channel_page_cache_does_not_store_raw_html(tmp_path):
+    """REGRESSION (M11): ChannelFetcher._get_channel_page_data previously
+    cached (initial_data, ytcfg, html). All three call sites (240, 288,
+    336) unpacked with ``_`` on the third slot — the html was unused but
+    still serialized to disk on every page, bloating the cache ~3x. Drop
+    it: cache (initial_data, ytcfg) only.
+    """
+    from unittest.mock import MagicMock
+
+    from yt_meta.fetchers import ChannelFetcher, VideoFetcher
+
+    cache_file = tmp_path / "cache.db"
+    cache = SQLiteCache(path=str(cache_file))
+
+    # Build a minimal valid channel page response
+    big_html = "<html>" + "X" * 200_000 + "</html>"  # ~200 KB
+    ytcfg_json = (
+        '<script>ytcfg.set({"INNERTUBE_API_KEY":"k","INNERTUBE_CONTEXT":{}});</script>'
+    )
+    initial_data_json = (
+        '<script>var ytInitialData = '
+        '{"contents":{"twoColumnBrowseResultsRenderer":'
+        '{"tabs":[{"tabRenderer":{"selected":true,"title":"T"}}]}}};</script>'
+    )
+    html = big_html + initial_data_json + ytcfg_json
+
+    session = MagicMock()
+    session.get.return_value.text = html
+    session.get.return_value.raise_for_status = MagicMock()
+
+    fetcher = ChannelFetcher(
+        session=session, cache=cache, video_fetcher=MagicMock(spec=VideoFetcher)
+    )
+    fetcher._get_channel_page_data("https://www.youtube.com/@test/videos")
+
+    # Inspect what was stored under the cache key
+    key = fetcher._get_channel_page_cache_key("https://www.youtube.com/@test/videos")
+    stored = cache[key]
+
+    assert len(stored) == 2, (
+        f"channel-page cache should store (initial_data, ytcfg) only — got "
+        f"a {len(stored)}-tuple, likely still including raw HTML"
+    )
+    # Defense in depth: the 200KB HTML body must not appear anywhere in
+    # the serialized blob.
+    import sqlite3 as _sqlite3
+
+    raw = _sqlite3.connect(str(cache_file)).execute(
+        "SELECT value FROM cache WHERE key=?", (key,)
+    ).fetchone()[0]
+    assert b"X" * 1000 not in raw, "raw HTML blob is still in the cache value"
+
+
 def test_video_metadata_caching(tmp_path):
     """Verify that video metadata is cached and retrieved."""
     cache_file = tmp_path / "cache.db"
