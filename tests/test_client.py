@@ -435,3 +435,35 @@ def test_m19_get_video_comments_with_reply_tokens_also_guards(client):
     """
     with pytest.raises(ValueError, match="since_date"):
         list(client.get_video_comments_with_reply_tokens("dQw4w9WgXcQ", limit=-1))
+
+
+def test_h13_ytmeta_accepts_cache_kwarg_with_mutablemapping():
+    """H13: README (README.md:281, :439) documents
+    `YtMeta(cache=persistent_cache)` accepting any MutableMapping, but the
+    real constructor only took `cache_path: str`. Copy-pasting the README
+    example raised TypeError. The widened constructor accepts both
+    `cache_path` and `cache=`; precedence is `cache` over `cache_path` over
+    DummyCache.
+    """
+    my_cache: dict = {}
+    c = YtMeta(cache=my_cache)
+    assert c.cache is my_cache
+
+
+def test_h13_ytmeta_constructor_still_accepts_cache_path(tmp_path):
+    """H13: backward compatibility — existing `YtMeta(cache_path='...')`
+    callers continue to work unchanged.
+    """
+    from yt_meta.caching import SQLiteCache
+
+    cache_file = tmp_path / "cache.db"
+    c = YtMeta(cache_path=str(cache_file))
+    assert isinstance(c.cache, SQLiteCache)
+
+
+def test_h13_ytmeta_with_no_cache_args_uses_dummycache():
+    """H13: with neither kwarg, caching stays disabled (DummyCache)."""
+    from yt_meta.caching import DummyCache
+
+    c = YtMeta()
+    assert isinstance(c.cache, DummyCache)
