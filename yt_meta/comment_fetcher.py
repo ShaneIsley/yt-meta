@@ -10,7 +10,9 @@ from typing import Any
 from .comment_api_client import CommentAPIClient
 from .comment_parser import CommentParser
 from .exceptions import VideoUnavailableError
+from .filtering import apply_comment_filters
 from .utils import extract_video_id
+from .validators import validate_filters
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +43,7 @@ class CommentFetcher:
         since_date: date | None = None,
         progress_callback: Callable[[int], None] | None = None,
         include_reply_continuation: bool = False,
+        filters: dict | None = None,
     ) -> Iterator[dict[str, Any]]:
         """
         Get comments from a YouTube video with comprehensive data extraction.
@@ -49,16 +52,17 @@ class CommentFetcher:
             video_id: YouTube video ID or URL
             limit: Maximum number of comments to fetch
             sort_by: Sort order ("recent" — default, chronological; or "top" — YouTube's editorial ranking)
-            since_date: Only fetch comments after this date (requires sort_by="recent")
+            since_date: Only fetch comments after this date (requires sort_by="recent"). The only filter that short-circuits pagination.
             progress_callback: Callback function called with comment count
             include_reply_continuation: Include reply continuation tokens for comments with replies
+            filters: Optional dict of comment-level predicates applied after fetch. Operates on the in-memory comment list — does not reduce request count. See COMMENT_FILTER_KEYS in filtering.py for supported fields.
 
         Yields:
             Dict containing complete comment data, optionally including 'reply_continuation_token'
         """
-        # Validate parameters
         if since_date and sort_by != "recent":
             raise ValueError("`since_date` can only be used with `sort_by='recent'`")
+        validate_filters(filters)
 
         video_id = extract_video_id(video_id)
         logger.info(f"Fetching comments for video: {video_id}")
@@ -121,6 +125,10 @@ class CommentFetcher:
                         if since_date and comment.get("publish_date"):
                             if comment["publish_date"] < since_date:
                                 continue
+
+                        # Apply user-supplied predicate filters
+                        if filters and not apply_comment_filters(comment, filters):
+                            continue
 
                         seen_ids.add(comment["id"])
                         comment_count += 1

@@ -19,6 +19,50 @@ def test_h14_default_sort_for_comment_fetcher_get_comments_is_recent():
     assert sig.parameters["sort_by"].default == "recent"
 
 
+def test_m19_get_comments_applies_filters_to_yielded_comments(mocker):
+    """M19: CommentFetcher.get_comments accepts a `filters` dict and applies
+    apply_comment_filters to each comment before yielding. Filters operate
+    on the in-memory comment list (most comment filters cannot short-circuit
+    pagination — that's only possible for since_date with sort_by='recent').
+    """
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client, "get_initial_video_data", return_value=({}, {})
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "get_sort_endpoints_flexible",
+        return_value={"recent": "endpoint"},
+    )
+    mocker.patch.object(
+        fetcher.api_client, "select_sort_endpoint", return_value="cont_token"
+    )
+    mocker.patch.object(
+        fetcher.api_client, "make_api_request", return_value={"some": "response"}
+    )
+    mocker.patch.object(
+        fetcher.api_client, "extract_continuation_token", return_value=None
+    )
+
+    fake_comments = [
+        {"id": "c1", "is_by_owner": True, "text": "creator reply"},
+        {"id": "c2", "is_by_owner": False, "text": "regular comment"},
+        {"id": "c3", "is_by_owner": True, "text": "another creator reply"},
+    ]
+    mocker.patch.object(
+        fetcher.parser, "extract_complete_comments", return_value=fake_comments
+    )
+
+    filters = {"is_by_owner": {"eq": True}}
+    result = list(
+        fetcher.get_comments(
+            "test_video", sort_by="recent", limit=10, filters=filters
+        )
+    )
+
+    assert [c["id"] for c in result] == ["c1", "c3"]
+
+
 class TestBestCommentFetcher:
     """
     TDD tests for BestCommentFetcher

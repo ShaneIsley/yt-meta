@@ -231,27 +231,36 @@ class YtMeta:
     def get_video_comments(
         self,
         youtube_url: str,
-        limit: int = 100,
+        limit: int | None = 100,
         sort_by: str = "recent",
         progress_callback: Callable[[int], None] | None = None,
         since_date: date | str | None = None,
+        filters: dict | None = None,
     ):
         """
         Get comments for a specific YouTube video.
 
         Args:
             youtube_url (str): The full URL of the YouTube video.
-            limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
+            limit (int | None, optional): The maximum number of comments to fetch. Defaults to 100. Pass None or -1 for unbounded — but you must also pass `since_date` (safety guard against runaway pagination on popular videos).
             sort_by (str, optional): The order to sort comments by. Can be 'recent' (default — chronological, required for `since_date` short-circuit) or 'top' (YouTube's editorial ranking).
             progress_callback (Callable[[int], None], optional): A function to be called
                 with the number of comments fetched so far. Defaults to None.
             since_date (date | str | None, optional): The date from which to fetch comments.
-                Can be a date object, a string in the format "YYYY-MM-DD", or None for no filter.
+                Can be a date object, a string in the format "YYYY-MM-DD", or None for no filter. The only filter that short-circuits pagination.
+            filters (dict | None, optional): Comment-level predicates applied after fetch. Supported keys: text, author, like_count, reply_count, publish_date, is_reply, is_hearted_by_owner, is_by_owner, channel_id. These do NOT reduce request count — they operate on the in-memory comment list. Use `since_date` for request reduction.
 
         Yields:
             dict: A dictionary representing a single comment.
         """
         resolved_date = self._resolve_date(since_date)
+        if (limit is None or limit < 0) and resolved_date is None:
+            raise ValueError(
+                "Unbounded comment fetching (limit=None or limit<0) requires "
+                "since_date to be set, to cap the request count. Pass a "
+                "since_date (works with the default sort_by='recent') or use "
+                "a finite limit."
+            )
         video_id = extract_video_id(youtube_url)
         comments_generator = self._comment_fetcher.get_comments(
             video_id,
@@ -259,6 +268,7 @@ class YtMeta:
             sort_by=sort_by,
             progress_callback=progress_callback,
             since_date=resolved_date,
+            filters=filters,
         )
 
         yield from comments_generator
@@ -266,31 +276,43 @@ class YtMeta:
     def get_video_comments_with_reply_tokens(
         self,
         youtube_url: str,
-        limit: int = 100,
+        limit: int | None = 100,
         sort_by: str = "recent",
         progress_callback: Callable[[int], None] | None = None,
+        since_date: date | str | None = None,
+        filters: dict | None = None,
     ):
         """
         Get comments for a specific YouTube video, including reply continuation tokens.
 
         Args:
             youtube_url (str): The full URL of the YouTube video.
-            limit (int, optional): The maximum number of comments to fetch. Defaults to 100.
+            limit (int | None, optional): The maximum number of comments to fetch. Defaults to 100. Pass None or -1 for unbounded — but you must also pass `since_date`.
             sort_by (str, optional): The order to sort comments by. Can be 'recent' (default — chronological) or 'top' (YouTube's editorial ranking).
             progress_callback (Callable[[int], None], optional): A function to be called
                 with the number of comments fetched so far. Defaults to None.
+            since_date (date | str | None, optional): The date from which to fetch comments. Same semantics as get_video_comments.
+            filters (dict | None, optional): Same semantics as get_video_comments.
 
         Yields:
             dict: A dictionary representing a single comment, including 'reply_continuation_token'
                   field for comments that have replies.
         """
+        resolved_date = self._resolve_date(since_date)
+        if (limit is None or limit < 0) and resolved_date is None:
+            raise ValueError(
+                "Unbounded comment fetching (limit=None or limit<0) requires "
+                "since_date to be set, to cap the request count."
+            )
         video_id = extract_video_id(youtube_url)
         comments_generator = self._comment_fetcher.get_comments(
             video_id,
             limit=limit,
             sort_by=sort_by,
             progress_callback=progress_callback,
+            since_date=resolved_date,
             include_reply_continuation=True,
+            filters=filters,
         )
 
         yield from comments_generator

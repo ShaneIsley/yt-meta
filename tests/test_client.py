@@ -365,3 +365,73 @@ def test_h14_default_sort_for_get_video_comments_with_reply_tokens_is_recent(
     list(client.get_video_comments_with_reply_tokens("dQw4w9WgXcQ", limit=0))
 
     assert seen_kwargs["sort_by"] == "recent"
+
+
+def test_m19_filters_kwarg_threaded_to_comment_fetcher(client, mocker):
+    """M19: client.get_video_comments accepts a `filters` dict and forwards
+    it to CommentFetcher.get_comments. Operates on the in-memory comment list
+    after fetching (most comment filters cannot short-circuit pagination).
+    """
+    seen_kwargs = {}
+
+    def fake_get_comments(video_id, **kwargs):
+        seen_kwargs.update(kwargs)
+        return iter([])
+
+    mocker.patch.object(
+        client._comment_fetcher, "get_comments", side_effect=fake_get_comments
+    )
+
+    filters = {"is_by_owner": {"eq": True}}
+    list(client.get_video_comments("dQw4w9WgXcQ", limit=10, filters=filters))
+
+    assert seen_kwargs["filters"] == filters
+
+
+def test_m19_invalid_filter_field_raises_valueerror(client):
+    """M19: validate_filters runs before any network request. An unknown
+    filter field fails fast — matches README:297 ('validates filters before
+    making any network requests').
+    """
+    with pytest.raises(ValueError, match="Unknown filter field"):
+        list(
+            client.get_video_comments(
+                "dQw4w9WgXcQ", limit=10, filters={"nonexistent_field": {"eq": True}}
+            )
+        )
+
+
+def test_m19_unbounded_limit_without_since_date_raises_valueerror(client):
+    """M19 safety guard: unbounded fetching (limit=None or limit=-1) without
+    a `since_date` time-bound can produce millions of requests on popular
+    videos. Force the caller to opt in to a bound. Aligns with the project's
+    'minimal requests' value.
+    """
+    with pytest.raises(ValueError, match="since_date"):
+        list(client.get_video_comments("dQw4w9WgXcQ", limit=None))
+    with pytest.raises(ValueError, match="since_date"):
+        list(client.get_video_comments("dQw4w9WgXcQ", limit=-1))
+
+
+def test_m19_unbounded_limit_with_since_date_is_allowed(client, mocker):
+    """M19 safety guard: unbounded fetching IS allowed when `since_date` is
+    set, because the short-circuit on the sort_by='recent' default caps the
+    total request count.
+    """
+    mocker.patch.object(
+        client._comment_fetcher, "get_comments", return_value=iter([])
+    )
+    list(
+        client.get_video_comments(
+            "dQw4w9WgXcQ", limit=None, since_date="2025-01-01"
+        )
+    )
+
+
+def test_m19_get_video_comments_with_reply_tokens_also_guards(client):
+    """M19 safety guard applies symmetrically to the reply-tokens variant.
+    A `since_date` kwarg is also added to this method so the guard has an
+    escape hatch.
+    """
+    with pytest.raises(ValueError, match="since_date"):
+        list(client.get_video_comments_with_reply_tokens("dQw4w9WgXcQ", limit=-1))
