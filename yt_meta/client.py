@@ -28,6 +28,7 @@ class YtMeta:
         cache_path: str | None = None,
         cache: MutableMapping | None = None,
         cache_ttl_seconds: int = 86400,
+        accept_cookies: bool = False,
     ):
         """
         Initializes the yt-meta client.
@@ -43,8 +44,27 @@ class YtMeta:
                    SQLiteCache (used when ``cache_path`` is given). Default
                    is 86400 (1 day). Ignored when ``cache`` is supplied —
                    inject a cache with the TTL semantics you want.
+            accept_cookies: Opt in to bypassing YouTube's EU cookie-consent
+                   wall. When ``True``, a ``SOCS`` consent cookie is set on
+                   the session so YouTube serves content directly instead of
+                   a 302 redirect to consent.youtube.com. Default ``False``
+                   — no consent cookie is set, behavior is unchanged. Set
+                   this to ``True`` if you see a ``302`` redirect to
+                   ``consent.youtube.com`` (region-gated, e.g. the EU). This
+                   is a conscious choice to accept YouTube's cookies on your
+                   behalf, hence the explicit opt-in.
         """
         self.session = Client(headers={"Accept-Language": "en-US,en;q=0.5"})
+        if accept_cookies:
+            # YouTube's documented consent-bypass cookie. Set on the single
+            # shared session, so it covers every fetcher (video / channel /
+            # playlist / comment) — M1/L2 unified them onto this session.
+            self.session.cookies.set(
+                "SOCS",
+                "CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg",
+                domain=".youtube.com",
+            )
+            logger.info("accept_cookies=True: set SOCS consent cookie on session.")
         if cache is not None:
             self.cache = cache
             logger.info(f"Using injected cache: {type(cache).__name__}")

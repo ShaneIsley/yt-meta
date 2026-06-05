@@ -442,12 +442,14 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 
 ## API Reference
 
-### `YtMeta(cache_path: str | None = None, cache: MutableMapping | None = None)`
+### `YtMeta(cache_path=None, cache=None, cache_ttl_seconds=86400, accept_cookies=False)`
 
 The main client for interacting with the library. Handles session management and delegates work to specialized fetcher classes.
 
 -   **`cache_path`**: Optional path to a SQLite file for persistent on-disk caching. The library opens and manages the file.
 -   **`cache`**: Optional pre-built `MutableMapping` (e.g. a plain `dict` for in-memory caching, or a `diskcache.Cache` / `sqlitedict` instance for persistent). Takes precedence over `cache_path`. If both are `None`, caching is disabled.
+-   **`cache_ttl_seconds`**: TTL (seconds) for entries in the built-in SQLite cache. Default `86400` (1 day). Ignored when you inject your own `cache`.
+-   **`accept_cookies`**: Opt in to bypassing YouTube's EU cookie-consent wall. Default `False` (no consent cookie is set). If a call fails with a `302` redirect to `consent.youtube.com` (region-gated, e.g. the EU), construct the client with `YtMeta(accept_cookies=True)` — a `SOCS` consent cookie is then set on the session so YouTube serves content directly. This is an explicit, conscious choice to accept YouTube's cookies on your behalf, which is why it's opt-in rather than automatic.
 
 #### `get_video_metadata(youtube_url: str) -> dict`
 Fetches metadata for a single YouTube video.

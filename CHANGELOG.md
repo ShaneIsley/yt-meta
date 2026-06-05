@@ -6,6 +6,28 @@ All notable changes to this project are documented in this file.
 
 - (Add new changes here)
 
+## [0.6.2] - 2026-06-05
+
+### Added
+- **``YtMeta(accept_cookies=True)`` — opt-in EU cookie-consent bypass.**
+  In some regions (e.g. the EU) YouTube responds to channel/video
+  requests with a ``302`` redirect to ``consent.youtube.com`` before
+  serving any content, which surfaced as an ``HTTPStatusError`` (issue
+  #1, reported by @iAmInActions). Passing ``accept_cookies=True`` sets
+  YouTube's ``SOCS`` consent cookie on the shared session so content is
+  served directly. Default is ``False`` — no cookie is set and behavior
+  is unchanged — because setting a consent cookie on the user's behalf
+  should be a conscious, explicit choice, not a silent side effect.
+  Because the comment overhaul (M1/L2 in 0.6.0) unified all fetchers
+  onto one session, the single opt-in covers video, channel, playlist,
+  and comment fetches alike. Supersedes the narrower per-fetcher
+  approach proposed in PR #2.
+
+  Note: this could not be verified against the live consent wall from
+  the development environment (not region-gated); the cookie is
+  confirmed set and harmless on the normal path, but EU confirmation
+  relies on affected users.
+
 ## [0.6.1] - 2026-06-05
 
 A critical fast-follow fix for ``get_channel_videos``, which was

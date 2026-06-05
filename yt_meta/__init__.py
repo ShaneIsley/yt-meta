@@ -5,7 +5,7 @@ from .comment_fetcher import CommentFetcher
 from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError, YtMetaError
 
-__version__ = "0.6.1"
+__version__ = "0.6.2"
 
 __all__ = [
     "YtMeta",

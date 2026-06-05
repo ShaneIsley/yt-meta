@@ -490,6 +490,29 @@ def test_m10_default_cache_ttl_is_one_day(tmp_path):
     assert c.cache.ttl_seconds == 86400
 
 
+def test_consent_cookie_not_set_by_default():
+    """The EU consent cookie is an explicit opt-in. By default YtMeta
+    sets NO consent cookie — behavior is unchanged for everyone who
+    doesn't ask for it (issue #1 is region-specific; most users never
+    hit the consent wall).
+    """
+    with YtMeta() as c:
+        assert "SOCS" not in c.session.cookies
+
+
+def test_accept_cookies_true_sets_consent_cookie_on_shared_session():
+    """Opting in with accept_cookies=True sets YouTube's SOCS consent
+    cookie on the shared session, bypassing the EU
+    consent.youtube.com 302 redirect (issue #1). Because M1/L2 unified
+    every fetcher onto one session, setting it once here covers video,
+    channel, playlist, and comment fetches alike.
+    """
+    with YtMeta(accept_cookies=True) as c:
+        assert c.session.cookies.get("SOCS", domain=".youtube.com")
+        # The comment subsystem shares the same session, so it's covered too.
+        assert c._comment_fetcher.api_client.client is c.session
+
+
 def test_h5_ytmeta_is_a_context_manager_closing_session():
     """H5: YtMeta owns an httpx.Client (and historically a CommentAPIClient
     httpx.Client and a SQLite connection). None of them were reliably
