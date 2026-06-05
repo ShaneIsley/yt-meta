@@ -1,5 +1,4 @@
 import logging
-import warnings
 from collections.abc import MutableMapping
 from typing import TYPE_CHECKING
 
@@ -137,15 +136,6 @@ class VideoFetcher:
         result = parsing.parse_video_metadata(player_response_data, initial_data)
         self.cache[cache_key] = result
         return result
-
-    def get_video_id(self, youtube_url: str) -> str:
-        warnings.warn(
-            "VideoFetcher.get_video_id is deprecated and will be removed in "
-            "v0.6.0; use yt_meta.utils.extract_video_id directly.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return extract_video_id(youtube_url)
 
 
 class ChannelFetcher(_BaseFetcher):
