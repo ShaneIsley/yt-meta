@@ -19,6 +19,145 @@ def test_h14_default_sort_for_comment_fetcher_get_comments_is_recent():
     assert sig.parameters["sort_by"].default == "recent"
 
 
+def test_m1_l2_comment_api_client_uses_injected_session():
+    """REGRESSION (M1/L2): CommentAPIClient used to build its own
+    httpx.Client with its own (different) headers and follow_redirects
+    setting. YtMeta then ended up owning TWO clients side by side and
+    needed to close both via the lifecycle work (H5). M1/L2 closes the
+    loop: CommentAPIClient now accepts an injected session and uses it
+    instead of constructing its own. YtMeta passes its main session in,
+    so there's one client end-to-end.
+    """
+    import httpx
+
+    from yt_meta.comment_api_client import CommentAPIClient
+
+    injected = httpx.Client()
+    try:
+        client = CommentAPIClient(session=injected)
+        assert client.client is injected
+    finally:
+        injected.close()
+
+
+def test_m1_l2_comment_api_client_does_not_close_injected_session():
+    """REGRESSION (M1/L2): with an injected session, close() must NOT
+    close it — the injector owns the lifecycle. Closing it would tear
+    down the main YtMeta session out from under the other fetchers.
+    Self-owned sessions (no injection) ARE closed.
+    """
+    import httpx
+
+    from yt_meta.comment_api_client import CommentAPIClient
+
+    injected = httpx.Client()
+    try:
+        client = CommentAPIClient(session=injected)
+        client.close()
+        assert not injected.is_closed, (
+            "close() must not tear down an injected session — that's the "
+            "injector's responsibility"
+        )
+
+        # Self-owned session: close() should close it.
+        own = CommentAPIClient()
+        owned_client = own.client
+        own.close()
+        assert owned_client.is_closed
+    finally:
+        injected.close()
+
+
+def test_m1_l2_comment_api_client_uses_injected_cache():
+    """REGRESSION (M1/L2): CommentAPIClient bypassed YtMeta's cache
+    entirely — fetching the watch page for comments duplicated the
+    fetch VideoFetcher had already done for metadata. Now both share
+    the same cache and the same key prefix (``video_initial:{video_id}``).
+    A mixed metadata+comments workflow halves its watch-page fetches.
+    """
+    from yt_meta.comment_api_client import CommentAPIClient
+
+    cache: dict = {}
+    client = CommentAPIClient(cache=cache)
+    try:
+        assert client.cache is cache
+    finally:
+        client.close()
+
+
+def test_m1_l2_get_initial_video_data_caches_under_shared_key(mocker):
+    """REGRESSION (M1/L2): get_initial_video_data writes its parse
+    result under ``video_initial:{video_id}`` — same key VideoFetcher
+    can read (or write). First call fetches, second call hits cache.
+    """
+    from yt_meta.comment_api_client import CommentAPIClient
+
+    cache: dict = {}
+    client = CommentAPIClient(cache=cache)
+    try:
+        mock_response = mocker.MagicMock()
+        mock_response.text = (
+            '<script>ytcfg.set({"INNERTUBE_API_KEY":"k","INNERTUBE_CONTEXT":{}});</script>'
+            '<script>var ytInitialData = {"hello":"world"};</script>'
+        )
+        mock_response.raise_for_status = mocker.MagicMock()
+        get_mock = mocker.patch.object(
+            client.client, "get", return_value=mock_response
+        )
+
+        # First call fetches and populates cache under the shared key
+        initial_data, ytcfg = client.get_initial_video_data("dQw4w9WgXcQ")
+        assert initial_data == {"hello": "world"}
+        assert ytcfg["INNERTUBE_API_KEY"] == "k"
+        assert get_mock.call_count == 1
+        assert "video_initial:dQw4w9WgXcQ" in cache
+
+        # Second call: cache hit, no HTTP call
+        initial_data2, ytcfg2 = client.get_initial_video_data("dQw4w9WgXcQ")
+        assert initial_data2 == initial_data
+        assert ytcfg2 == ytcfg
+        assert get_mock.call_count == 1, "second call should hit cache, not network"
+    finally:
+        client.close()
+
+
+def test_m1_l2_ytmeta_shares_session_and_cache_with_comment_fetcher(tmp_path):
+    """REGRESSION (M1/L2): the integration point. YtMeta now passes
+    self.session and self.cache into the CommentFetcher constructor so
+    there's a single session and a single cache across the whole
+    Facade. Validates the wiring end-to-end.
+    """
+    from yt_meta import YtMeta
+
+    with YtMeta(cache_path=str(tmp_path / "cache.db")) as client:
+        assert client._comment_fetcher.api_client.client is client.session
+        assert client._comment_fetcher.api_client.cache is client.cache
+
+
+def test_m23_comment_fetcher_does_not_swallow_unexpected_exceptions(mocker):
+    """REGRESSION (M23): comment_fetcher.py's outer
+    ``except Exception as e: ... raise VideoUnavailableError(...)`` would
+    convert ANY error inside the comment loop — KeyError, TypeError
+    from a code change in extract_complete_comments, even a programmer
+    bug — into "video unavailable", misleading users about the actual
+    cause. Tighten to httpx-level errors and let the rest surface.
+
+    M1/L2 lands the same fix because the broad except sat on the path
+    that's being restructured for cache integration.
+    """
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client,
+        "get_initial_video_data",
+        side_effect=KeyError("programmer bug — not a network/availability issue"),
+    )
+
+    # KeyError must surface as KeyError, not get wrapped as
+    # VideoUnavailableError.
+    with pytest.raises(KeyError):
+        list(fetcher.get_comments("dQw4w9WgXcQ"))
+
+
 def test_h3_extract_continuation_token_returns_next_page_not_reply_token():
     """REGRESSION (H3): extract_continuation_token did a free-form DFS
     over the whole API response, returning the first
@@ -287,10 +426,18 @@ class TestBestCommentFetcher:
 
     @patch("yt_meta.comment_api_client.httpx.Client")
     def test_get_comments_handles_video_unavailable(self, mock_client_class):
-        """Test proper error handling for unavailable videos"""
+        """Test proper error handling for unavailable videos.
+
+        M23 narrowed the outer ``except`` from ``Exception`` to httpx
+        errors only, so this test must raise an httpx-level error to
+        be wrapped as VideoUnavailableError. A plain Exception now
+        surfaces unwrapped (as it should — that's the M23 fix).
+        """
+        import httpx
+
         mock_client = Mock()
         mock_client_class.return_value = mock_client
-        mock_client.get.side_effect = Exception("404 Not Found")
+        mock_client.get.side_effect = httpx.HTTPError("404 Not Found")
 
         fetcher = BestCommentFetcher()
 

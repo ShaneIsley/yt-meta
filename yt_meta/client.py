@@ -64,7 +64,13 @@ class YtMeta:
         self._playlist_fetcher = PlaylistFetcher(
             session=self.session, cache=self.cache, video_fetcher=self._video_fetcher
         )
-        self._comment_fetcher = CommentFetcher()
+        # M1/L2: inject the main session and cache so the comment
+        # subsystem shares resources with the rest of the Facade
+        # instead of constructing its own httpx.Client and bypassing
+        # the cache.
+        self._comment_fetcher = CommentFetcher(
+            session=self.session, cache=self.cache
+        )
         self._transcript_fetcher = TranscriptFetcher()
 
     @property
@@ -73,18 +79,18 @@ class YtMeta:
 
     def close(self) -> None:
         """Release all resources owned by this client — the main
-        httpx.Client, the comment subsystem's separate httpx.Client, and
-        the SQLite cache connection (when ``cache_path`` was given).
+        httpx.Client and the SQLite cache connection (when
+        ``cache_path`` was given).
 
         Idempotent. Safe to call multiple times. Prefer the context
         manager pattern (``with YtMeta() as client:``) which calls this
         automatically on exit; explicit ``close()`` works for code that
         doesn't structure around context managers.
 
-        Until M1/L2 unifies the comment subsystem under the main
-        session, ``CommentFetcher`` owns its own httpx.Client and must
-        be tracked separately. After unification this method will only
-        need to close one client.
+        Since M1/L2 the comment subsystem shares this client's session
+        and cache, so there's nothing extra to close on that side. The
+        comment_fetcher.close() call is kept as a no-op safety net
+        (the CommentAPIClient knows not to close an injected session).
         """
         if hasattr(self, "session"):
             self.session.close()

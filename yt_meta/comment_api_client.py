@@ -5,9 +5,11 @@ Comment API client for handling HTTP operations and YouTube API interaction.
 import json
 import logging
 import re
+from collections.abc import MutableMapping
 
 import httpx
 
+from .caching import DummyCache
 from .exceptions import VideoUnavailableError
 from .utils import _deep_get
 
@@ -21,9 +23,34 @@ class CommentAPIClient:
     """
 
     def __init__(
-        self, timeout: int = 30, retries: int = 3, user_agent: str | None = None
+        self,
+        timeout: int = 30,
+        retries: int = 3,
+        user_agent: str | None = None,
+        session: httpx.Client | None = None,
+        cache: MutableMapping | None = None,
     ):
-        """Initialize the API client with HTTP client configuration."""
+        """Initialize the API client.
+
+        Args:
+            timeout: HTTP timeout for self-owned sessions. Ignored when
+                ``session`` is injected.
+            retries: Reserved for future retry-wrapper work (H9).
+            user_agent: User-Agent for self-owned sessions. Ignored when
+                ``session`` is injected.
+            session: An ``httpx.Client`` to use instead of constructing
+                a new one. YtMeta injects its main session here under
+                M1/L2 so the whole library shares one client and the
+                whole watch-page cache stays consistent. When injected,
+                this object does NOT own the session (close() leaves it
+                alone — lifecycle stays with the injector).
+            cache: A ``MutableMapping`` for caching watch-page parse
+                results under the shared ``video_initial:{video_id}``
+                key. YtMeta injects its main cache here so comment
+                fetches reuse any prior watch-page fetch done by
+                VideoFetcher (and vice versa, eventually). Defaults to
+                a no-op ``DummyCache``.
+        """
         self.timeout = timeout
         self.retries = retries
         self.user_agent = user_agent or (
@@ -31,18 +58,26 @@ class CommentAPIClient:
             "(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
 
-        self.client = httpx.Client(
-            timeout=timeout,
-            headers={"User-Agent": self.user_agent},
-            follow_redirects=True,
-        )
+        if session is not None:
+            self.client = session
+            self._owns_client = False
+        else:
+            self.client = httpx.Client(
+                timeout=timeout,
+                headers={"User-Agent": self.user_agent},
+                follow_redirects=True,
+            )
+            self._owns_client = True
+
+        self.cache = cache if cache is not None else DummyCache()
 
     def close(self) -> None:
-        """Close the underlying httpx.Client. Idempotent — safe to call
-        multiple times. Replaces the prior ``__del__`` hook which was
+        """Close the underlying httpx.Client IF we own it. Injected
+        sessions are left alone — the injector owns the lifecycle.
+        Idempotent. Replaces the prior ``__del__`` hook which was
         unreliable at interpreter shutdown and on reference cycles.
         """
-        if hasattr(self, "client"):
+        if hasattr(self, "client") and getattr(self, "_owns_client", True):
             self.client.close()
 
     def __enter__(self):
@@ -52,21 +87,33 @@ class CommentAPIClient:
         self.close()
 
     def get_initial_video_data(self, video_id: str) -> tuple[dict, dict]:
-        """Get initial video page data and ytcfg."""
-        url = f"https://www.youtube.com/watch?v={video_id}"
+        """Get initial video page data and ytcfg.
 
+        Caches the (initial_data, ytcfg) parse under
+        ``video_initial:{video_id}`` — a shared key so that
+        VideoFetcher and CommentFetcher reuse each other's watch-page
+        fetches (M1/L2).
+        """
+        cache_key = f"video_initial:{video_id}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
+
+        url = f"https://www.youtube.com/watch?v={video_id}"
         try:
             response = self.client.get(url)
             response.raise_for_status()
             html_content = response.text
-
-            ytcfg = self._extract_ytcfg(html_content)
-            initial_data = self._extract_initial_data(html_content)
-
-            return initial_data, ytcfg
-
-        except Exception as e:
+        except (httpx.HTTPError, httpx.RequestError) as e:
+            # M23: narrow to httpx errors. Anything else (KeyError,
+            # programmer bug) surfaces unwrapped so the actual cause
+            # isn't misleadingly reported as "video unavailable".
             raise VideoUnavailableError(f"Could not load video page: {e}") from e
+
+        ytcfg = self._extract_ytcfg(html_content)
+        initial_data = self._extract_initial_data(html_content)
+        result = (initial_data, ytcfg)
+        self.cache[cache_key] = result
+        return result
 
     def _extract_ytcfg(self, html_content: str) -> dict:
         """Extract ytcfg configuration from HTML."""

@@ -3,9 +3,11 @@ Main comment fetcher that orchestrates API client and parser for comprehensive c
 """
 
 import logging
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, MutableMapping
 from datetime import date
 from typing import Any
+
+import httpx
 
 from .comment_api_client import CommentAPIClient
 from .comment_parser import CommentParser
@@ -24,10 +26,34 @@ class CommentFetcher:
     """
 
     def __init__(
-        self, timeout: int = 30, retries: int = 3, user_agent: str | None = None
+        self,
+        timeout: int = 30,
+        retries: int = 3,
+        user_agent: str | None = None,
+        session: httpx.Client | None = None,
+        cache: MutableMapping | None = None,
     ):
-        """Initialize the comment fetcher with HTTP client configuration."""
-        self.api_client = CommentAPIClient(timeout, retries, user_agent)
+        """Initialize the comment fetcher.
+
+        Args:
+            timeout, retries, user_agent: Used when constructing a
+                self-owned httpx.Client. Ignored when ``session`` is
+                injected.
+            session: Optional httpx.Client to share with the surrounding
+                Facade. YtMeta injects its main session here so the
+                whole library uses one client (M1/L2).
+            cache: Optional MutableMapping shared with the surrounding
+                Facade. Used for caching watch-page parses under the
+                ``video_initial:{video_id}`` key so VideoFetcher and
+                CommentFetcher reuse each other's fetches.
+        """
+        self.api_client = CommentAPIClient(
+            timeout=timeout,
+            retries=retries,
+            user_agent=user_agent,
+            session=session,
+            cache=cache,
+        )
         self.parser = CommentParser()
 
     def close(self) -> None:
@@ -182,7 +208,14 @@ class CommentFetcher:
 
         except VideoUnavailableError:
             raise
-        except Exception as e:
+        except (httpx.HTTPError, httpx.RequestError) as e:
+            # M23: narrowed from `except Exception`. Programmer bugs
+            # (KeyError from a code change in the parser, TypeError
+            # from a wrong assumption) used to get wrapped as
+            # "video unavailable" — misleading the user about the
+            # actual cause. Now only genuine HTTP failures get the
+            # VideoUnavailableError wrap; everything else surfaces
+            # so the real stack trace is visible.
             logger.error(f"Error fetching comments: {e}")
             raise VideoUnavailableError(
                 f"Could not fetch comments for video {video_id}: {e}"
