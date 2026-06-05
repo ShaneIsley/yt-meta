@@ -106,7 +106,7 @@ class VideoFetcher:
             A dictionary containing detailed video metadata.
         """
         logger.info(f"Fetching video page: {youtube_url}")
-        video_id = youtube_url.split("v=")[-1]
+        video_id = extract_video_id(youtube_url)
         cache_key = f"video_meta:{video_id}"
         if cache_key in self.cache:
             logger.info(f"Cache hit for video metadata: {video_id}")
@@ -119,7 +119,7 @@ class VideoFetcher:
         except httpx.RequestError as e:
             logger.error(f"Failed to fetch video page {youtube_url}: {e}")
             raise VideoUnavailableError(
-                f"Failed to fetch video page: {e}", video_id=youtube_url.split("v=")[-1]
+                f"Failed to fetch video page: {e}", video_id=video_id
             ) from e
 
         player_response_data = parsing.extract_and_parse_json(

@@ -57,6 +57,42 @@ def test_regression_m17_get_video_id_emits_deprecation_warning(mocked_video_fetc
         )
 
 
+def test_h6_video_metadata_cache_key_canonical_across_url_forms():
+    """REGRESSION (H6): VideoFetcher.get_video_metadata built the cache
+    key from `youtube_url.split("v=")[-1]`, so:
+      - "https://www.youtube.com/watch?v=abc&t=42" → key "video_meta:abc&t=42"
+      - "https://www.youtube.com/watch?v=abc"      → key "video_meta:abc"
+      - "https://youtu.be/abc"                     → key "video_meta:https://youtu.be/abc"
+    Same video, cached under up to four different keys; later calls
+    with slightly different URLs missed cache and fetched again.
+
+    Fix routes through utils.extract_video_id, the canonical 11-char id,
+    so every URL form of the same video shares a single cache entry.
+    """
+    from unittest.mock import Mock
+
+    from yt_meta.fetchers import VideoFetcher
+
+    session = Mock()
+    session.get.side_effect = AssertionError(
+        "network should not be called — every URL form must hit the cache"
+    )
+
+    cached = {"title": "test", "video_id": "dQw4w9WgXcQ"}
+    cache = {"video_meta:dQw4w9WgXcQ": cached}
+    fetcher = VideoFetcher(session=session, cache=cache)
+
+    for url in (
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s",
+        "https://youtu.be/dQw4w9WgXcQ",
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+        "dQw4w9WgXcQ",
+    ):
+        result = fetcher.get_video_metadata(url)
+        assert result == cached, f"cache miss for url {url!r}"
+
+
 @pytest.mark.integration
 def test_get_video_metadata_integration(video_fetcher: VideoFetcher):
     # "Me at the zoo" - a very stable video
