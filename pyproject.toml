@@ -34,7 +34,10 @@ include = ["yt_meta*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v"
+# Default to an offline run — the `integration` marker covers tests that
+# hit live YouTube and are network-flaky by nature. Pass `-m integration`
+# explicitly to run them. See H12 in the v0.5.0 changelog.
+addopts = "-v -m 'not integration'"
 markers = [
     "integration: marks tests as integration tests (makes network requests)",
 ]

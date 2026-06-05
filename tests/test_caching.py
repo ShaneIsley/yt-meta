@@ -160,6 +160,28 @@ def test_h8_journal_mode_is_wal(tmp_path):
     assert mode.lower() == "wal", f"expected WAL, got {mode!r}"
 
 
+def test_h12_default_pytest_addopts_excludes_integration():
+    """REGRESSION (H12): bare ``pytest`` invocation must not hit live
+    YouTube by default. The pyproject `addopts` includes
+    ``-m 'not integration'`` so casual developers and offline CI
+    automatically deselect the network-touching tests. To run them, pass
+    ``-m integration`` explicitly.
+
+    Without this guard, ``pytest`` (no args) fires ~25 live requests
+    against @LofiGirl/@TED/@MrBeast/dQw4w9WgXcQ on each invocation.
+    """
+    import tomllib
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent
+    cfg = tomllib.loads((repo_root / "pyproject.toml").read_text())
+    addopts = cfg["tool"]["pytest"]["ini_options"].get("addopts", "")
+    assert "not integration" in addopts, (
+        f"pyproject addopts is {addopts!r}; bare pytest will run "
+        f"integration tests against live YouTube by default"
+    )
+
+
 def test_m11_channel_page_cache_does_not_store_raw_html(tmp_path):
     """REGRESSION (M11): ChannelFetcher._get_channel_page_data previously
     cached (initial_data, ytcfg, html). All three call sites (240, 288,
