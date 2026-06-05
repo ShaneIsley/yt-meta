@@ -17,6 +17,103 @@ def channel_fetcher():
         )
 
 
+def test_l5_run_filtered_pipeline_in_isolation():
+    """L5: the filter-pipeline epilogue (partition → must_fetch decision
+    → _process_videos loop) was hand-copied across get_channel_videos,
+    get_channel_shorts, and get_playlist_videos. L5 extracts it into a
+    module-level ``_run_filtered_pipeline`` generator that's testable
+    without constructing a fetcher, mocking HTTP, or touching the
+    network — which is the whole point of the extraction.
+
+    Fast-filter-only path: no full-metadata fetch needed, so
+    video_fetcher must never be called.
+    """
+    from unittest.mock import MagicMock
+
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    raw = iter(
+        [
+            {"video_id": "a", "view_count": 50},
+            {"video_id": "b", "view_count": 5000},
+            {"video_id": "c", "view_count": 100},
+        ]
+    )
+    video_fetcher = MagicMock()
+    video_fetcher.get_video_metadata.side_effect = AssertionError(
+        "fast-filter-only pipeline must not fetch full metadata"
+    )
+
+    result = list(
+        _run_filtered_pipeline(
+            raw,
+            filters={"view_count": {"gte": 100}},
+            content_type="videos",
+            fetch_full_metadata=False,
+            video_fetcher=video_fetcher,
+            logger=MagicMock(),
+            stop_at_video_id=None,
+            max_videos=-1,
+        )
+    )
+
+    assert [v["video_id"] for v in result] == ["b", "c"]
+
+
+def test_l5_run_filtered_pipeline_respects_max_videos():
+    """L5: the max_videos early-stop lives in the extracted pipeline."""
+    from unittest.mock import MagicMock
+
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    raw = iter([{"video_id": str(i)} for i in range(10)])
+    result = list(
+        _run_filtered_pipeline(
+            raw,
+            filters=None,
+            content_type="videos",
+            fetch_full_metadata=False,
+            video_fetcher=MagicMock(),
+            logger=MagicMock(),
+            stop_at_video_id=None,
+            max_videos=3,
+        )
+    )
+    assert [v["video_id"] for v in result] == ["0", "1", "2"]
+
+
+def test_l5_run_filtered_pipeline_slow_filter_fetches_full_metadata():
+    """L5: a slow filter forces full-metadata fetch and applies the
+    slow filter to the merged dict — all inside the extracted helper.
+    """
+    from unittest.mock import MagicMock
+
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    raw = iter([{"video_id": "a"}, {"video_id": "b"}])
+    video_fetcher = MagicMock()
+    # 'a' has like_count below the threshold, 'b' above
+    video_fetcher.get_video_metadata.side_effect = [
+        {"like_count": 10},
+        {"like_count": 5000},
+    ]
+
+    result = list(
+        _run_filtered_pipeline(
+            raw,
+            filters={"like_count": {"gte": 1000}},
+            content_type="videos",
+            fetch_full_metadata=False,  # auto-enabled by the slow filter
+            video_fetcher=video_fetcher,
+            logger=MagicMock(),
+            stop_at_video_id=None,
+            max_videos=-1,
+        )
+    )
+    assert [v["video_id"] for v in result] == ["b"]
+    assert video_fetcher.get_video_metadata.call_count == 2
+
+
 def test_get_channel_metadata_unit(
     channel_fetcher, mocker, bulwark_channel_initial_data, bulwark_channel_ytcfg
 ):

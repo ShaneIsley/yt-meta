@@ -16,8 +16,104 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _process_videos(
+    video_generator,
+    *,
+    video_fetcher,
+    must_fetch_full_metadata,
+    fast_filters,
+    slow_filters,
+    stop_at_video_id,
+    max_videos,
+    log,
+):
+    """The per-video filter+enrich loop, extracted as a free function so
+    it can be unit-tested without a fetcher instance (L5). Applies fast
+    filters on the raw renderer dict, optionally fetches full metadata
+    and merges it, applies slow filters on the merged dict, and yields
+    survivors until stop_at_video_id or max_videos."""
+    videos_processed = 0
+    for video in video_generator:
+        if not apply_filters(video, fast_filters):
+            continue
+        merged_video = video
+        if must_fetch_full_metadata:
+            try:
+                video_url = f"https://www.youtube.com/watch?v={video['video_id']}"
+                full_meta = video_fetcher.get_video_metadata(video_url)
+                if full_meta:
+                    merged_video = {**video, **full_meta}
+                elif slow_filters:
+                    continue
+            except (VideoUnavailableError, MetadataParsingError) as e:
+                log.error(
+                    "Error fetching metadata for video_id %s: %s",
+                    video["video_id"],
+                    e,
+                )
+                continue
+        if not apply_filters(merged_video, slow_filters):
+            continue
+        yield merged_video
+        videos_processed += 1
+        if stop_at_video_id and video["video_id"] == stop_at_video_id:
+            return
+        if max_videos != -1 and videos_processed >= max_videos:
+            return
+
+
+def _run_filtered_pipeline(
+    raw_generator,
+    *,
+    filters,
+    content_type,
+    fetch_full_metadata,
+    video_fetcher,
+    logger,
+    stop_at_video_id,
+    max_videos,
+):
+    """The shared filter-pipeline epilogue, extracted from the three
+    fetcher entrypoints (get_channel_videos / get_channel_shorts /
+    get_playlist_videos) which previously hand-copied it (L5).
+
+    Partitions filters into fast/slow, decides whether full metadata
+    must be fetched (always when a slow filter is present), logs the
+    auto-enable, then yields from the per-video loop. Independently
+    unit-testable — no HTTP, no fetcher instance required.
+    """
+    fast_filters, slow_filters = partition_filters(
+        filters or {}, content_type=content_type
+    )
+    must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
+    if slow_filters and not fetch_full_metadata:
+        logger.warning(
+            "Slow filters %s provided without fetch_full_metadata=True. "
+            "Full metadata will be fetched.",
+            list(slow_filters.keys()),
+        )
+    yield from _process_videos(
+        raw_generator,
+        video_fetcher=video_fetcher,
+        must_fetch_full_metadata=must_fetch_full_metadata,
+        fast_filters=fast_filters,
+        slow_filters=slow_filters,
+        stop_at_video_id=stop_at_video_id,
+        max_videos=max_videos,
+        log=logger,
+    )
+
+
 class _BaseFetcher:
-    """A base class for fetchers that process lists of videos."""
+    """Minimal shared base for ChannelFetcher and PlaylistFetcher.
+
+    Holds the common construction (session / cache / video_fetcher /
+    logger) and the continuation-fetch HTTP method they both use. The
+    filter-pipeline logic that used to live here is now the free
+    functions ``_run_filtered_pipeline`` / ``_process_videos`` above —
+    extracted per L5 so it's unit-testable in isolation. What remains
+    here is genuinely shared behavior, not a pipeline shim.
+    """
 
     def __init__(
         self,
@@ -29,45 +125,6 @@ class _BaseFetcher:
         self.cache = cache
         self.video_fetcher = video_fetcher
         self.logger = logger
-
-    def _process_videos_generator(
-        self,
-        video_generator,
-        must_fetch_full_metadata,
-        fast_filters,
-        slow_filters,
-        stop_at_video_id,
-        max_videos,
-    ):
-        videos_processed = 0
-        for video in video_generator:
-            if not apply_filters(video, fast_filters):
-                continue
-            merged_video = video
-            if must_fetch_full_metadata:
-                try:
-                    video_url = f"https://www.youtube.com/watch?v={video['video_id']}"
-                    full_meta = self.video_fetcher.get_video_metadata(video_url)
-                    if full_meta:
-                        merged_video = {**video, **full_meta}
-                    else:
-                        if slow_filters:
-                            continue
-                except (VideoUnavailableError, MetadataParsingError) as e:
-                    self.logger.error(
-                        "Error fetching metadata for video_id %s: %s",
-                        video["video_id"],
-                        e,
-                    )
-                    continue
-            if not apply_filters(merged_video, slow_filters):
-                continue
-            yield merged_video
-            videos_processed += 1
-            if stop_at_video_id and video["video_id"] == stop_at_video_id:
-                return
-            if max_videos != -1 and videos_processed >= max_videos:
-                return
 
     def _get_continuation_data(self, token: str, ytcfg: dict):
         cache_key = f"continuation:{token}"
@@ -434,20 +491,16 @@ class ChannelFetcher(_BaseFetcher):
         filters, final_start_date, final_end_date = build_date_filter(
             start_date, end_date, filters
         )
-        fast_filters, slow_filters = partition_filters(filters, content_type="videos")
-        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
-        if slow_filters and not fetch_full_metadata:
-            self.logger.warning(
-                f"Slow filters {list(slow_filters.keys())} provided without fetch_full_metadata=True. Full metadata will be fetched."
-            )
         raw_video_generator = self._get_raw_channel_videos_generator(
             channel_url, force_refresh, final_start_date
         )
-        yield from self._process_videos_generator(
-            video_generator=raw_video_generator,
-            must_fetch_full_metadata=must_fetch_full_metadata,
-            fast_filters=fast_filters,
-            slow_filters=slow_filters,
+        yield from _run_filtered_pipeline(
+            raw_video_generator,
+            filters=filters,
+            content_type="videos",
+            fetch_full_metadata=fetch_full_metadata,
+            video_fetcher=self.video_fetcher,
+            logger=self.logger,
             stop_at_video_id=stop_at_video_id,
             max_videos=max_videos,
         )
@@ -476,22 +529,16 @@ class ChannelFetcher(_BaseFetcher):
             Generator[dict, None, None]: A generator of short dictionaries.
         """
         validate_filters(filters)
-        if filters is None:
-            filters = {}
-        fast_filters, slow_filters = partition_filters(filters, content_type="shorts")
-        must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
-        if slow_filters and not fetch_full_metadata:
-            self.logger.warning(
-                f"Slow filters {list(slow_filters.keys())} provided without fetch_full_metadata=True. Full metadata will be fetched."
-            )
         raw_shorts_generator = self._get_raw_shorts_generator(
             channel_url, force_refresh
         )
-        yield from self._process_videos_generator(
-            video_generator=raw_shorts_generator,
-            must_fetch_full_metadata=must_fetch_full_metadata,
-            fast_filters=fast_filters,
-            slow_filters=slow_filters,
+        yield from _run_filtered_pipeline(
+            raw_shorts_generator,
+            filters=filters,
+            content_type="shorts",
+            fetch_full_metadata=fetch_full_metadata,
+            video_fetcher=self.video_fetcher,
+            logger=self.logger,
             stop_at_video_id=stop_at_video_id,
             max_videos=max_videos,
         )
@@ -585,12 +632,13 @@ class PlaylistFetcher(_BaseFetcher):
         """
         validate_filters(filters)
         filters, _, _ = build_date_filter(start_date, end_date, filters)
-        fast_filters, slow_filters = partition_filters(filters, content_type="videos")
-        yield from self._process_videos_generator(
-            video_generator=self._get_raw_playlist_videos_generator(playlist_id),
-            must_fetch_full_metadata=fetch_full_metadata or bool(slow_filters),
-            fast_filters=fast_filters,
-            slow_filters=slow_filters,
+        yield from _run_filtered_pipeline(
+            self._get_raw_playlist_videos_generator(playlist_id),
+            filters=filters,
+            content_type="videos",
+            fetch_full_metadata=fetch_full_metadata,
+            video_fetcher=self.video_fetcher,
+            logger=self.logger,
             stop_at_video_id=stop_at_video_id,
             max_videos=max_videos,
         )
