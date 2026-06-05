@@ -17,6 +17,57 @@ def channel_fetcher():
         )
 
 
+def test_m21_channel_metadata_via_http_layer_mock():
+    """M21: most channel-fetcher tests mock private methods
+    (_get_channel_page_data, _get_continuation_data), so a refactor of
+    those internals silently invalidates the tests without catching
+    real breakage. This test mocks at the HTTP layer instead — via
+    httpx.MockTransport — so the REAL ytcfg/initialData extraction and
+    parse_channel_metadata path runs end-to-end against a controlled
+    response. It's the pattern the review recommends; it exercises the
+    code that actually changes when YouTube's page shape changes.
+    """
+    import httpx
+
+    from tests.conftest import make_mock_html
+    from yt_meta.fetchers import ChannelFetcher, VideoFetcher
+
+    initial_data = {
+        "metadata": {
+            "channelMetadataRenderer": {
+                "title": "MockTransport Channel",
+                "description": "via httpx.MockTransport",
+                "externalId": "UCmocktransport0000000",
+                "isFamilySafe": True,
+            }
+        }
+    }
+    ytcfg = {"INNERTUBE_API_KEY": "k", "INNERTUBE_CONTEXT": {}}
+    html = make_mock_html(None, initial_data, ytcfg)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        # Real code under test built this URL from the channel_url;
+        # assert it's pointed at the videos tab as expected.
+        assert request.url.path.endswith("/videos")
+        return httpx.Response(200, text=html)
+
+    session = httpx.Client(transport=httpx.MockTransport(handler))
+    try:
+        fetcher = ChannelFetcher(
+            session=session,
+            cache={},
+            video_fetcher=VideoFetcher(session=session, cache={}),
+        )
+        metadata = fetcher.get_channel_metadata(
+            "https://www.youtube.com/@mocktransport/videos"
+        )
+    finally:
+        session.close()
+
+    assert metadata["title"] == "MockTransport Channel"
+    assert metadata["channel_id"] == "UCmocktransport0000000"
+
+
 def test_l5_run_filtered_pipeline_in_isolation():
     """L5: the filter-pipeline epilogue (partition → must_fetch decision
     → _process_videos loop) was hand-copied across get_channel_videos,

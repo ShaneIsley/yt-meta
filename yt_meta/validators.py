@@ -1,6 +1,10 @@
 from datetime import date, datetime
 
 NUMERIC_OPERATORS = {"gt", "gte", "lt", "lte", "eq"}
+# Date filters additionally accept the readable aliases after/before
+# (== gt/lt). _check_date_condition has always handled them; M22 brings
+# the schema into agreement so validate_filters accepts them too.
+DATE_OPERATORS = NUMERIC_OPERATORS | {"after", "before"}
 TEXT_OPERATORS = {"contains", "re", "eq"}
 LIST_OPERATORS = {"contains_any", "contains_all"}
 BOOL_OPERATORS = {"eq"}
@@ -37,7 +41,7 @@ FILTER_SCHEMA = {
     "keywords": {"type": list, "operators": LIST_OPERATORS, "schema_type": "list"},
     "publish_date": {
         "type": (str, date, datetime),
-        "operators": NUMERIC_OPERATORS,
+        "operators": DATE_OPERATORS,
         "schema_type": "date",
     },
     # Comment Filters

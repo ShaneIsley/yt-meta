@@ -12,6 +12,30 @@ def test_validate_filters_invalid_field():
         validate_filters(filters)
 
 
+def test_m22_validate_filters_accepts_after_before_for_publish_date():
+    """REGRESSION (M22): _check_date_condition has always supported the
+    readable aliases after/before (== gt/lt), and test_apply_filters_
+    publish_date used them — but FILTER_SCHEMA only listed gt/gte/lt/
+    lte/eq, so validate_filters REJECTED them. A user following the
+    test's pattern through the real (validated) code path hit a
+    ValueError. M22 adds after/before to the publish_date operators so
+    the whole stack agrees.
+    """
+    # These must not raise now.
+    validate_filters({"publish_date": {"after": "2023-01-01"}})
+    validate_filters({"publish_date": {"before": "2023-01-01"}})
+    validate_filters({"publish_date": {"after": date(2023, 1, 1)}})
+
+
+def test_m22_after_before_still_rejected_on_numeric_fields():
+    """REGRESSION (M22): the aliases are date-only. Numeric fields like
+    view_count must still reject after/before — they're not numeric
+    operators.
+    """
+    with pytest.raises(ValueError, match="Invalid operator"):
+        validate_filters({"view_count": {"after": 1000}})
+
+
 def test_validate_filters_invalid_operator():
     """Test that an invalid operator for a known field raises a ValueError."""
     # Numerical field with a text operator
