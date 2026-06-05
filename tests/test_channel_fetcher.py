@@ -43,6 +43,73 @@ def test_get_channel_videos_raises_for_bad_initial_data(
         list(channel_fetcher.get_channel_videos("test_channel"))
 
 
+def test_m3_shorts_generator_survives_empty_parse_result(channel_fetcher, mocker):
+    """REGRESSION (M3): _get_raw_shorts_generator called
+    ``parsing.extract_shorts_from_renderers([renderer])[0][0]`` without
+    checking whether the parser returned an empty list. If YouTube
+    introduces a richItemRenderer variant that the parser doesn't
+    classify as a Short (in-feed ads/promos, A/B-test wrappers,
+    future content types), the parser returns ``([], None)`` and the
+    [0][0] index raises IndexError — silently killing the entire shorts
+    generator for the channel.
+
+    Defensive guard checks shorts is non-empty before indexing.
+    """
+    from yt_meta import parsing
+
+    # Force the parser to return empty even though the renderer "looks
+    # valid" to the surrounding ``if not video_data: continue`` guard
+    mocker.patch.object(
+        parsing, "extract_shorts_from_renderers", return_value=([], None)
+    )
+
+    mocker.patch.object(
+        channel_fetcher,
+        "_get_channel_shorts_page_data",
+        return_value=(
+            {
+                "contents": {
+                    "twoColumnBrowseResultsRenderer": {
+                        "tabs": [
+                            {
+                                "tabRenderer": {
+                                    "selected": True,
+                                    "title": "Shorts",
+                                    "content": {
+                                        "richGridRenderer": {
+                                            "contents": [
+                                                {
+                                                    "richItemRenderer": {
+                                                        "content": {
+                                                            "shortsLockupViewModel": {
+                                                                "ok": True
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    },
+                                }
+                            }
+                        ]
+                    }
+                }
+            },
+            {"INNERTUBE_API_KEY": "k"},
+        ),
+    )
+
+    # The current bug raises IndexError before producing any result.
+    # After fix, the generator runs to completion yielding nothing.
+    result = list(
+        channel_fetcher.get_channel_shorts(
+            "https://www.youtube.com/@test/shorts"
+        )
+    )
+    assert result == []
+
+
 def test_get_channel_videos_handles_continuation_errors(
     channel_fetcher, mocker, youtube_channel_initial_data, youtube_channel_ytcfg
 ):

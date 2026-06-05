@@ -368,9 +368,9 @@ class ChannelFetcher(_BaseFetcher):
                 )
                 if not video_data:
                     continue
-                video = parsing.extract_shorts_from_renderers([renderer])[0][0]
-                if video:
-                    yield video
+                shorts, _ = parsing.extract_shorts_from_renderers([renderer])
+                if shorts and shorts[0]:
+                    yield shorts[0]
 
             if stop_pagination or not continuation_token:
                 break
