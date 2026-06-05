@@ -94,15 +94,33 @@ class VideoFetcher:
         self.session = session
         self.cache = cache
 
-    def get_video_metadata(self, youtube_url: str) -> dict:
+    def get_video_metadata(self, youtube_url: str) -> dict | None:
         """
         Fetches and parses comprehensive metadata for a given YouTube video.
 
         Args:
-            youtube_url: The full URL of the YouTube video.
+            youtube_url: Any supported form (``watch?v=ID``, ``/shorts/ID``,
+                ``youtu.be/ID``, or a bare 11-char ID).
 
         Returns:
-            A dictionary containing detailed video metadata.
+            A dictionary containing detailed video metadata, OR ``None``
+            if the watch page was fetched but couldn't be parsed
+            (typically: ongoing live streams, just-deleted videos, A/B
+            tested page-structure variants). Callers must handle the
+            ``None`` case. The library uses this return to gracefully
+            skip unparseable videos during channel/playlist iteration
+            instead of breaking the whole generator.
+
+        Raises:
+            VideoUnavailableError: if the HTTP fetch itself failed
+                (network error, 404, rate-limit). Note this is distinct
+                from the ``None`` case above — failure to *fetch*
+                raises; failure to *parse* a fetched page returns None.
+
+        See M7 in the v0.6.0 CHANGELOG: prior versions annotated this
+        as ``-> dict`` and the docstring claimed ``VideoUnavailableError``
+        for the parse-failure case too. Both were wrong; the
+        annotation and docs now match the long-standing behavior.
         """
         logger.info(f"Fetching video page: {youtube_url}")
         video_id = extract_video_id(youtube_url)

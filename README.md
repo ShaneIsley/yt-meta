@@ -448,8 +448,8 @@ The main client for interacting with the library. Handles session management and
 #### `get_video_metadata(youtube_url: str) -> dict`
 Fetches metadata for a single YouTube video.
 -   **`youtube_url`**: The full URL of the YouTube video.
--   **Returns**: A dictionary containing metadata such as `title`, `description`, `view_count`, `like_count`, `publish_date` (a `datetime` — see M4 in the v0.6.0 CHANGELOG), `category`, and more.
--   **Raises**: `VideoUnavailableError` if the video page cannot be fetched or the video is private/deleted.
+-   **Returns**: A dictionary containing metadata such as `title`, `description`, `view_count`, `like_count`, `publish_date` (a `datetime` — see M4 in the v0.6.0 CHANGELOG), `category`, and more. Returns `None` when the watch page was fetched successfully but can't be parsed (typically: ongoing live streams, just-deleted videos, A/B-tested page-structure variants — see M7 in the v0.6.0 CHANGELOG).
+-   **Raises**: `VideoUnavailableError` if the HTTP fetch itself fails (network error, 404, rate-limit). Distinct from the `None` return for parse failures.
 
 #### `get_video_comments(youtube_url: str, limit: int | None = 100, sort_by: str = 'recent', progress_callback=None, since_date=None, filters: dict | None = None) -> Generator[dict, None, None]`
 Fetches comments for a specific YouTube video.
