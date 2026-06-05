@@ -177,7 +177,7 @@ top_comments = client.get_video_comments(
 )
 for comment in top_comments:
     print(f"- Text: '{comment['text'][:80]}...'")
-    print(f"  - Author: {comment['author']} (Likes: {comment['likes']})")
+    print(f"  - Author: {comment['author']} (Likes: {comment['like_count']})")
     print(f"  - Replies: {comment['reply_count']} | Is Reply: {comment['is_reply']}")
 ```
 
@@ -436,11 +436,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 
 ## API Reference
 
-### `YtMeta(cache: Optional[MutableMapping] = None)`
+### `YtMeta(cache_path: str | None = None, cache: MutableMapping | None = None)`
 
-The main client for interacting with the library. It inherits from `youtube-comment-downloader` and handles session management.
+The main client for interacting with the library. Handles session management and delegates work to specialized fetcher classes.
 
--   **`cache`**: An optional dictionary-like object to use for caching. If `None`, a temporary in-memory cache is used.
+-   **`cache_path`**: Optional path to a SQLite file for persistent on-disk caching. The library opens and manages the file.
+-   **`cache`**: Optional pre-built `MutableMapping` (e.g. a plain `dict` for in-memory caching, or a `diskcache.Cache` / `sqlitedict` instance for persistent). Takes precedence over `cache_path`. If both are `None`, caching is disabled.
 
 #### `get_video_metadata(youtube_url: str) -> dict`
 Fetches metadata for a single YouTube video.
@@ -448,12 +449,13 @@ Fetches metadata for a single YouTube video.
 -   **Returns**: A dictionary containing metadata such as `title`, `description`, `view_count`, `like_count`, `publish_date`, `category`, and more.
 -   **Raises**: `VideoUnavailableError` if the video page cannot be fetched or the video is private/deleted.
 
-#### `get_video_comments(youtube_url: str, sort_by: int = SORT_BY_RECENT, limit: int = -1, filters: Optional[dict] = None) -> Generator[dict, None, None]`
-Fetches comments for a specific YouTube video. This is an "enrichment" call and is slower than fetching bulk metadata.
--   **`youtube_url`**: The full URL of the YouTube video.
--   **`sort_by`**: The sort order for comments. Use `SORT_BY_RECENT` (default) or `SORT_BY_POPULAR`.
--   **`limit`**: The maximum number of comments to fetch. `-1` means no limit.
--   **`filters`**: A dictionary of filter conditions to apply (see filter table below).
+#### `get_video_comments(youtube_url: str, limit: int | None = 100, sort_by: str = 'recent', progress_callback=None, since_date=None, filters: dict | None = None) -> Generator[dict, None, None]`
+Fetches comments for a specific YouTube video.
+-   **`youtube_url`**: The full URL of the YouTube video (any of `watch?v=...`, `youtu.be/...`, `/shorts/...`, or a bare 11-char id).
+-   **`limit`**: Max comments to fetch. Defaults to `100`. Pass `None` or `-1` for unbounded — but you must also pass `since_date` (safety guard against runaway pagination on popular videos).
+-   **`sort_by`**: `'recent'` (default — chronological, required for `since_date` short-circuit) or `'top'` (YouTube's editorial ranking).
+-   **`since_date`**: A `date`, `datetime`, or `'YYYY-MM-DD'` string. The only filter that short-circuits pagination — when combined with `sort_by='recent'`, fetching stops at the first older-than-cutoff comment.
+-   **`filters`**: Comment-level predicates applied after fetch (see the filter table below). These operate on the in-memory comment list and do NOT reduce request count — they're convenience predicates, not server-side narrowing. Use `since_date` for request reduction.
 -   **Returns**: A generator that yields a standardized dictionary for each comment.
 
 #### `get_channel_metadata(channel_url: str) -> dict`
@@ -499,7 +501,7 @@ The base exception for all errors in this library.
 - **`YtMeta` (The Facade):** The public-facing API. It delegates requests to the appropriate fetcher class and holds shared objects like the session and cache, but contains no data-fetching logic.
 
 - **Fetcher Classes (The Subsystems):**
-  - **`VideoFetcher`:** Fetches individual video metadata and comments.
+  - **`VideoFetcher`:** Fetches single-video metadata (title, description, view count, etc.).
   - **`ChannelFetcher`:** Fetches data from a channel's "Videos" and "Shorts" tabs, including pagination.
   - **`PlaylistFetcher`:** Retrieves video lists from a playlist.
   - **`CommentFetcher`:** Fetches comments and replies for videos.
