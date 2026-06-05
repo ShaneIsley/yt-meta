@@ -9,6 +9,7 @@ from collections.abc import MutableMapping
 
 import httpx
 
+from ._retry import request_with_retries
 from .caching import DummyCache
 from .exceptions import VideoUnavailableError
 from .utils import _deep_get
@@ -341,8 +342,11 @@ class CommentAPIClient:
         payload = {"context": context, "continuation": continuation_token}
 
         try:
-            response = self.client.post(url, json=payload)
-            response.raise_for_status()
+            # H9: wire the previously-ignored ``retries`` constructor
+            # param through the actual retry/backoff helper.
+            response = request_with_retries(
+                lambda: self.client.post(url, json=payload), retries=self.retries
+            )
             return response.json()
 
         except Exception as e:
@@ -430,8 +434,9 @@ class CommentAPIClient:
         payload = {"context": context, "continuation": reply_continuation_token}
 
         try:
-            response = self.client.post(url, json=payload)
-            response.raise_for_status()
+            response = request_with_retries(
+                lambda: self.client.post(url, json=payload), retries=self.retries
+            )
             return response.json()
 
         except Exception as e:

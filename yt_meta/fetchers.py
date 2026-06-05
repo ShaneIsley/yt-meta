@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from . import parsing
+from ._retry import request_with_retries
 from .exceptions import MetadataParsingError, VideoUnavailableError
 from .filtering import apply_filters, build_date_filter, partition_filters
 from .utils import _deep_get, extract_video_id, validate_youtube_url
@@ -132,12 +133,15 @@ class _BaseFetcher:
             self.logger.info(f"Cache hit for continuation token: {token[:10]}...")
             return self.cache[cache_key]
         data = {"context": ytcfg["INNERTUBE_CONTEXT"], "continuation": token}
-        response = self.session.post(
-            f"https://www.youtube.com/youtubei/v1/browse?key={ytcfg['INNERTUBE_API_KEY']}",
-            json=data,
-            timeout=10,
+        url = (
+            "https://www.youtube.com/youtubei/v1/browse?key="
+            f"{ytcfg['INNERTUBE_API_KEY']}"
         )
-        response.raise_for_status()
+        # H9: the continuation/browse POST is the tight pagination loop
+        # most likely to be rate-limited; wrap it in retry/backoff.
+        response = request_with_retries(
+            lambda: self.session.post(url, json=data, timeout=10)
+        )
         result = response.json()
         self.cache[cache_key] = result
         return result
