@@ -19,6 +19,144 @@ def test_h14_default_sort_for_comment_fetcher_get_comments_is_recent():
     assert sig.parameters["sort_by"].default == "recent"
 
 
+def test_h3_extract_continuation_token_returns_next_page_not_reply_token():
+    """REGRESSION (H3): extract_continuation_token did a free-form DFS
+    over the whole API response, returning the first
+    ``continuationCommand.token`` that ``_is_comment_token`` accepted.
+    ``_is_comment_token`` accepted any token containing the substring
+    'replies' (line 224). YouTube comment responses embed reply
+    continuation tokens INSIDE per-thread ``commentRepliesRenderer``
+    structures, which DFS visits before reaching the top-level next-
+    page token. The function silently returned a reply token instead
+    of the next-page token; the next API call fetched replies for an
+    already-seen thread; every id was already in seen_ids; the
+    (pre-H4) ``if not found_comments: break`` fired; the comment
+    stream was silently truncated.
+
+    Fix walks the documented path explicitly:
+    onResponseReceivedEndpoints[*].(reloadContinuationItemsCommand|
+    appendContinuationItemsAction).continuationItems[-1]
+    .continuationItemRenderer.continuationEndpoint.continuationCommand
+    .token — that's where YouTube actually puts the next-page token.
+    Reply tokens are nested deeper and never picked up.
+    """
+    from yt_meta.comment_api_client import CommentAPIClient
+
+    api_response = {
+        "onResponseReceivedEndpoints": [
+            {
+                "reloadContinuationItemsCommand": {
+                    "continuationItems": [
+                        # A comment thread with a nested reply continuation
+                        # — this token MUST NOT be returned.
+                        {
+                            "commentThreadRenderer": {
+                                "replies": {
+                                    "commentRepliesRenderer": {
+                                        "contents": [
+                                            {
+                                                "continuationItemRenderer": {
+                                                    "continuationEndpoint": {
+                                                        "continuationCommand": {
+                                                            "token": "REPLY_TOKEN_4qmFsgI_replies_NESTED",
+                                                            "request": "CONTINUATION_REQUEST_TYPE_WATCH_NEXT",
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        # The actual next-page token — must be returned.
+                        {
+                            "continuationItemRenderer": {
+                                "continuationEndpoint": {
+                                    "continuationCommand": {
+                                        "token": "NEXT_PAGE_TOKEN_4qmFsgI_comments",
+                                        "request": "CONTINUATION_REQUEST_TYPE_WATCH_NEXT",
+                                    }
+                                }
+                            }
+                        },
+                    ]
+                }
+            }
+        ]
+    }
+
+    client = CommentAPIClient()
+    try:
+        result = client.extract_continuation_token(api_response)
+    finally:
+        client.close()
+
+    assert result == "NEXT_PAGE_TOKEN_4qmFsgI_comments", (
+        f"extracted {result!r} — likely picked up the nested reply token "
+        f"instead of the top-level next-page token"
+    )
+
+
+def test_h3_extract_continuation_token_handles_appendContinuationItemsAction():
+    """REGRESSION (H3): subsequent-page responses use
+    appendContinuationItemsAction instead of
+    reloadContinuationItemsCommand. The walker handles both.
+    """
+    from yt_meta.comment_api_client import CommentAPIClient
+
+    api_response = {
+        "onResponseReceivedEndpoints": [
+            {
+                "appendContinuationItemsAction": {
+                    "continuationItems": [
+                        {
+                            "continuationItemRenderer": {
+                                "continuationEndpoint": {
+                                    "continuationCommand": {
+                                        "token": "PAGE_3_TOKEN"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+    client = CommentAPIClient()
+    try:
+        assert client.extract_continuation_token(api_response) == "PAGE_3_TOKEN"
+    finally:
+        client.close()
+
+
+def test_h3_extract_continuation_token_returns_none_at_end_of_stream():
+    """REGRESSION (H3): when no continuation token is present (end of
+    comments), return None cleanly. Don't fall back to any token —
+    that's what allowed the reply-token bug to ship.
+    """
+    from yt_meta.comment_api_client import CommentAPIClient
+
+    api_response = {
+        "onResponseReceivedEndpoints": [
+            {
+                "reloadContinuationItemsCommand": {
+                    "continuationItems": [
+                        # Only comment threads, no continuationItemRenderer
+                        {"commentThreadRenderer": {"comment": {"text": "hi"}}},
+                    ]
+                }
+            }
+        ]
+    }
+    client = CommentAPIClient()
+    try:
+        assert client.extract_continuation_token(api_response) is None
+    finally:
+        client.close()
+
+
 def test_h4_pagination_survives_one_all_duplicate_page(mocker):
     """REGRESSION (H4): CommentFetcher.get_comments did
     ``if not found_comments: break`` after processing each API page.

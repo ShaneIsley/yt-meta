@@ -9,6 +9,7 @@ import re
 import httpx
 
 from .exceptions import VideoUnavailableError
+from .utils import _deep_get
 
 logger = logging.getLogger(__name__)
 
@@ -302,45 +303,60 @@ class CommentAPIClient:
             return None
 
     def extract_continuation_token(self, api_response: dict) -> str | None:
+        """Extract the next-page continuation token from a comment API response.
+
+        Walks the documented ``onResponseReceivedEndpoints`` path
+        explicitly. Each entry wraps its items in either:
+
+          - ``reloadContinuationItemsCommand`` (first-page response), or
+          - ``appendContinuationItemsAction`` (subsequent pages)
+
+        Both have a ``continuationItems`` list. The next-page token is
+        in the LAST ``continuationItemRenderer`` in that list (earlier
+        items are comment threads, which themselves contain nested
+        reply continuation tokens we MUST NOT pick up).
+
+        H3 history: the previous implementation did a free-form DFS
+        and returned the first token whose value matched a fuzzy
+        substring check (``_is_comment_token``). That check accepted
+        any token containing 'replies', which YouTube routinely embeds
+        inside ``commentRepliesRenderer`` subtrees per thread. DFS
+        visited those nested tokens before the top-level next-page
+        token, so the function returned a reply continuation instead.
+        The next API call then fetched replies for an already-seen
+        thread, every id was a duplicate, and the (pre-H4) early-break
+        silently truncated the comment stream.
+
+        Returns None if no next-page token is present (end of stream).
         """
-        Extract the next continuation token from API response.
-
-        Args:
-            api_response: API response data
-
-        Returns:
-            Next continuation token or None if not found
-        """
-
-        def search_for_continuation(obj):
-            if isinstance(obj, dict):
-                # Look for continuation commands
-                if "continuationCommand" in obj:
-                    token = obj["continuationCommand"].get("token")
-                    if token and self._is_comment_token(token):
-                        return token
-
-                # Look for next continuation endpoints
-                if "nextContinuationData" in obj:
-                    token = obj["nextContinuationData"].get("continuation")
-                    if token:
-                        return token
-
-                # Recursively search all values
-                for value in obj.values():
-                    result = search_for_continuation(value)
-                    if result:
-                        return result
-
-            elif isinstance(obj, list):
-                for item in obj:
-                    result = search_for_continuation(item)
-                    if result:
-                        return result
-
+        if not isinstance(api_response, dict):
             return None
-
-        return search_for_continuation(api_response)
+        endpoints = api_response.get("onResponseReceivedEndpoints") or []
+        for endpoint in endpoints:
+            if not isinstance(endpoint, dict):
+                continue
+            items_wrapper = endpoint.get(
+                "reloadContinuationItemsCommand"
+            ) or endpoint.get("appendContinuationItemsAction")
+            if not items_wrapper:
+                continue
+            items = items_wrapper.get("continuationItems") or []
+            # The next-page token is the LAST continuationItemRenderer.
+            # Iterate in reverse so we find it without scanning every
+            # thread, and so we never see a comment thread first.
+            for item in reversed(items):
+                if not isinstance(item, dict):
+                    continue
+                renderer = item.get("continuationItemRenderer")
+                if not renderer:
+                    continue
+                token = _deep_get(
+                    renderer,
+                    "continuationEndpoint.continuationCommand.token",
+                )
+                if token:
+                    return token
+        return None
 
     def make_reply_request(
         self, reply_continuation_token: str, ytcfg: dict
