@@ -1,6 +1,7 @@
 import json
 import logging
 import sqlite3
+import threading
 import time
 from collections.abc import MutableMapping
 from pathlib import Path
@@ -43,7 +44,18 @@ class SQLiteCache(MutableMapping):
         self.path = path
         self.ttl_seconds = ttl_seconds
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(self.path)
+        # check_same_thread=False lets a single SQLiteCache be shared
+        # across threads (ThreadPoolExecutor, FastAPI handlers, off-thread
+        # generator consumption). All DB operations are serialized through
+        # self._lock to make that safe.
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._lock = threading.Lock()
+        # WAL gives concurrent readers + a single writer without each
+        # commit blocking readers (the default 'delete' mode does).
+        # synchronous=NORMAL is the standard pairing with WAL — durable
+        # across crashes, faster than FULL.
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.execute("PRAGMA synchronous=NORMAL")
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value BLOB, timestamp REAL)"
         )
@@ -52,13 +64,15 @@ class SQLiteCache(MutableMapping):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self._conn.close()
+        with self._lock:
+            self._conn.close()
 
     def __getitem__(self, key):
-        cursor = self._conn.execute(
-            "SELECT value, timestamp FROM cache WHERE key = ?", (key,)
-        )
-        result = cursor.fetchone()
+        with self._lock:
+            cursor = self._conn.execute(
+                "SELECT value, timestamp FROM cache WHERE key = ?", (key,)
+            )
+            result = cursor.fetchone()
         if result is None:
             raise KeyError(key)
         value, timestamp = result
@@ -82,20 +96,24 @@ class SQLiteCache(MutableMapping):
         # default=str just prevents future caching paths from crashing if
         # something less-serializable sneaks in.
         encoded = json.dumps(value, default=str).encode("utf-8")
-        self._conn.execute(
-            "INSERT OR REPLACE INTO cache (key, value, timestamp) VALUES (?, ?, ?)",
-            (key, encoded, time.time()),
-        )
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO cache (key, value, timestamp) VALUES (?, ?, ?)",
+                (key, encoded, time.time()),
+            )
+            self._conn.commit()
 
     def __delitem__(self, key):
-        self._conn.execute("DELETE FROM cache WHERE key = ?", (key,))
-        self._conn.commit()
+        with self._lock:
+            self._conn.execute("DELETE FROM cache WHERE key = ?", (key,))
+            self._conn.commit()
 
     def __iter__(self):
-        cursor = self._conn.execute("SELECT key FROM cache")
-        return (row[0] for row in cursor)
+        with self._lock:
+            cursor = self._conn.execute("SELECT key FROM cache")
+            return (row[0] for row in cursor.fetchall())
 
     def __len__(self):
-        cursor = self._conn.execute("SELECT COUNT(*) FROM cache")
-        return cursor.fetchone()[0]
+        with self._lock:
+            cursor = self._conn.execute("SELECT COUNT(*) FROM cache")
+            return cursor.fetchone()[0]

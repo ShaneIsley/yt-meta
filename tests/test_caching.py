@@ -79,6 +79,87 @@ def test_h7_tuple_roundtrips_as_list(tmp_path):
     assert cache["k"] == [1, 2, "three"]
 
 
+def test_h8_sqlitecache_usable_from_another_thread(tmp_path):
+    """REGRESSION (H8): sqlite3.connect defaults to check_same_thread=True,
+    so a single YtMeta shared across threads (ThreadPoolExecutor, FastAPI
+    request handlers, off-thread generator consumption) raised
+    ProgrammingError on the second thread's first cache touch. Open with
+    check_same_thread=False so a single SQLiteCache survives use from
+    any thread.
+    """
+    import threading
+
+    cache_file = tmp_path / "cache.db"
+    cache = SQLiteCache(path=str(cache_file))
+    cache["from_main"] = "main_value"
+
+    captured: dict = {}
+    err: list = []
+
+    def worker():
+        try:
+            cache["from_thread"] = "thread_value"
+            captured["read_back"] = cache["from_main"]
+        except Exception as e:
+            err.append(e)
+
+    t = threading.Thread(target=worker)
+    t.start()
+    t.join(timeout=5)
+
+    assert not err, f"thread raised: {err!r}"
+    assert captured["read_back"] == "main_value"
+    assert cache["from_thread"] == "thread_value"
+
+
+def test_h8_concurrent_writes_do_not_corrupt_cache(tmp_path):
+    """REGRESSION (H8): under concurrent writes from multiple threads,
+    interleaved sqlite3 INSERTs could fail or lose entries without a
+    serializing lock. The SQLiteCache now holds a threading.Lock around
+    all DB operations so concurrent generators (e.g. multiple
+    get_channel_videos pages running in parallel) cannot collide.
+    """
+    import threading
+
+    cache_file = tmp_path / "cache.db"
+    cache = SQLiteCache(path=str(cache_file))
+
+    N_THREADS = 8
+    PER_THREAD = 25
+    errs: list = []
+
+    def writer(thread_id: int):
+        try:
+            for i in range(PER_THREAD):
+                cache[f"t{thread_id}_k{i}"] = {"tid": thread_id, "i": i}
+        except Exception as e:
+            errs.append(e)
+
+    threads = [threading.Thread(target=writer, args=(t,)) for t in range(N_THREADS)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert not errs, f"concurrent writes raised: {errs!r}"
+    assert len(cache) == N_THREADS * PER_THREAD
+
+
+def test_h8_journal_mode_is_wal(tmp_path):
+    """REGRESSION (H8): WAL journal mode improves concurrent
+    reader/writer performance and is the standard recommendation for
+    multi-threaded SQLite use. Without it (the default 'delete' mode),
+    every commit blocks readers.
+    """
+    cache_file = tmp_path / "cache.db"
+    cache = SQLiteCache(path=str(cache_file))
+    # Force at least one write so WAL files are materialized
+    cache["k"] = "v"
+
+    mode = cache._conn.execute("PRAGMA journal_mode").fetchone()[0]
+    assert mode.lower() == "wal", f"expected WAL, got {mode!r}"
+
+
 def test_video_metadata_caching(tmp_path):
     """Verify that video metadata is cached and retrieved."""
     cache_file = tmp_path / "cache.db"
