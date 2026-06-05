@@ -190,6 +190,64 @@ def _check_list_condition(video_value_list, condition_dict) -> bool:
     return True
 
 
+def build_date_filter(
+    start_date,
+    end_date,
+    filters: dict | None = None,
+):
+    """Unify date-filter construction across the fetchers.
+
+    Reads any existing ``publish_date`` entry from ``filters`` (gt/gte
+    for start, lt/lte for end), merges with explicit start_date /
+    end_date kwargs (kwargs win), converts string dates via
+    ``parse_relative_date_string``, and returns a tuple:
+
+        (merged_filters_dict, final_start_date, final_end_date)
+
+    Callers use ``merged_filters_dict`` for downstream filtering and
+    ``final_start_date`` / ``final_end_date`` for short-circuit
+    pagination (e.g. ChannelFetcher's renderer-level early-stop).
+
+    Before L1, ChannelFetcher had the rich merging logic inline at
+    fetchers.py:437-456 and PlaylistFetcher had a simpler but
+    differently-shaped version at fetchers.py:609-615. The disagreement
+    is what allowed H1 (PlaylistFetcher built tuples) to ship — the
+    two paths weren't unified. M5 (validate_filters ran before the
+    rewrite) had the same root cause.
+    """
+    # Import here to avoid a circular import (filtering.py is imported
+    # by date_utils.py — wait, the other way actually, but keep local
+    # to make the dep direction explicit).
+    from .date_utils import parse_relative_date_string
+
+    if filters is None:
+        filters = {}
+    else:
+        filters = dict(filters)  # shallow copy so we don't mutate the caller's dict
+
+    existing_pd = filters.get("publish_date", {}) or {}
+    start_from_filter = existing_pd.get("gt") or existing_pd.get("gte")
+    end_from_filter = existing_pd.get("lt") or existing_pd.get("lte")
+
+    final_start = start_date if start_date is not None else start_from_filter
+    final_end = end_date if end_date is not None else end_from_filter
+
+    if isinstance(final_start, str):
+        final_start = parse_relative_date_string(final_start)
+    if isinstance(final_end, str):
+        final_end = parse_relative_date_string(final_end)
+
+    date_conditions = {}
+    if final_start is not None:
+        date_conditions["gte"] = final_start
+    if final_end is not None:
+        date_conditions["lte"] = final_end
+    if date_conditions:
+        filters["publish_date"] = date_conditions
+
+    return filters, final_start, final_end
+
+
 def apply_filters(video: dict, filters: dict | None) -> bool:
     """
     Checks if a video dictionary passes a set of filters.

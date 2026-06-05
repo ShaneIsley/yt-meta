@@ -5,9 +5,8 @@ from typing import TYPE_CHECKING
 import httpx
 
 from . import parsing
-from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
-from .filtering import apply_filters, partition_filters
+from .filtering import apply_filters, build_date_filter, partition_filters
 from .utils import _deep_get, extract_video_id, validate_youtube_url
 from .validators import validate_filters
 
@@ -432,28 +431,9 @@ class ChannelFetcher(_BaseFetcher):
         validate_filters(filters)
         if not channel_url.endswith("/videos"):
             channel_url = f"{channel_url.rstrip('/')}/videos"
-        if filters is None:
-            filters = {}
-        publish_date_from_filter = filters.get("publish_date", {})
-        start_date_from_filter = publish_date_from_filter.get(
-            "gt"
-        ) or publish_date_from_filter.get("gte")
-        end_date_from_filter = publish_date_from_filter.get(
-            "lt"
-        ) or publish_date_from_filter.get("lte")
-        final_start_date = start_date or start_date_from_filter
-        final_end_date = end_date or end_date_from_filter
-        if isinstance(final_start_date, str):
-            final_start_date = parse_relative_date_string(final_start_date)
-        if isinstance(final_end_date, str):
-            final_end_date = parse_relative_date_string(final_end_date)
-        date_filter_conditions = {}
-        if final_start_date:
-            date_filter_conditions["gte"] = final_start_date
-        if final_end_date:
-            date_filter_conditions["lte"] = final_end_date
-        if date_filter_conditions:
-            filters["publish_date"] = date_filter_conditions
+        filters, final_start_date, final_end_date = build_date_filter(
+            start_date, end_date, filters
+        )
         fast_filters, slow_filters = partition_filters(filters, content_type="videos")
         must_fetch_full_metadata = fetch_full_metadata or bool(slow_filters)
         if slow_filters and not fetch_full_metadata:
@@ -604,15 +584,7 @@ class PlaylistFetcher(_BaseFetcher):
             Generator[dict, None, None]: A generator of video dictionaries.
         """
         validate_filters(filters)
-        if not filters:
-            filters = {}
-        date_filter_conditions = {}
-        if start_date:
-            date_filter_conditions["gte"] = start_date
-        if end_date:
-            date_filter_conditions["lte"] = end_date
-        if date_filter_conditions:
-            filters["publish_date"] = date_filter_conditions
+        filters, _, _ = build_date_filter(start_date, end_date, filters)
         fast_filters, slow_filters = partition_filters(filters, content_type="videos")
         yield from self._process_videos_generator(
             video_generator=self._get_raw_playlist_videos_generator(playlist_id),

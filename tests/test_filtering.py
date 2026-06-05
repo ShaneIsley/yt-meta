@@ -326,6 +326,79 @@ def test_apply_filters_keywords():
     assert filtered_all[0]["keywords"] == ["python", "programming", "tutorial"]
 
 
+def test_l1_build_date_filter_from_kwargs_only():
+    """L1: explicit start_date/end_date kwargs produce the canonical
+    dict-shape publish_date filter ({"gte": ..., "lte": ...}). Returns
+    the dates back too so callers can use them for short-circuit
+    pagination.
+    """
+    from datetime import date
+
+    from yt_meta.filtering import build_date_filter
+
+    merged, start, end = build_date_filter(date(2023, 1, 1), date(2024, 12, 31))
+    assert merged == {"publish_date": {"gte": date(2023, 1, 1), "lte": date(2024, 12, 31)}}
+    assert start == date(2023, 1, 1)
+    assert end == date(2024, 12, 31)
+
+
+def test_l1_build_date_filter_extracts_bounds_from_existing_filter():
+    """L1: when start_date/end_date kwargs are not given, the helper
+    reads gt/gte (for start) and lt/lte (for end) from any existing
+    publish_date entry in filters. This is the channel-fetcher
+    behavior, now shared with playlist.
+    """
+    from datetime import date
+
+    from yt_meta.filtering import build_date_filter
+
+    existing = {"publish_date": {"gte": date(2023, 1, 1), "lt": date(2024, 12, 31)}}
+    merged, start, end = build_date_filter(None, None, existing)
+    assert start == date(2023, 1, 1)
+    assert end == date(2024, 12, 31)
+
+
+def test_l1_build_date_filter_kwargs_override_existing_filter():
+    """L1: explicit kwargs win over values in the existing filter dict."""
+    from datetime import date
+
+    from yt_meta.filtering import build_date_filter
+
+    existing = {"publish_date": {"gte": date(2020, 1, 1)}}
+    merged, start, _ = build_date_filter(date(2024, 6, 1), None, existing)
+    assert start == date(2024, 6, 1)
+    assert merged["publish_date"]["gte"] == date(2024, 6, 1)
+
+
+def test_l1_build_date_filter_converts_string_dates():
+    """L1: string dates pass through parse_relative_date_string ('30d',
+    'YYYY-MM-DD', 'January 1 2023', etc.). This was channel-side only;
+    L1 makes it universal.
+    """
+    from datetime import date
+
+    from yt_meta.filtering import build_date_filter
+
+    _, start, end = build_date_filter("2023-01-01", "2024-12-31")
+    assert isinstance(start, date)
+    assert start.year == 2023 and start.month == 1 and start.day == 1
+    assert end.year == 2024 and end.month == 12 and end.day == 31
+
+
+def test_l1_build_date_filter_no_dates_returns_existing_filter_unchanged():
+    """L1: when no dates are provided anywhere, the helper returns the
+    filter dict unchanged and None for both bounds. Used as the no-op
+    case by callers that always invoke the helper for uniformity.
+    """
+    from yt_meta.filtering import build_date_filter
+
+    existing = {"view_count": {"gt": 1000}}
+    merged, start, end = build_date_filter(None, None, existing)
+    assert merged == {"view_count": {"gt": 1000}}
+    assert start is None
+    assert end is None
+
+
 def test_m6_apply_filters_skips_video_with_missing_field_and_logs(caplog):
     """REGRESSION (M6): apply_filters treats a missing field
     (``video[key] is None``) as a filter failure — the video is
