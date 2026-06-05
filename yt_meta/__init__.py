@@ -1,9 +1,7 @@
 # yt_meta/__init__.py
 
 from .client import YtMeta
-from .comment_api_client import CommentAPIClient
-from .comment_fetcher import BestCommentFetcher, CommentFetcher
-from .comment_parser import CommentParser
+from .comment_fetcher import CommentFetcher
 from .date_utils import parse_relative_date_string
 from .exceptions import MetadataParsingError, VideoUnavailableError
 
@@ -15,7 +13,4 @@ __all__ = [
     "VideoUnavailableError",
     "parse_relative_date_string",
     "CommentFetcher",
-    "BestCommentFetcher",  # Backward compatibility
-    "CommentAPIClient",
-    "CommentParser",
 ]

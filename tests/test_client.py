@@ -591,3 +591,44 @@ def test_m12_comment_classes_have_explicit_close():
     # Idempotent
     cf.close()
     ac.close()
+
+
+def test_m14_internal_classes_no_longer_re_exported():
+    """REGRESSION (M14): CommentAPIClient, CommentParser, and the
+    BestCommentFetcher alias were re-exported from the top-level
+    package, exposing implementation details as public API. The
+    review's v0.6.0 plan removes them. Anyone who needs the internals
+    can still import from the submodule directly
+    (yt_meta.comment_api_client / yt_meta.comment_parser); top-level
+    `from yt_meta import X` now raises ImportError.
+    """
+    with pytest.raises(ImportError):
+        from yt_meta import CommentAPIClient  # noqa: F401
+    with pytest.raises(ImportError):
+        from yt_meta import CommentParser  # noqa: F401
+    with pytest.raises(ImportError):
+        from yt_meta import BestCommentFetcher  # noqa: F401
+
+
+def test_m14_internal_submodule_imports_still_work():
+    """REGRESSION (M14): removing the re-exports doesn't break the
+    submodules themselves — power users can still reach the internals
+    if they really need to, via the documented submodule path.
+    """
+    from yt_meta.comment_api_client import CommentAPIClient  # noqa: F401
+    from yt_meta.comment_fetcher import CommentFetcher  # noqa: F401
+    from yt_meta.comment_parser import CommentParser  # noqa: F401
+
+
+def test_m14_public_surface_unchanged():
+    """REGRESSION (M14): the legitimate public surface stays exactly the
+    same — YtMeta, CommentFetcher, the exceptions, and the
+    parse_relative_date_string helper.
+    """
+    from yt_meta import (  # noqa: F401
+        CommentFetcher,
+        MetadataParsingError,
+        VideoUnavailableError,
+        YtMeta,
+        parse_relative_date_string,
+    )
