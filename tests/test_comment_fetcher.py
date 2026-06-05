@@ -19,6 +19,62 @@ def test_h14_default_sort_for_comment_fetcher_get_comments_is_recent():
     assert sig.parameters["sort_by"].default == "recent"
 
 
+def test_h4_pagination_survives_one_all_duplicate_page(mocker):
+    """REGRESSION (H4): CommentFetcher.get_comments did
+    ``if not found_comments: break`` after processing each API page.
+    If an entire page yielded no NEW comments (all ids in seen_ids —
+    a legitimate case for sort_by='top' where YouTube can re-rank
+    overlapping windows across continuation calls), the loop exited
+    prematurely. Subsequent pages with new comments were never
+    fetched. This also masked H3 (the reply-token DFS bug): when the
+    wrong continuation token was extracted, the next page was all
+    duplicates, this break fired, and the truncation was silent.
+
+    Fix uses a consecutive-empty-page counter — break only after a
+    threshold of consecutive pages with no new comments.
+    """
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client, "get_initial_video_data", return_value=({}, {})
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "get_sort_endpoints_flexible",
+        return_value={"recent": "endpoint"},
+    )
+    mocker.patch.object(
+        fetcher.api_client, "select_sort_endpoint", return_value="tok1"
+    )
+
+    # 3 API pages: page 1 has c1 (new), page 2 has c1 again (dup), page 3 has c2 (new)
+    mocker.patch.object(
+        fetcher.api_client,
+        "make_api_request",
+        side_effect=[{"page": 1}, {"page": 2}, {"page": 3}, {"page": 4}],
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "extract_continuation_token",
+        side_effect=["tok2", "tok3", "tok4", None],
+    )
+    mocker.patch.object(
+        fetcher.parser,
+        "extract_complete_comments",
+        side_effect=[
+            [{"id": "c1", "text": "first"}],
+            [{"id": "c1", "text": "first (dup)"}],
+            [{"id": "c2", "text": "second"}],
+            [{"id": "c2", "text": "second (dup)"}],
+        ],
+    )
+
+    result = list(fetcher.get_comments("dQw4w9WgXcQ", sort_by="recent", limit=10))
+
+    assert [c["id"] for c in result] == ["c1", "c2"], (
+        "pagination broke on the first all-duplicate page; c2 was never fetched"
+    )
+
+
 def test_m19_get_comments_applies_filters_to_yielded_comments(mocker):
     """M19: CommentFetcher.get_comments accepts a `filters` dict and applies
     apply_comment_filters to each comment before yielding. Filters operate

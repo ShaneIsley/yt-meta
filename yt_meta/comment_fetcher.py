@@ -99,6 +99,12 @@ class CommentFetcher:
             # Fetch comments using continuation
             comment_count = 0
             seen_ids = set()
+            # H4: consecutive pages that yielded zero NEW comments. A
+            # legitimate all-duplicate page can happen (sort_by='top'
+            # re-rankings overlap window boundaries) — break only after
+            # several in a row so a one-off doesn't silently truncate.
+            consecutive_empty_pages = 0
+            EMPTY_PAGE_LIMIT = 3
 
             while continuation_token and (limit is None or comment_count < limit):
                 try:
@@ -153,8 +159,17 @@ class CommentFetcher:
 
                         yield comment
 
-                    if not found_comments:
-                        break
+                    # H4: tolerate N-1 consecutive all-duplicate pages
+                    # before breaking. The previous unconditional break
+                    # truncated results on any page that happened to
+                    # land all-duplicates (legitimate for 'top' sort)
+                    # AND masked H3's wrong-token bug.
+                    if found_comments:
+                        consecutive_empty_pages = 0
+                    else:
+                        consecutive_empty_pages += 1
+                        if consecutive_empty_pages >= EMPTY_PAGE_LIMIT:
+                            break
 
                     # Get next continuation token using API client
                     continuation_token = self.api_client.extract_continuation_token(
