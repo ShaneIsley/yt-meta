@@ -535,7 +535,8 @@ The base exception for all errors in this library. Catch it to handle any librar
 from yt_meta import YtMeta, YtMetaError
 
 try:
-    meta = YtMeta().get_video_metadata("https://www.youtube.com/watch?v=...")
+    meta = YtMeta().get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
+    print(meta["title"], "—", meta["status"])
 except YtMetaError as e:
     print(f"yt-meta failed: {e}")
 ```
