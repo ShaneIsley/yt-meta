@@ -60,6 +60,8 @@ JAWED_CHANNEL_ID = "UC4QobU6STFB0P71PMvOGN5A"
 # Content may change; only structure is asserted for these two.
 PLAYLIST_ID = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"  # Corey Schafer, long-standing
 SHORTS_CHANNEL = "https://www.youtube.com/@MrBeast"
+# A channel that reliably posts members-only videos in its recent uploads.
+MEMBERS_CHANNEL = "https://www.youtube.com/@bulwarkmedia/videos"
 
 STRUCTURE_CHANGED = (
     "Returned no data from a known-good permanent target. This usually "
@@ -164,6 +166,25 @@ def test_contract_channel_videos_full_metadata(client):
     assert isinstance(v.get("like_count"), int)
     assert "category" in v
     assert isinstance(v.get("keywords"), list)
+
+
+def test_contract_channel_videos_members_only_flag(client):
+    """channel videos: members-only videos in a listing are flagged
+    is_members_only=True (from the BADGE_MEMBERS_ONLY lockup badge), and
+    public ones False. @bulwarkmedia reliably has members-only videos in
+    its recent uploads. Every item carries the flag as an explicit bool."""
+    videos = list(client.get_channel_videos(MEMBERS_CHANNEL, max_videos=15))
+    assert videos, STRUCTURE_CHANGED
+    for v in videos:
+        assert isinstance(v["is_members_only"], bool)
+    # Expect at least one of each in a 15-item window for this channel.
+    assert any(v["is_members_only"] for v in videos), (
+        "no members-only video flagged — badge shape may have changed"
+    )
+    # Members-only videos have no public view count.
+    for v in videos:
+        if v["is_members_only"]:
+            assert v["view_count"] is None
 
 
 def test_contract_channel_shorts(client):

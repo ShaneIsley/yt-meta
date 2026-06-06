@@ -386,6 +386,15 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
     )
     publish_text = next((t for t in texts if "ago" in t.lower()), None)
 
+    # Members-only videos carry a BADGE_MEMBERS_ONLY badge in a metadata
+    # row (and have no view count). Surface it explicitly so callers get
+    # a signal instead of inferring it from view_count being None.
+    is_members_only = any(
+        _deep_get(badge, "badgeViewModel.badgeStyle") == "BADGE_MEMBERS_ONLY"
+        for row in rows
+        for badge in (row.get("badges") or [])
+    )
+
     # The duration badge carries both a clock-format text ("7:06") and an
     # accessibility label ("7 minutes, 6 seconds"). parse_duration expects
     # the labelled form, so prefer the accessibility label.
@@ -414,6 +423,7 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
         "publish_date": publish_date,
         "duration_seconds": parse_duration(duration_label) if duration_label else None,
         "url": f"https://www.youtube.com/watch?v={video_id}",
+        "is_members_only": is_members_only,
     }
 
 

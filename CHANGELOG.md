@@ -7,6 +7,12 @@ All notable changes to this project are documented in this file.
 - (Add new changes here)
 
 ### Added
+- **`is_members_only` on channel-video listings.** `get_channel_videos`
+  now flags members-only videos (detected from the `BADGE_MEMBERS_ONLY`
+  lockup badge) with an explicit `is_members_only` boolean, instead of
+  callers having to infer it from a `None` view count. Live-verified
+  against a channel with members-only uploads. (Live/upcoming listing
+  badges remain a follow-up pending fixtures.)
 - **Video availability status on `get_video_metadata`.** Every result
   now carries `status` (`"ok"` / `"unavailable"`), `status_reason`
   (YouTube's text when unavailable), and ISO-8601 UTC
