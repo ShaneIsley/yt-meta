@@ -108,6 +108,89 @@ def test_status_changed_at_carried_forward_when_unchanged(mocker):
     assert m["status_checked_at"] == "2026-03-01T00:00:00+00:00"  # advanced
 
 
+_UPCOMING_PLAYER = {
+    "playabilityStatus": {
+        "status": "LIVE_STREAM_OFFLINE",
+        "reason": "This live event will begin in 2 days.",
+    },
+    "videoDetails": {
+        "videoId": "yl2jsIoMfDU",
+        "title": "WWDC26: Platforms State of the Union | Apple",
+        "author": "Apple",
+        "isUpcoming": True,
+        "isLiveContent": True,  # note: True for upcoming too
+        "lengthSeconds": "0",
+        "viewCount": "0",
+    },
+    "microformat": {
+        "playerMicroformatRenderer": {
+            "liveBroadcastDetails": {
+                "isLiveNow": False,
+                "startTimestamp": "2026-06-08T20:00:00+00:00",
+            }
+        }
+    },
+}
+
+
+def test_status_upcoming_video():
+    """An upcoming (scheduled) live event reports status='upcoming',
+    is_upcoming=True, a scheduled_start_time, and is_live=False (it's not
+    streaming yet)."""
+    fetcher = _video_fetcher_returning(_UPCOMING_PLAYER)
+    m = fetcher.get_video_metadata("yl2jsIoMfDU")
+    assert m["status"] == "upcoming"
+    assert m["status_reason"] == "This live event will begin in 2 days."
+    assert m["is_upcoming"] is True
+    assert m["is_live"] is False  # not live yet, despite isLiveContent=True
+    assert m["scheduled_start_time"] == "2026-06-08T20:00:00+00:00"
+
+
+def test_status_live_now_video():
+    """A currently-live stream reports is_live=True (from
+    liveBroadcastDetails.isLiveNow), status='ok', is_upcoming=False."""
+    live_player = {
+        "playabilityStatus": {"status": "OK"},
+        "videoDetails": {
+            "videoId": "dQw4w9WgXcQ",
+            "title": "Live now",
+            "isLiveContent": True,
+            "lengthSeconds": "0",
+            "viewCount": "10",
+        },
+        "microformat": {
+            "playerMicroformatRenderer": {
+                "liveBroadcastDetails": {"isLiveNow": True}
+            }
+        },
+    }
+    m = _video_fetcher_returning(live_player).get_video_metadata("dQw4w9WgXcQ")
+    assert m["status"] == "ok"
+    assert m["is_live"] is True
+    assert m["is_upcoming"] is False
+    assert m["scheduled_start_time"] is None
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/live/yl2jsIoMfDU?si=TxAEF7Q3t3",
+        "https://www.youtube.com/live/yl2jsIoMfDU",
+        "https://www.youtube.com/watch?v=yl2jsIoMfDU",
+        "https://youtu.be/yl2jsIoMfDU",
+        "https://www.youtube.com/shorts/yl2jsIoMfDU",
+        "yl2jsIoMfDU",
+    ],
+)
+def test_extract_video_id_handles_all_url_forms(url):
+    """REGRESSION: /live/ URLs (with optional ?si= share param) — e.g. a
+    link to a scheduled premiere — were not handled by extract_video_id.
+    All supported forms resolve to the same canonical id."""
+    from yt_meta.utils import extract_video_id
+
+    assert extract_video_id(url) == "yl2jsIoMfDU"
+
+
 def test_get_video_metadata_accepts_bare_id_builds_watch_url():
     """REGRESSION: get_video_metadata previously fetched the raw input as
     a URL, so a bare id raised RequestError. It now builds a canonical

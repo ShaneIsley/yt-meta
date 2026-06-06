@@ -462,10 +462,15 @@ Fetches metadata for a single YouTube video.
 
 | Field | Meaning |
 | --- | --- |
-| `status` | `"ok"` or `"unavailable"`. |
-| `status_reason` | YouTube's reason text when unavailable (e.g. `"Video unavailable"`), else `None`. |
+| `status` | `"ok"`, `"upcoming"` (scheduled premiere / live event not started), or `"unavailable"`. |
+| `status_reason` | YouTube's reason text when not `ok` (e.g. `"Video unavailable"`, `"This live event will begin in 2 days."`), else `None`. |
 | `status_checked_at` | ISO-8601 UTC time of the last availability check. |
 | `status_changed_at` | ISO-8601 UTC time the status last changed (first sighting == `status_checked_at`). |
+| `is_live` | `True` only while *currently* streaming. |
+| `is_upcoming` | `True` for a scheduled premiere / live event not started. |
+| `scheduled_start_time` | ISO-8601 start time for an upcoming stream, else `None`. |
+
+URLs accepted everywhere include the `/live/<id>` form (with optional `?si=` share param) used for live streams and premieres.
 
 When a previously-`ok` video is found `unavailable` (e.g. deleted), the result **preserves the last-known-good content fields** (title, channel, counts…) and overlays the status fields — so you never lose data you already had. Combine with `force_refresh=True` and a persistent cache to track a video's lifecycle over time.
 

@@ -646,16 +646,28 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
         player_response_data, "microformat.playerMicroformatRenderer", {}
     )
 
-    # Video availability status. playabilityStatus.status is "OK" for
-    # playable videos and one of ERROR / UNPLAYABLE / LOGIN_REQUIRED /
-    # AGE_CHECK_REQUIRED / LIVE_STREAM_OFFLINE etc. for unavailable ones.
-    # Only the OK and unavailable cases are mapped here (the finer-grained
-    # statuses — private vs members-only vs age-restricted — need captured
-    # fixtures before they can be distinguished reliably). status_reason
-    # carries YouTube's own text so callers retain the detail.
+    # Video availability status, derived from playabilityStatus + a few
+    # videoDetails / liveBroadcastDetails flags:
+    #   OK                      -> "ok"
+    #   isUpcoming /            -> "upcoming"  (scheduled premiere or
+    #     LIVE_STREAM_OFFLINE                   live event not started)
+    #   ERROR / UNPLAYABLE /    -> "unavailable"
+    #     LOGIN_REQUIRED / ...
+    # status_reason carries YouTube's own text. The finer-grained
+    # unavailable cases (private vs members-only vs age-restricted) are
+    # still collapsed to "unavailable" pending captured fixtures.
     playability = _deep_get(player_response_data, "playabilityStatus", {}) or {}
     raw_status = playability.get("status")
-    if raw_status == "OK" or (raw_status is None and video_details):
+    live_details = microformat.get("liveBroadcastDetails", {}) or {}
+    is_upcoming = bool(video_details.get("isUpcoming"))
+    is_live_now = bool(live_details.get("isLiveNow"))
+    # Scheduled start for upcoming/premiere streams (ISO-8601), else None.
+    scheduled_start_time = live_details.get("startTimestamp")
+
+    if is_upcoming or raw_status == "LIVE_STREAM_OFFLINE":
+        status = "upcoming"
+        status_reason = playability.get("reason")
+    elif raw_status == "OK" or (raw_status is None and video_details):
         status = "ok"
         status_reason = None
     else:
@@ -681,7 +693,13 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
         "like_count": find_like_count(player_response_data),
         "keywords": video_details.get("keywords", []),
         "thumbnails": _deep_get(video_details, "thumbnail.thumbnails", []),
-        "is_live": video_details.get("isLiveContent", False),
+        # is_live now means "currently streaming" (liveBroadcastDetails.
+        # isLiveNow). It used to be videoDetails.isLiveContent, which is
+        # also True for upcoming and for ended live VODs — misleading.
+        # is_upcoming + scheduled_start_time cover the not-yet-started case.
+        "is_live": is_live_now,
+        "is_upcoming": is_upcoming,
+        "scheduled_start_time": scheduled_start_time,
         "full_description": video_details.get("shortDescription"),
         "heatmap": find_heatmap(initial_data),
         "subscriber_count_text": _deep_get(initial_data, subscriber_path),

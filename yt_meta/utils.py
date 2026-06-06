@@ -105,9 +105,9 @@ def extract_video_id(youtube_url: str) -> str:
     Extract the canonical 11-character video ID from a YouTube URL or
     bare ID.
 
-    Accepts ``watch?v=ID``, ``/shorts/ID``, ``youtu.be/ID``, and a bare
-    11-char ID. Every return path validates the extracted ID against
-    ``[A-Za-z0-9_-]{11}``. The previous pass-through fallback that
+    Accepts ``watch?v=ID``, ``/shorts/ID``, ``/live/ID``, ``youtu.be/ID``,
+    and a bare 11-char ID. Every return path validates the extracted ID
+    against ``[A-Za-z0-9_-]{11}``. The previous pass-through fallback that
     accepted any non-``http`` string (M13) is removed — it allowed
     "test_id", "../etc/passwd", and similar to flow into cache keys.
 
@@ -125,6 +125,8 @@ def extract_video_id(youtube_url: str) -> str:
         candidate = youtube_url.split("v=")[1].split("&")[0]
     elif "/shorts/" in youtube_url:
         candidate = youtube_url.split("/shorts/")[1].split("?")[0]
+    elif "/live/" in youtube_url:
+        candidate = youtube_url.split("/live/")[1].split("?")[0]
     elif "youtu.be/" in youtube_url:
         candidate = youtube_url.split("youtu.be/")[1].split("?")[0]
 

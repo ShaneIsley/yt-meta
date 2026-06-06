@@ -7,6 +7,14 @@ All notable changes to this project are documented in this file.
 - (Add new changes here)
 
 ### Added
+- **Upcoming / live status on `get_video_metadata`.** Scheduled
+  premieres and not-yet-started live events now report `status="upcoming"`
+  with `is_upcoming=True` and a `scheduled_start_time` (ISO-8601, from
+  the watch page's `liveBroadcastDetails`). Live-verified against a real
+  scheduled premiere. The `is_live` field now means *currently
+  streaming* (`liveBroadcastDetails.isLiveNow`) — it previously used
+  `videoDetails.isLiveContent`, which is also `True` for upcoming videos
+  and ended live VODs, so it was misleading.
 - **`is_members_only` on channel-video listings.** `get_channel_videos`
   now flags members-only videos (detected from the `BADGE_MEMBERS_ONLY`
   lockup badge) with an explicit `is_members_only` boolean, instead of
@@ -28,6 +36,9 @@ All notable changes to this project are documented in this file.
   once live fixtures are captured.
 
 ### Fixed
+- `extract_video_id` now handles `/live/<id>` URLs (the form YouTube
+  uses for live streams and scheduled premieres, often with a `?si=`
+  share param). Previously such links raised `ValueError`.
 - `get_video_metadata` now builds a canonical watch URL from the
   resolved video id, so a bare 11-char id (or `youtu.be/` link) works
   — previously it fetched the raw input as a URL and raised for bare
