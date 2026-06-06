@@ -220,83 +220,6 @@ def test_clear_cache_all(tmp_path):
 
 
 # --- Live Integration Tests ---
-@pytest.mark.integration
-def test_get_channel_metadata_live(isolated_client: YtMeta):
-    """Test fetching metadata for a live channel."""
-    channel_url = "https://www.youtube.com/@LofiGirl"
-    metadata = isolated_client.get_channel_metadata(channel_url=channel_url)
-    assert metadata["title"] == "Lofi Girl"
-    assert metadata["channel_id"] is not None
-
-
-@pytest.mark.integration
-def test_get_channel_videos_live(isolated_client: YtMeta):
-    """Test fetching videos for a live channel."""
-    channel_url = "https://www.youtube.com/@MrBeast/videos"
-    videos = isolated_client.get_channel_videos(channel_url=channel_url, max_videos=5)
-    video_list = list(videos)
-    assert len(video_list) == 5
-    assert "video_id" in video_list[0]
-
-
-@pytest.mark.integration
-def test_get_channel_shorts_live(isolated_client: YtMeta):
-    """Test fetching shorts for a live channel."""
-    channel_url = "https://www.youtube.com/@MrBeast"
-    shorts = isolated_client.get_channel_shorts(channel_url=channel_url, max_videos=5)
-    short_list = list(shorts)
-    assert len(short_list) == 5
-    assert "video_id" in short_list[0]
-
-
-@pytest.mark.integration
-def test_get_playlist_videos_live(isolated_client: YtMeta):
-    """Test fetching videos for a live playlist."""
-    playlist_id = (
-        "PL8dPuuaLjXtNlUrzyH5r6jN9ulIgZBpdo"  # Crash Course Computer Science - stable
-    )
-    videos = isolated_client.get_playlist_videos(playlist_id=playlist_id, max_videos=5)
-    video_list = list(videos)
-    assert len(video_list) >= 1  # Check for at least one video
-    assert "video_id" in video_list[0]
-
-
-@pytest.mark.integration
-def test_get_comments_live(isolated_client: YtMeta):
-    """Test fetching comments for a live video."""
-    video_id = "jNQXAC9IVRw"  # "Me at the zoo" - very stable, lots of comments
-    comments = isolated_client.comment_fetcher.get_comments(video_id=video_id, limit=10)
-    comment_list = list(comments)
-    assert len(comment_list) >= 1
-    assert "text" in comment_list[0]
-
-
-@pytest.mark.integration
-def test_get_comment_replies_live(isolated_client: YtMeta):
-    """Test fetching replies for a live comment."""
-    video_id = "jNQXAC9IVRw"  # "Me at the zoo"
-    # Scan more comments to find one with replies, this is more robust
-    comments_gen = isolated_client.comment_fetcher.get_comments(
-        video_id=video_id, limit=50, include_reply_continuation=True
-    )
-
-    found_replies = False
-    for comment in comments_gen:
-        if "reply_continuation_token" in comment:
-            replies = isolated_client.comment_fetcher.get_comment_replies(
-                video_id=video_id,
-                reply_continuation_token=comment["reply_continuation_token"],
-                limit=1,
-            )
-            reply_list = list(replies)
-            if reply_list:
-                assert "text" in reply_list[0]
-                found_replies = True
-                break
-
-    assert found_replies, (
-        "Could not find any comments with replies in the first 50 comments."
-    )
 
 
 def test_regression_m17_get_video_comments_accepts_youtu_be_url(client, mocker):
@@ -600,7 +523,6 @@ def test_m12_comment_classes_have_explicit_close():
     on both classes. CommentFetcher.close() delegates to its
     CommentAPIClient; CommentAPIClient.close() closes its httpx.Client.
     """
-    from yt_meta.comment_api_client import CommentAPIClient
     from yt_meta.comment_fetcher import CommentFetcher
 
     cf = CommentFetcher()

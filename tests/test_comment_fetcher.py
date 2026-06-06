@@ -64,6 +64,35 @@ def test_h17_extract_complete_comments_from_real_fixture(
     assert min(like_counts) >= 0
 
 
+def test_reply_token_subthreads_shape():
+    """REGRESSION: YouTube moved the reply-continuation token from
+    ``commentRepliesRenderer.contents[]`` to
+    ``commentRepliesRenderer.subThreads[]``. extract_reply_continuations
+    only checked ``contents``, so it returned an empty mapping against
+    live data — comments with hundreds of replies surfaced no
+    reply_continuation_token. Captured from a live "Me at the zoo"
+    response (3 threads, all with subThreads tokens)."""
+    import json
+    from pathlib import Path
+
+    from yt_meta.comment_parser import CommentParser
+
+    fixture = (
+        Path(__file__).parent / "fixtures" / "comment_threads_subthreads.json"
+    )
+    with open(fixture) as f:
+        response = json.load(f)
+
+    tokens = CommentParser().extract_reply_continuations(response)
+    # All 3 threads in the fixture have replies → all 3 must yield tokens.
+    assert len(tokens) == 3, (
+        f"expected 3 reply tokens from the subThreads shape, got {len(tokens)}"
+    )
+    for comment_id, token in tokens.items():
+        assert comment_id.startswith("Ug")  # real YouTube comment id
+        assert isinstance(token, str) and len(token) > 10
+
+
 def test_l6_extract_reply_continuations_from_real_fixture(
     comment_continuation_response,
 ):

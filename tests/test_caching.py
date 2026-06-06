@@ -170,8 +170,9 @@ def test_h12_default_pytest_addopts_excludes_integration():
     Without this guard, ``pytest`` (no args) fires ~25 live requests
     against @LofiGirl/@TED/@MrBeast/dQw4w9WgXcQ on each invocation.
     """
-    import tomllib
     from pathlib import Path
+
+    import tomllib
 
     repo_root = Path(__file__).resolve().parent.parent
     cfg = tomllib.loads((repo_root / "pyproject.toml").read_text())

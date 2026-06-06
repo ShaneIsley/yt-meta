@@ -108,37 +108,3 @@ def test_get_playlist_videos_stops_at_id(client, mocker):
     assert videos[0]["video_id"] == "vid1"
     assert videos[1]["video_id"] == "vid2"
     assert videos[2]["video_id"] == "vid3"
-
-
-@pytest.mark.integration
-def test_get_playlist_videos(isolated_client):
-    """Test fetching videos from a live playlist."""
-    # Playlist: Crash Course Computer Science - stable and unlikely to change
-    playlist_id = "PL8dPuuaLjXtNlUrzyH5r6jN9ulIgZBpdo"
-    videos = isolated_client.get_playlist_videos(playlist_id, max_videos=5)
-    video_list = list(videos)
-    assert len(video_list) >= 1
-    # Verify basic metadata is present
-    for video in video_list:
-        assert "video_id" in video
-        assert "title" in video
-
-
-@pytest.mark.integration
-def test_get_playlist_videos_with_full_metadata(isolated_client):
-    """Test fetching full metadata for videos from a live playlist."""
-    # Playlist: A short, stable playlist
-    playlist_id = "PL8dPuuaLjXtNlUrzyH5r6jN9ulIgZBpdo"
-    videos = isolated_client.get_playlist_videos(
-        playlist_id, fetch_full_metadata=True, max_videos=1
-    )
-    video_list = list(videos)
-    assert len(video_list) == 1
-    # Verify detailed metadata is present
-    video = video_list[0]
-    assert "video_id" in video
-    assert "title" in video
-    assert "like_count" in video
-    assert isinstance(video["like_count"], int)
-    assert "view_count" in video
-    assert isinstance(video["view_count"], int)

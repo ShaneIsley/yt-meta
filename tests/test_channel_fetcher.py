@@ -2,7 +2,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from yt_meta import YtMeta
 from yt_meta.exceptions import MetadataParsingError
 from yt_meta.fetchers import ChannelFetcher, VideoFetcher
 
@@ -324,60 +323,3 @@ def test_get_channel_videos_paginates_correctly(channel_fetcher, mocker):
         }
         videos = list(channel_fetcher.get_channel_videos("https://any-url.com"))
         assert len(videos) == 2
-
-
-@pytest.mark.integration
-def test_get_channel_videos_full_metadata_integration(isolated_client: YtMeta):
-    """
-    Tests that fetch_full_metadata correctly retrieves detailed metadata
-    like 'like_count' for channel videos.
-    """
-    channel_url = "https://www.youtube.com/@TED/videos"
-    videos_gen = isolated_client.get_channel_videos(
-        channel_url, max_videos=3, fetch_full_metadata=True
-    )
-    videos = list(videos_gen)
-    assert len(videos) > 0
-    assert "like_count" in videos[0]
-    assert isinstance(videos[0]["like_count"], int)
-
-
-@pytest.mark.integration
-def test_get_channel_metadata(isolated_client: YtMeta):
-    """
-    Tests fetching basic metadata for a real channel to ensure the parsing logic
-    is robust against live data.
-    """
-    channel_url = "https://www.youtube.com/@TED"
-    metadata = isolated_client.get_channel_metadata(channel_url)
-    assert metadata["title"] == "TED"
-    assert metadata["channel_id"] == "UCAuUUnT6oDeKwE6v1NGQxug"
-
-
-@pytest.mark.integration
-def test_get_channel_videos(isolated_client: YtMeta):
-    """
-    Tests fetching a small number of videos from a real channel.
-    ensuring the end-to-end process works.
-    """
-    channel_url = "https://www.youtube.com/@TED/videos"
-    videos_gen = isolated_client.get_channel_videos(channel_url, max_videos=3)
-    videos = list(videos_gen)
-    assert len(videos) == 3
-    for video in videos:
-        assert "video_id" in video
-        assert "title" in video
-
-
-@pytest.mark.integration
-def test_get_channel_shorts(isolated_client: YtMeta):
-    """
-    Tests fetching a small number of shorts from a real channel.
-    """
-    channel_url = "https://www.youtube.com/@bashbunni"
-    shorts_gen = isolated_client.get_channel_shorts(channel_url, max_videos=3)
-    shorts = list(shorts_gen)
-    assert len(shorts) == 3
-    for short in shorts:
-        assert "video_id" in short
-        assert "title" in short

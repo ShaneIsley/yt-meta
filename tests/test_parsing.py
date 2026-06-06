@@ -6,6 +6,7 @@ import json
 
 from tests.conftest import get_fixture
 from yt_meta import parsing
+from yt_meta.parsing import extract_and_parse_json, extract_shorts_from_renderers
 
 
 def test_m2_parse_video_renderer_handles_explicit_none_badge():
@@ -104,10 +105,6 @@ def test_m4_parse_video_metadata_handles_none_publish_date():
     }
     result = parsing.parse_video_metadata(player_response_data, initial_data)
     assert result["publish_date"] is None
-from yt_meta.parsing import (
-    extract_and_parse_json,
-    extract_shorts_from_renderers,
-)
 
 
 def test_placeholder():

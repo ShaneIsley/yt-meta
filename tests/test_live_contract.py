@@ -137,6 +137,21 @@ def test_contract_channel_videos_lockup(client):
         assert isinstance(v["publish_date"], datetime)
 
 
+def test_contract_channel_videos_full_metadata(client):
+    """channel videos with fetch_full_metadata=True — the enrichment
+    path that merges per-video metadata (like_count, category, keywords)
+    onto each renderer. A distinct code path from the basic listing."""
+    videos = list(
+        client.get_channel_videos(JAWED_URL, max_videos=1, fetch_full_metadata=True)
+    )
+    assert videos, STRUCTURE_CHANGED
+    v = videos[0]
+    # Fields that only appear after full-metadata enrichment.
+    assert isinstance(v.get("like_count"), int)
+    assert "category" in v
+    assert isinstance(v.get("keywords"), list)
+
+
 def test_contract_channel_shorts(client):
     """channel shorts: validates the shortsLockupViewModel parser shape.
     Content may change; require at least one with the right shape."""
@@ -187,27 +202,41 @@ def test_contract_comment_filters(client):
 
 
 def test_contract_reply_tokens_and_replies(client):
-    """reply-token path: with_reply_tokens surfaces continuation tokens,
-    and get_comment_replies resolves them. Replies are data-dependent, so
-    skip (don't fail) if the sampled comments happen to have none — a
-    missing reply is not a structural break."""
-    with_tokens = list(
+    """reply-token path: with_reply_tokens must surface continuation
+    tokens for comments that have replies, and get_comment_replies must
+    resolve them to actual reply comments.
+
+    This asserts token PRESENCE structurally (not skip-on-missing): the
+    top comments on "Me at the zoo" reliably have hundreds of replies,
+    so zero surfaced tokens means the reply-continuation extraction
+    broke — which is exactly what happened when YouTube moved the token
+    from commentRepliesRenderer.contents[] to .subThreads[]. A contract
+    test that skipped here would have missed it."""
+    top = list(
         client.get_video_comments_with_reply_tokens(
             ZOO_URL, sort_by="top", limit=20
         )
     )
-    assert with_tokens, STRUCTURE_CHANGED
+    assert top, STRUCTURE_CHANGED
 
-    tokened = [c for c in with_tokens if c.get("reply_continuation_token")]
-    if not tokened:
-        pytest.skip("no comments with replies in the sample (data-dependent)")
+    have_replies = [c for c in top if c.get("reply_count", 0) > 0]
+    assert have_replies, (
+        "no top comment reported replies — unexpected for this video; "
+        "comment shape may have changed"
+    )
+    tokened = [c for c in top if c.get("reply_continuation_token")]
+    assert tokened, (
+        f"{len(have_replies)} top comments have replies but NONE surfaced a "
+        f"reply_continuation_token — the reply-continuation extraction is "
+        f"broken (cf. the contents[] -> subThreads[] migration). " + STRUCTURE_CHANGED
+    )
 
     token = tokened[0]["reply_continuation_token"]
-    assert isinstance(token, str) and token
+    assert isinstance(token, str) and len(token) > 10
     replies = list(
-        client.get_comment_replies(ZOO_URL, reply_continuation_token=token, limit=1)
+        client.get_comment_replies(ZOO_URL, reply_continuation_token=token, limit=2)
     )
-    if replies:  # replies can be removed between calls; validate shape if present
-        r = replies[0]
-        assert isinstance(r["text"], str)
-        assert isinstance(r["author"], str)
+    assert replies, "reply token did not resolve to any replies — reply fetch broke"
+    r = replies[0]
+    assert isinstance(r["text"], str)
+    assert isinstance(r["author"], str) and r["author"]

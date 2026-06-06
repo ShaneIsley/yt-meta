@@ -239,31 +239,32 @@ class CommentParser:
                         if "commentViewModel" in view_model:
                             comment_id = view_model["commentViewModel"].get("commentId")
 
-                    # Look for reply continuation token
+                    # Look for reply continuation token. YouTube moved the
+                    # continuationItemRenderer from ``contents`` (older) to
+                    # ``subThreads`` (current); check both so we work across
+                    # the migration and against older cached responses.
                     if comment_id and "replies" in thread:
-                        replies = thread["replies"]
-                        if "commentRepliesRenderer" in replies:
-                            replies_renderer = replies["commentRepliesRenderer"]
-                            if "contents" in replies_renderer:
-                                contents = replies_renderer["contents"]
-                                for content in contents:
-                                    if "continuationItemRenderer" in content:
-                                        continuation_item = content[
-                                            "continuationItemRenderer"
-                                        ]
-                                        if "continuationEndpoint" in continuation_item:
-                                            endpoint = continuation_item[
-                                                "continuationEndpoint"
-                                            ]
-                                            if "continuationCommand" in endpoint:
-                                                token = endpoint[
-                                                    "continuationCommand"
-                                                ].get("token")
-                                                if token:
-                                                    reply_tokens[comment_id] = token
-                                                    logger.debug(
-                                                        f"Found reply token for comment {comment_id}: {token[:50]}..."
-                                                    )
+                        replies_renderer = thread["replies"].get(
+                            "commentRepliesRenderer", {}
+                        )
+                        items = replies_renderer.get(
+                            "subThreads"
+                        ) or replies_renderer.get("contents") or []
+                        for item in items:
+                            token = (
+                                item.get("continuationItemRenderer", {})
+                                .get("continuationEndpoint", {})
+                                .get("continuationCommand", {})
+                                .get("token")
+                            )
+                            if token:
+                                reply_tokens[comment_id] = token
+                                logger.debug(
+                                    "Found reply token for comment %s: %s...",
+                                    comment_id,
+                                    token[:50],
+                                )
+                                break
 
                 for value in obj.values():
                     search_comment_threads(value)

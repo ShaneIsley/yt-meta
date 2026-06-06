@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from yt_meta.transcript_fetcher import TranscriptFetcher
 
 
@@ -57,26 +55,3 @@ def test_get_transcript_failure(mock_api_class):
     # Assert
     assert result == []
     mock_api_instance.list.assert_called_once_with(video_id)
-
-
-@pytest.mark.integration
-def test_get_video_transcript_integration():
-    """
-    Test that get_video_transcript fetches a real transcript from YouTube.
-    """
-    # Arrange
-    from yt_meta.client import YtMeta
-
-    client = YtMeta()
-    video_id = "dQw4w9WgXcQ"  # A short video with a known transcript
-
-    # Act
-    transcript = client.get_video_transcript(video_id)
-
-    # Assert
-    assert isinstance(transcript, list)
-    assert len(transcript) > 0
-    first_snippet = transcript[0]
-    assert "text" in first_snippet
-    assert "start" in first_snippet
-    assert "duration" in first_snippet 
