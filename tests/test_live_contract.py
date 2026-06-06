@@ -100,6 +100,20 @@ def test_contract_video_metadata(client):
     assert isinstance(m["thumbnails"], list) and m["thumbnails"]
 
 
+def test_contract_video_status_field(client):
+    """video status: a playable video reports status='ok' with the
+    lifecycle timestamps; a deleted one reports status='unavailable'
+    with YouTube's reason instead of a junk dict."""
+    ok = client.get_video_metadata(ZOO_URL)
+    assert ok["status"] == "ok"
+    assert ok["status_reason"] is None
+    assert ok["status_checked_at"] and ok["status_changed_at"]
+
+    gone = client.get_video_metadata("https://www.youtube.com/watch?v=aaaaaaaaaaa")
+    assert gone["status"] == "unavailable"
+    assert isinstance(gone["status_reason"], str) and gone["status_reason"]
+
+
 def test_contract_transcript(client):
     """transcript: accepts a URL (M9) and yields typed snippets."""
     tx = client.get_video_transcript(ZOO_URL)

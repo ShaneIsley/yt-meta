@@ -1,9 +1,121 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from tests.conftest import make_mock_html
 from yt_meta import VideoUnavailableError
 from yt_meta.fetchers import VideoFetcher
+
+
+def _video_fetcher_returning(player_response, initial_data=None):
+    """A VideoFetcher whose session returns a mock watch page built from
+    the given player_response / initial_data."""
+    if initial_data is None:
+        initial_data = {
+            "contents": {},
+            "frameworkUpdates": {"entityBatchUpdate": {"mutations": []}},
+        }
+    session = MagicMock()
+    response = MagicMock()
+    response.text = make_mock_html(player_response, initial_data)
+    response.raise_for_status = MagicMock()
+    session.get.return_value = response
+    return VideoFetcher(session=session, cache={})
+
+
+_OK_PLAYER = {
+    "playabilityStatus": {"status": "OK"},
+    "videoDetails": {
+        "videoId": "dQw4w9WgXcQ",
+        "title": "Never Gonna Give You Up",
+        "author": "Rick Astley",
+        "lengthSeconds": "212",
+        "viewCount": "1000",
+    },
+    "microformat": {"playerMicroformatRenderer": {"publishDate": "2009-10-25"}},
+}
+_DELETED_PLAYER = {
+    "playabilityStatus": {"status": "ERROR", "reason": "Video unavailable"},
+    "videoDetails": {},
+}
+
+
+def test_status_field_ok_video():
+    """A playable video reports status='ok' with no reason, and carries
+    the status lifecycle timestamps."""
+    fetcher = _video_fetcher_returning(_OK_PLAYER)
+    m = fetcher.get_video_metadata("dQw4w9WgXcQ")
+    assert m["status"] == "ok"
+    assert m["status_reason"] is None
+    assert m["status_checked_at"]  # ISO string set
+    assert m["status_changed_at"] == m["status_checked_at"]  # first sighting
+
+
+def test_status_field_unavailable_video_no_junk_dict():
+    """A deleted/unavailable video reports status='unavailable' with
+    YouTube's reason — instead of the old junk dict (title=None,
+    view_count=0 with no signal)."""
+    fetcher = _video_fetcher_returning(_DELETED_PLAYER)
+    m = fetcher.get_video_metadata("dQw4w9WgXcQ")
+    assert m["status"] == "unavailable"
+    assert m["status_reason"] == "Video unavailable"
+
+
+def test_status_preserves_last_known_good_on_becoming_unavailable(mocker):
+    """When a previously-ok video becomes unavailable, the result keeps
+    the last-known-good content fields and stamps status_changed_at at
+    the moment of change."""
+    times = iter(["2026-01-01T00:00:00+00:00", "2026-02-01T00:00:00+00:00"])
+    mocker.patch("yt_meta.fetchers._utcnow_iso", side_effect=lambda: next(times))
+
+    cache = {}
+    ok_fetcher = _video_fetcher_returning(_OK_PLAYER)
+    ok_fetcher.cache = cache
+    first = ok_fetcher.get_video_metadata("dQw4w9WgXcQ")
+    assert first["status"] == "ok"
+    assert first["title"] == "Never Gonna Give You Up"
+
+    gone_fetcher = _video_fetcher_returning(_DELETED_PLAYER)
+    gone_fetcher.cache = cache
+    second = gone_fetcher.get_video_metadata("dQw4w9WgXcQ", force_refresh=True)
+
+    assert second["status"] == "unavailable"
+    assert second["status_reason"] == "Video unavailable"
+    # Last-known-good content preserved:
+    assert second["title"] == "Never Gonna Give You Up"
+    assert second["view_count"] == 1000
+    # Change recorded at the second fetch's timestamp, not the first:
+    assert second["status_changed_at"] == "2026-02-01T00:00:00+00:00"
+    assert second["status_checked_at"] == "2026-02-01T00:00:00+00:00"
+
+
+def test_status_changed_at_carried_forward_when_unchanged(mocker):
+    """If status is unchanged across fetches, status_changed_at is
+    carried forward (not bumped) while status_checked_at advances."""
+    times = iter(["2026-01-01T00:00:00+00:00", "2026-03-01T00:00:00+00:00"])
+    mocker.patch("yt_meta.fetchers._utcnow_iso", side_effect=lambda: next(times))
+
+    cache = {}
+    f1 = _video_fetcher_returning(_OK_PLAYER)
+    f1.cache = cache
+    f1.get_video_metadata("dQw4w9WgXcQ")
+
+    f2 = _video_fetcher_returning(_OK_PLAYER)
+    f2.cache = cache
+    m = f2.get_video_metadata("dQw4w9WgXcQ", force_refresh=True)
+
+    assert m["status_changed_at"] == "2026-01-01T00:00:00+00:00"  # carried forward
+    assert m["status_checked_at"] == "2026-03-01T00:00:00+00:00"  # advanced
+
+
+def test_get_video_metadata_accepts_bare_id_builds_watch_url():
+    """REGRESSION: get_video_metadata previously fetched the raw input as
+    a URL, so a bare id raised RequestError. It now builds a canonical
+    watch URL from the resolved id."""
+    fetcher = _video_fetcher_returning(_OK_PLAYER)
+    fetcher.get_video_metadata("dQw4w9WgXcQ")  # bare id — must not raise
+    called_url = fetcher.session.get.call_args[0][0]
+    assert called_url == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
 
 @pytest.fixture

@@ -451,11 +451,23 @@ The main client for interacting with the library. Handles session management and
 -   **`cache_ttl_seconds`**: TTL (seconds) for entries in the built-in SQLite cache. Default `86400` (1 day). Ignored when you inject your own `cache`.
 -   **`accept_cookies`**: Opt in to bypassing YouTube's EU cookie-consent wall. Default `False` (no consent cookie is set). If a call fails with a `302` redirect to `consent.youtube.com` (region-gated, e.g. the EU), construct the client with `YtMeta(accept_cookies=True)` — a `SOCS` consent cookie is then set on the session so YouTube serves content directly. This is an explicit, conscious choice to accept YouTube's cookies on your behalf, which is why it's opt-in rather than automatic.
 
-#### `get_video_metadata(youtube_url: str) -> dict`
+#### `get_video_metadata(youtube_url, *, video_id=None, force_refresh=False) -> dict | None`
 Fetches metadata for a single YouTube video.
--   **`youtube_url`**: The full URL of the YouTube video.
--   **Returns**: A dictionary containing metadata such as `title`, `description`, `view_count`, `like_count`, `publish_date` (a `datetime` — see M4 in the v0.6.0 CHANGELOG), `category`, and more. Returns `None` when the watch page was fetched successfully but can't be parsed (typically: ongoing live streams, just-deleted videos, A/B-tested page-structure variants — see M7 in the v0.6.0 CHANGELOG).
--   **Raises**: `VideoUnavailableError` if the HTTP fetch itself fails (network error, 404, rate-limit). Distinct from the `None` return for parse failures.
+-   **`youtube_url`** / **`video_id`**: The video URL or a bare id (either keyword works).
+-   **`force_refresh`**: Re-fetch even on a cache hit — use it to re-check a video's availability and pick up status changes.
+-   **Returns**: A dictionary containing `title`, `view_count`, `like_count`, `publish_date` (a `datetime`), `category`, etc., **plus video-status lifecycle fields** (see below). Returns `None` only when the page yields no player response at all.
+-   **Raises**: `VideoUnavailableError` if the HTTP fetch itself fails (network error, 404, rate-limit). A video that is *parsed but unavailable* is reported via the `status` field, not an exception.
+
+**Video status fields** (on every returned dict):
+
+| Field | Meaning |
+| --- | --- |
+| `status` | `"ok"` or `"unavailable"`. |
+| `status_reason` | YouTube's reason text when unavailable (e.g. `"Video unavailable"`), else `None`. |
+| `status_checked_at` | ISO-8601 UTC time of the last availability check. |
+| `status_changed_at` | ISO-8601 UTC time the status last changed (first sighting == `status_checked_at`). |
+
+When a previously-`ok` video is found `unavailable` (e.g. deleted), the result **preserves the last-known-good content fields** (title, channel, counts…) and overlays the status fields — so you never lose data you already had. Combine with `force_refresh=True` and a persistent cache to track a video's lifecycle over time.
 
 #### `get_video_comments(youtube_url: str, limit: int | None = 100, sort_by: str = 'recent', progress_callback=None, since_date=None, filters: dict | None = None) -> Generator[dict, None, None]`
 Fetches comments for a specific YouTube video.

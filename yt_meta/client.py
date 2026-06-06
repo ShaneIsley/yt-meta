@@ -174,7 +174,11 @@ class YtMeta:
         return provided[0]
 
     def get_video_metadata(
-        self, youtube_url: str | None = None, *, video_id: str | None = None
+        self,
+        youtube_url: str | None = None,
+        *,
+        video_id: str | None = None,
+        force_refresh: bool = False,
     ) -> dict | None:
         """
         Fetches and parses comprehensive metadata for a given YouTube video.
@@ -184,13 +188,20 @@ class YtMeta:
             video_id: Alias — pass the id (or a URL) by this keyword
                 instead. Exactly one of youtube_url / video_id is
                 required.
+            force_refresh: Re-fetch even on a cache hit, to pick up
+                availability/status changes.
 
         Returns:
-            A dictionary of metadata, or ``None`` if the page was
-            fetched but couldn't be parsed (see M7).
+            A dictionary of metadata (including ``status`` /
+            ``status_reason`` / ``status_checked_at`` /
+            ``status_changed_at`` fields), or ``None`` if the page
+            yielded no player response at all. See get_video_metadata on
+            VideoFetcher for the full status contract.
         """
         target = self._resolve_video_target(youtube_url, video_id)
-        return self._video_fetcher.get_video_metadata(target)
+        return self._video_fetcher.get_video_metadata(
+            target, force_refresh=force_refresh
+        )
 
     def get_video_transcript(
         self,

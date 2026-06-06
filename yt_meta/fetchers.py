@@ -1,5 +1,6 @@
 import logging
 from collections.abc import MutableMapping
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import httpx
@@ -15,6 +16,45 @@ if TYPE_CHECKING:
     from .fetchers import VideoFetcher
 
 logger = logging.getLogger(__name__)
+
+
+def _utcnow_iso() -> str:
+    """Current UTC time as an ISO-8601 string. Indirected through a
+    module function so tests can monkeypatch a deterministic clock."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _apply_status_tracking(parsed: dict, prior: dict | None) -> dict:
+    """Attach status lifecycle fields to a freshly parsed video record,
+    relative to the previously cached record (``prior``).
+
+    - ``status_checked_at``: always set to now (we just verified it).
+    - ``status_changed_at``: now if the status differs from the prior
+      record (or there is no prior — first sighting); otherwise carried
+      forward from the prior record.
+    - When a previously-``ok`` video is now ``unavailable``, the prior
+      record's content fields (title, channel, counts, …) are preserved
+      and the status fields overlaid — so callers never lose data they
+      already had.
+    """
+    now = _utcnow_iso()
+    status = parsed.get("status", "ok")
+    prior_status = prior.get("status") if prior else None
+
+    if status != "ok" and prior and prior_status == "ok":
+        # Became unavailable — keep the last-known-good content.
+        result = dict(prior)
+        result["status"] = status
+        result["status_reason"] = parsed.get("status_reason")
+    else:
+        result = dict(parsed)
+
+    result["status_checked_at"] = now
+    if prior_status is not None and prior_status == status:
+        result["status_changed_at"] = prior.get("status_changed_at", now)
+    else:
+        result["status_changed_at"] = now
+    return result
 
 
 def _process_videos(
@@ -154,47 +194,62 @@ class VideoFetcher:
         self.session = session
         self.cache = cache
 
-    def get_video_metadata(self, youtube_url: str) -> dict | None:
+    def get_video_metadata(
+        self, youtube_url: str, force_refresh: bool = False
+    ) -> dict | None:
         """
         Fetches and parses comprehensive metadata for a given YouTube video.
 
         Args:
             youtube_url: Any supported form (``watch?v=ID``, ``/shorts/ID``,
                 ``youtu.be/ID``, or a bare 11-char ID).
+            force_refresh: Re-fetch even on a cache hit. Use this to
+                re-check a video's availability and pick up status
+                changes (e.g. a video that became unavailable since it
+                was last cached).
 
         Returns:
-            A dictionary containing detailed video metadata, OR ``None``
-            if the watch page was fetched but couldn't be parsed
-            (typically: ongoing live streams, just-deleted videos, A/B
-            tested page-structure variants). Callers must handle the
-            ``None`` case. The library uses this return to gracefully
-            skip unparseable videos during channel/playlist iteration
-            instead of breaking the whole generator.
+            A dictionary of metadata, OR ``None`` if the watch page was
+            fetched but no player response could be extracted at all
+            (a genuinely unparseable page). Every returned dict carries
+            video-status lifecycle fields:
+
+              - ``status``: ``"ok"`` or ``"unavailable"``.
+              - ``status_reason``: YouTube's reason text when unavailable
+                (e.g. "Video unavailable"), else ``None``.
+              - ``status_checked_at`` / ``status_changed_at``: ISO-8601
+                UTC timestamps of the last check and the last status
+                change.
+
+            When a previously-``ok`` video is found ``unavailable``, the
+            result PRESERVES the last-known-good content fields and
+            overlays the status fields — so prior data is never lost.
 
         Raises:
             VideoUnavailableError: if the HTTP fetch itself failed
-                (network error, 404, rate-limit). Note this is distinct
-                from the ``None`` case above — failure to *fetch*
-                raises; failure to *parse* a fetched page returns None.
-
-        See M7 in the v0.6.0 CHANGELOG: prior versions annotated this
-        as ``-> dict`` and the docstring claimed ``VideoUnavailableError``
-        for the parse-failure case too. Both were wrong; the
-        annotation and docs now match the long-standing behavior.
+                (network error, 404, rate-limit) — distinct from a
+                parsed-but-unavailable video, which is reported via the
+                ``status`` field rather than an exception.
         """
         logger.info(f"Fetching video page: {youtube_url}")
         video_id = extract_video_id(youtube_url)
         cache_key = f"video_meta:{video_id}"
-        if cache_key in self.cache:
+        prior = self.cache[cache_key] if cache_key in self.cache else None
+        if prior is not None and not force_refresh:
             logger.info(f"Cache hit for video metadata: {video_id}")
-            return self.cache[cache_key]
+            return prior
 
+        # Build a canonical watch URL from the resolved id. Previously the
+        # raw input was fetched, which broke for bare-id / youtu.be inputs
+        # (the id resolved for the cache key but the GET used the raw
+        # string).
+        watch_url = f"https://www.youtube.com/watch?v={video_id}"
         try:
-            response = self.session.get(youtube_url, timeout=10)
+            response = self.session.get(watch_url, timeout=10)
             response.raise_for_status()
             html = response.text
         except httpx.RequestError as e:
-            logger.error(f"Failed to fetch video page {youtube_url}: {e}")
+            logger.error(f"Failed to fetch video page {watch_url}: {e}")
             raise VideoUnavailableError(
                 f"Failed to fetch video page: {e}", video_id=video_id
             ) from e
@@ -204,14 +259,21 @@ class VideoFetcher:
         )
         initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
 
-        if not player_response_data or not initial_data:
+        # Only a missing player response is truly unparseable. An
+        # unavailable video DOES return a player response (with a
+        # non-OK playabilityStatus) — that is reported via `status`,
+        # not by returning None.
+        if not player_response_data:
             logger.warning(
-                f"Could not extract metadata for video {video_id}. "
-                "The page structure may have changed or the video is unavailable. Skipping."
+                f"Could not extract player response for video {video_id}. "
+                "The page structure may have changed. Skipping."
             )
             return None
 
-        result = parsing.parse_video_metadata(player_response_data, initial_data)
+        parsed = parsing.parse_video_metadata(
+            player_response_data, initial_data or {}
+        )
+        result = _apply_status_tracking(parsed, prior)
         self.cache[cache_key] = result
         return result
 

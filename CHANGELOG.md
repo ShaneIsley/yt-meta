@@ -6,6 +6,31 @@ All notable changes to this project are documented in this file.
 
 - (Add new changes here)
 
+### Added
+- **Video availability status on `get_video_metadata`.** Every result
+  now carries `status` (`"ok"` / `"unavailable"`), `status_reason`
+  (YouTube's text when unavailable), and ISO-8601 UTC
+  `status_checked_at` / `status_changed_at` timestamps. Previously a
+  deleted/unavailable video returned a junk dict (`title=None`,
+  `view_count=0`) with no signal; now it's explicit. When a
+  previously-`ok` video becomes `unavailable`, the result PRESERVES the
+  last-known-good content fields and stamps the change time — so prior
+  data isn't lost. New `force_refresh=True` parameter re-checks a cached
+  video to pick up status changes. Derived from `playabilityStatus` in
+  the watch-page player response; finer-grained statuses (private,
+  members-only, age-restricted, upcoming) are reserved for a follow-up
+  once live fixtures are captured.
+
+### Fixed
+- `get_video_metadata` now builds a canonical watch URL from the
+  resolved video id, so a bare 11-char id (or `youtu.be/` link) works
+  — previously it fetched the raw input as a URL and raised for bare
+  ids.
+- Refined the None-return contract: `get_video_metadata` returns `None`
+  only when the page yields no player response at all. Pages with a
+  player response but missing `ytInitialData` (optional enrichment) now
+  parse to a status-bearing dict instead of `None`.
+
 ## [0.6.2] - 2026-06-05
 
 ### Added

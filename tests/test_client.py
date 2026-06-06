@@ -64,12 +64,18 @@ def test_get_channel_metadata_unit(
     assert metadata["title"] == "The Bulwark"
 
 
-def test_get_video_metadata_live_stream_unit(client):
+def test_get_video_metadata_live_stream_returns_status(client):
+    """Refined M7 contract: get_video_metadata returns None only when the
+    page yields NO player response at all. The live-stream fixture has a
+    player response with videoDetails (just no ytInitialData, which is
+    optional enrichment), so it now parses to a status-bearing dict
+    rather than None — strictly more data for the caller."""
     with patch.object(client.session, "get") as mock_get:
         mock_get.return_value.text = get_fixture("live_stream.html")
         mock_get.return_value.status_code = 200
         result = client.get_video_metadata("dQw4w9WgXcQ")
-        assert result is None, "Should return None for unparseable live stream pages"
+        assert result is not None
+        assert "status" in result  # status lifecycle field present
 
 
 def test_get_channel_page_data_fails_on_request_error_unit(client, mocker):
@@ -589,7 +595,7 @@ def test_m9_get_video_metadata_accepts_video_id_kwarg(client, mocker):
     """
     captured = {}
 
-    def fake_meta(url):
+    def fake_meta(url, force_refresh=False):
         captured["url"] = url
         return {"ok": True}
 

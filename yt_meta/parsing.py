@@ -636,11 +636,29 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
         player_response_data, "microformat.playerMicroformatRenderer", {}
     )
 
+    # Video availability status. playabilityStatus.status is "OK" for
+    # playable videos and one of ERROR / UNPLAYABLE / LOGIN_REQUIRED /
+    # AGE_CHECK_REQUIRED / LIVE_STREAM_OFFLINE etc. for unavailable ones.
+    # Only the OK and unavailable cases are mapped here (the finer-grained
+    # statuses — private vs members-only vs age-restricted — need captured
+    # fixtures before they can be distinguished reliably). status_reason
+    # carries YouTube's own text so callers retain the detail.
+    playability = _deep_get(player_response_data, "playabilityStatus", {}) or {}
+    raw_status = playability.get("status")
+    if raw_status == "OK" or (raw_status is None and video_details):
+        status = "ok"
+        status_reason = None
+    else:
+        status = "unavailable"
+        status_reason = playability.get("reason")
+
     subscriber_path = (
         "contents.twoColumnWatchNextResults.results.results.contents.1"
         ".videoSecondaryInfoRenderer.owner.videoOwnerRenderer.subscriberCountText.simpleText"
     )
     return {
+        "status": status,
+        "status_reason": status_reason,
         "video_id": video_details.get("videoId"),
         "title": video_details.get("title"),
         "channel_name": video_details.get("author"),
