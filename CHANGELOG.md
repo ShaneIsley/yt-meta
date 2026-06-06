@@ -6,6 +6,32 @@ All notable changes to this project are documented in this file.
 
 - (Add new changes here)
 
+## [0.7.0] - 2026-06-06
+
+Video-status and edge-case release: surfaces availability/upcoming/live
+status on single videos, adds the Live (`/streams`) tab, flags
+members-only and upcoming items in listings, fixes reply-token
+extraction against YouTube's current shape, and replaces the brittle
+value-asserting integration tests with a structural live contract
+suite.
+
+### Changed
+- `is_live` on `get_video_metadata` now means *currently streaming*
+  (from `liveBroadcastDetails.isLiveNow`) rather than
+  `videoDetails.isLiveContent` — the old value was also `True` for
+  upcoming videos and ended live VODs. The not-yet-started case is now
+  covered explicitly by `is_upcoming` + `scheduled_start_time`. This is
+  the one behavioral change in this release; all other additions are
+  additive.
+
+### Tests
+- Added a rarely-run live **contract test** (`pytest -m contract`) that
+  asserts the structural shape YouTube returns (types, key presence,
+  permanent identifiers) rather than volatile values — so a real
+  structure change fails loudly instead of looking like a network
+  flake. Removed the 22 brittle value-asserting `integration` tests it
+  supersedes; live coverage now lives in one place.
+
 ### Added
 - **`get_channel_streams()` — the Live (`/streams`) tab.** Live,
   upcoming/scheduled, and past live streams live on a channel's Live
@@ -48,6 +74,11 @@ All notable changes to this project are documented in this file.
   once live fixtures are captured.
 
 ### Fixed
+- **Reply continuation tokens** are extracted again. YouTube moved the
+  token from `commentRepliesRenderer.contents[]` to `.subThreads[]`;
+  `get_video_comments_with_reply_tokens` / `get_comment_replies` had
+  silently stopped surfacing tokens (comments with hundreds of replies
+  returned none). Both shapes are now handled.
 - `extract_video_id` now handles `/live/<id>` URLs (the form YouTube
   uses for live streams and scheduled premieres, often with a `?si=`
   share param). Previously such links raised `ValueError`.
