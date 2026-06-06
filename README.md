@@ -10,8 +10,8 @@ This library collects metadata for YouTube videos, channels, and playlists. It h
 
 `yt-meta` uses a **Facade** pattern. The `YtMeta` class provides a unified interface for all fetching operations, delegating calls to specialized `Fetcher` classes.
 
--   **`VideoFetcher`**: Fetches video metadata.
--   **`ChannelFetcher`**: Fetches channel metadata, video lists, and shorts.
+-   **`VideoFetcher`**: Fetches single-video metadata (incl. availability status).
+-   **`ChannelFetcher`**: Fetches channel metadata, the Videos / Shorts / Live (streams) tabs, and pagination.
 -   **`PlaylistFetcher`**: Fetches playlist details.
 -   **`CommentFetcher`**: Fetches comments and replies for videos.
 -   **`TranscriptFetcher`**: Fetches video transcripts.
@@ -143,9 +143,11 @@ for short in itertools.islice(shorts_generator, 5):
     print(f"- {short['title']} (Likes: {likes})")
 ```
 
+> **Streams live on a separate tab.** Live, upcoming, and past live streams are on the channel's **Live (`/streams`) tab**, which `get_channel_videos` does not include. Use `get_channel_streams(channel_url)` for those — it yields the same item shape, with `is_upcoming` / `scheduled_text` on scheduled items.
+
 ### 6. Get Video Comments
 
-Fetches comments for a given video, sorted by **"Top comments"** (default) or **"Most Recent"**. Returns a generator yielding standardized comment data.
+Fetches comments for a given video, sorted by **"Most Recent"** (`sort_by='recent'`, the default) or **"Top comments"** (`sort_by='top'`). Returns a generator yielding standardized comment data.
 
 **Example:**
 
@@ -332,6 +334,9 @@ The following table lists supported fields and their valid operators. Validation
 | `keywords`            | `contains_any`, `contains_all` | Video, Short                                                | **Slow**     |
 | `full_description`    | `contains`, `re`, `eq`           | Video                                                       | **Slow**     |
 | `text`                | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
+| `author`              | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
+| `channel_id`          | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
+| `reply_count`         | `gt`, `gte`, `lt`, `lte`, `eq`   | Comment                                                     | N/A          |
 | `is_by_owner`         | `eq`                             | Comment                                                     | N/A          |
 | `is_reply`            | `eq`                             | Comment                                                     | N/A          |
 | `is_hearted_by_owner` | `eq`                             | Comment                                                     | N/A          |
@@ -486,8 +491,17 @@ Fetches comments for a specific YouTube video.
 #### `get_channel_metadata(channel_url: str) -> dict`
 Fetches metadata for a specific channel. The client caches results.
 -   **`channel_url`**: The URL of the channel.
--   **Returns**: A dictionary with channel metadata like `title`, `description`, `subscriber_count`, `vanity_url`, etc.
+-   **Returns**: A dictionary with channel metadata: `title`, `description`, `channel_id`, `vanity_url`, `keywords`, `is_family_safe`.
 -   **Raises**: `VideoUnavailableError`, `MetadataParsingError`.
+
+#### `get_channel_streams(channel_url, ..., fetch_full_metadata=False, stop_at_video_id=None, max_videos=-1) -> Generator[dict, None, None]`
+Yields items from a channel's **Live (`/streams`) tab** — live, upcoming/scheduled, and past live streams. This tab is *separate* from Videos, so `get_channel_videos` does not include streams. Items use the same shape as `get_channel_videos`; upcoming streams carry `is_upcoming=True` and `scheduled_text` (the listing's "Scheduled for …"). Pass `fetch_full_metadata=True` for the precise `scheduled_start_time` and `status` per stream.
+
+#### `get_video_comments_with_reply_tokens(youtube_url, ..., sort_by='recent', since_date=None, filters=None) -> Generator[dict, None, None]`
+Like `get_video_comments`, but each comment that has replies also carries a `reply_continuation_token` you can pass to `get_comment_replies`.
+
+#### `get_comment_replies(youtube_url, reply_continuation_token, limit=100, *, video_id=None) -> Generator[dict, None, None]`
+Yields the replies for a single comment thread, identified by a `reply_continuation_token` obtained from `get_video_comments_with_reply_tokens`.
 
 #### `get_channel_videos(channel_url: str, ..., stop_at_video_id: str = None, max_videos: int = -1) -> Generator[dict, None, None]`
 Yields metadata for videos from a channel.
@@ -512,24 +526,24 @@ Clears all items from the configured cache (both in-memory and persistent).
 
 ## Error Handling
 
-The library uses custom exceptions to signal specific error conditions.
+The library uses custom exceptions to signal specific error conditions. All are importable from the top level (`from yt_meta import YtMetaError, VideoUnavailableError, MetadataParsingError`).
 
 ### `YtMetaError`
-The base exception for all errors in this library.
+The base exception for all errors in this library. Catch it to handle any library-originated error broadly:
+
+```python
+from yt_meta import YtMeta, YtMetaError
+
+try:
+    meta = YtMeta().get_video_metadata("https://www.youtube.com/watch?v=...")
+except YtMetaError as e:
+    print(f"yt-meta failed: {e}")
+```
+
+### `VideoUnavailableError`
+Raised when an HTTP fetch itself fails — a network error, a 404, or a rate-limit response. Note: a video that is *fetched but unavailable* (deleted, members-only, etc.) is **not** an exception — it is reported via the `status` field on `get_video_metadata`'s result. Only a failure to fetch raises.
 
 ### `MetadataParsingError`
+Raised when a page is fetched successfully but the expected structure (e.g. `ytInitialData` / a channel tab) cannot be extracted — typically a sign YouTube changed its page shape.
 
-## Library Architecture
-
-`yt-meta` follows the **Facade design pattern**.
-
-- **`YtMeta` (The Facade):** The public-facing API. It delegates requests to the appropriate fetcher class and holds shared objects like the session and cache, but contains no data-fetching logic.
-
-- **Fetcher Classes (The Subsystems):**
-  - **`VideoFetcher`:** Fetches single-video metadata (title, description, view count, etc.).
-  - **`ChannelFetcher`:** Fetches data from a channel's "Videos" and "Shorts" tabs, including pagination.
-  - **`PlaylistFetcher`:** Retrieves video lists from a playlist.
-  - **`CommentFetcher`:** Fetches comments and replies for videos.
-  - **`TranscriptFetcher`:** Fetches video transcripts.
-
-This design makes the library easier to maintain, test, and extend. To fix a playlist parsing bug, look in `yt_meta/fetchers.py` in the `PlaylistFetcher` class.
+To fix a playlist parsing bug, look in `yt_meta/fetchers.py` in the `PlaylistFetcher` class; channel/stream/shorts logic lives in `ChannelFetcher`, and comment logic in `yt_meta/comment_*.py`.
