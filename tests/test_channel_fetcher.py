@@ -16,6 +16,46 @@ def channel_fetcher():
         )
 
 
+def test_get_channel_streams_parses_lockup_grid(channel_fetcher, mocker):
+    """get_channel_streams fetches the Live (/streams) tab and parses its
+    lockupViewModel grid — the same shape as Videos. Exercised against a
+    captured @AppleDeveloper/streams page (all upcoming WWDC streams)."""
+    import json
+    from pathlib import Path
+
+    fixture = (
+        Path(__file__).parent / "fixtures" / "channel_streams_lockup_renderers.json"
+    )
+    renderers = json.loads(fixture.read_text())["contents"]
+    initial_data = {
+        "contents": {
+            "twoColumnBrowseResultsRenderer": {
+                "tabs": [
+                    {
+                        "tabRenderer": {
+                            "selected": True,
+                            "title": "Live",
+                            "content": {"richGridRenderer": {"contents": renderers}},
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    mocker.patch.object(
+        channel_fetcher,
+        "_get_channel_streams_page_data",
+        return_value=(initial_data, {"INNERTUBE_API_KEY": "k"}),
+    )
+
+    streams = list(channel_fetcher.get_channel_streams("https://www.youtube.com/@x"))
+    assert streams
+    for s in streams:
+        assert s["video_id"] and len(s["video_id"]) == 11
+        assert s["is_upcoming"] is True
+        assert "Scheduled for" in s["scheduled_text"]
+
+
 def test_m21_channel_metadata_via_http_layer_mock():
     """M21: most channel-fetcher tests mock private methods
     (_get_channel_page_data, _get_continuation_data), so a refactor of

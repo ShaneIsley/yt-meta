@@ -86,6 +86,37 @@ def test_lockup_members_only_video_has_none_view_count(lockup_renderers):
         assert v["video_id"] and v["title"]
 
 
+def test_lockup_upcoming_stream_flag():
+    """Upcoming streams (in the Live tab) show 'Scheduled for ...' in the
+    lockup metadata instead of a view count / 'X ago'. parse surfaces
+    is_upcoming=True and the raw scheduled_text. Captured from
+    @AppleDeveloper/streams (all 6 items scheduled)."""
+    import json
+    from pathlib import Path
+
+    fixture = (
+        Path(__file__).parent / "fixtures" / "channel_streams_lockup_renderers.json"
+    )
+    renderers = json.loads(fixture.read_text())["contents"]
+    videos, _ = parsing.extract_videos_from_lockup_renderers(renderers)
+    assert videos
+    for v in videos:
+        assert v["is_upcoming"] is True
+        assert v["scheduled_text"] and "Scheduled for" in v["scheduled_text"]
+        assert v["view_count"] is None  # upcoming has no views
+
+
+def test_lockup_normal_video_not_upcoming(lockup_renderers):
+    """Regular (non-scheduled) videos are is_upcoming=False with no
+    scheduled_text."""
+    videos, _ = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    assert any(not v["is_upcoming"] for v in videos)
+    for v in videos:
+        assert isinstance(v["is_upcoming"], bool)
+        if not v["is_upcoming"]:
+            assert v["scheduled_text"] is None
+
+
 def test_lockup_skips_continuation_and_non_video_content():
     """Non-video lockups (or the continuation renderer) are skipped, not
     mis-parsed as videos."""

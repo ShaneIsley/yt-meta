@@ -347,6 +347,45 @@ class YtMeta:
             max_videos,
         )
 
+    def get_channel_streams(
+        self,
+        channel_url: str,
+        force_refresh: bool = False,
+        fetch_full_metadata: bool = False,
+        filters: dict | None = None,
+        stop_at_video_id: str | None = None,
+        max_videos: int = -1,
+    ) -> Generator[dict, None, None]:
+        """
+        Fetches live streams from a channel's Live (``/streams``) tab —
+        live, upcoming/scheduled, and past live content that the Videos
+        tab does not include.
+
+        Items use the same shape as ``get_channel_videos``. Upcoming
+        streams carry ``is_upcoming=True`` and ``scheduled_text``; pass
+        ``fetch_full_metadata=True`` for the precise
+        ``scheduled_start_time`` and ``status`` per stream.
+
+        Args:
+            channel_url: The channel URL (``/streams`` is appended if absent).
+            force_refresh: Whether to bypass the cache and fetch fresh data.
+            fetch_full_metadata: Whether to fetch full metadata per stream.
+            filters: A dictionary of filter conditions.
+            stop_at_video_id: The ID of the stream to stop fetching at.
+            max_videos: The maximum number of streams to fetch (-1 for all).
+
+        Returns:
+            A generator of stream dictionaries.
+        """
+        return self._channel_fetcher.get_channel_streams(
+            channel_url,
+            force_refresh,
+            fetch_full_metadata,
+            filters,
+            stop_at_video_id,
+            max_videos,
+        )
+
     def get_video_comments(
         self,
         youtube_url: str | None = None,

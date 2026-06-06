@@ -7,6 +7,18 @@ All notable changes to this project are documented in this file.
 - (Add new changes here)
 
 ### Added
+- **`get_channel_streams()` — the Live (`/streams`) tab.** Live,
+  upcoming/scheduled, and past live streams live on a channel's Live
+  tab, which is *separate* from Videos — `get_channel_videos` never saw
+  them. The new method fetches that tab (same item shape as
+  `get_channel_videos`). Upcoming streams carry `is_upcoming=True` and
+  `scheduled_text` (the listing's "Scheduled for …"); pass
+  `fetch_full_metadata=True` for the precise `scheduled_start_time` and
+  `status` per stream. Live-verified against @AppleDeveloper/streams.
+- **`is_upcoming` / `scheduled_text` on channel-video listings.**
+  `parse_lockup_view_model` now flags scheduled items (a "Scheduled
+  for …" / "Premieres …" metadata part) as `is_upcoming=True` with the
+  raw `scheduled_text`.
 - **Upcoming / live status on `get_video_metadata`.** Scheduled
   premieres and not-yet-started live events now report `status="upcoming"`
   with `is_upcoming=True` and a `scheduled_start_time` (ISO-8601, from

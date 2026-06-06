@@ -62,6 +62,8 @@ PLAYLIST_ID = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"  # Corey Schafer, long-standi
 SHORTS_CHANNEL = "https://www.youtube.com/@MrBeast"
 # A channel that reliably posts members-only videos in its recent uploads.
 MEMBERS_CHANNEL = "https://www.youtube.com/@bulwarkmedia/videos"
+# A channel with a busy Live tab (scheduled/upcoming streams).
+STREAMS_CHANNEL = "https://www.youtube.com/@AppleDeveloper"
 
 STRUCTURE_CHANGED = (
     "Returned no data from a known-good permanent target. This usually "
@@ -195,6 +197,22 @@ def test_contract_channel_shorts(client):
     s = shorts[0]
     assert isinstance(s["video_id"], str) and len(s["video_id"]) == 11
     assert isinstance(s["title"], str) and s["title"]
+
+
+def test_contract_channel_streams_and_upcoming(client):
+    """channel streams: the Live (/streams) tab is fetched separately
+    from Videos and yields lockup items. Upcoming streams carry
+    is_upcoming=True + a scheduled_text. @AppleDeveloper reliably has
+    scheduled WWDC streams. (If it ever has none scheduled, the listing
+    still parses — we only require the tab to return items with the
+    upcoming fields present as bools/strings.)"""
+    streams = list(client.get_channel_streams(STREAMS_CHANNEL, max_videos=6))
+    assert streams, STRUCTURE_CHANGED
+    for s in streams:
+        assert isinstance(s["video_id"], str) and len(s["video_id"]) == 11
+        assert isinstance(s["is_upcoming"], bool)
+        if s["is_upcoming"]:
+            assert s["scheduled_text"] and "cheduled" in s["scheduled_text"]
 
 
 def test_contract_playlist_videos(client):

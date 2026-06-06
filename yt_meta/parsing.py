@@ -386,6 +386,22 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
     )
     publish_text = next((t for t in texts if "ago" in t.lower()), None)
 
+    # Upcoming streams / premieres (Live tab) carry a "Scheduled for ..."
+    # (or "Premieres ...") part instead of a view count / "X ago". Surface
+    # is_upcoming + the raw scheduled text. Exact UTC start time requires
+    # the per-video watch page (fetch_full_metadata=True), since the
+    # listing text is locale-formatted and timezone-ambiguous.
+    scheduled_text = next(
+        (
+            t
+            for t in texts
+            if t.lower().startswith("scheduled for")
+            or t.lower().startswith("premieres")
+        ),
+        None,
+    )
+    is_upcoming = scheduled_text is not None
+
     # Members-only videos carry a BADGE_MEMBERS_ONLY badge in a metadata
     # row (and have no view count). Surface it explicitly so callers get
     # a signal instead of inferring it from view_count being None.
@@ -424,6 +440,8 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
         "duration_seconds": parse_duration(duration_label) if duration_label else None,
         "url": f"https://www.youtube.com/watch?v={video_id}",
         "is_members_only": is_members_only,
+        "is_upcoming": is_upcoming,
+        "scheduled_text": scheduled_text,
     }
 
 

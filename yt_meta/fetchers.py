@@ -301,6 +301,91 @@ class ChannelFetcher(_BaseFetcher):
             key += "/shorts"
         return f"channel_shorts_page:{key}"
 
+    def _get_channel_streams_page_cache_key(self, channel_url: str) -> str:
+        key = channel_url.rstrip("/")
+        if not key.endswith("/streams"):
+            key += "/streams"
+        return f"channel_streams_page:{key}"
+
+    def _get_channel_streams_page_data(
+        self, channel_url: str, force_refresh: bool = False
+    ) -> tuple[dict, dict]:
+        validate_youtube_url(channel_url)
+        key = self._get_channel_streams_page_cache_key(channel_url)
+        if not force_refresh and key in self.cache:
+            return self.cache[key]
+        try:
+            response = self.session.get(
+                key.replace("channel_streams_page:", ""), timeout=10
+            )
+            response.raise_for_status()
+            html = response.text
+        except httpx.RequestError as e:
+            raise VideoUnavailableError(
+                f"Could not fetch channel streams page: {e}", channel_url=key
+            ) from e
+        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
+        if not initial_data:
+            raise MetadataParsingError(
+                "Could not extract ytInitialData from channel streams page.",
+                channel_url=key,
+            )
+        ytcfg = parsing.find_ytcfg(html)
+        if not ytcfg:
+            raise MetadataParsingError(
+                "Could not extract ytcfg from channel streams page.", channel_url=key
+            )
+        result = (initial_data, ytcfg)
+        self.cache[key] = result
+        return result
+
+    def _get_raw_streams_generator(self, channel_url, force_refresh):
+        """Yields raw stream items from a channel's Live (/streams) tab.
+
+        The Live tab uses the same lockupViewModel grid as the Videos
+        tab, so extraction mirrors _get_raw_channel_videos_generator —
+        the only differences are the page (/streams) and the tab title
+        ("Live"). Date short-circuit doesn't apply (upcoming streams
+        have no publish date), so this is a straight paginated yield.
+        """
+        try:
+            initial_data, ytcfg = self._get_channel_streams_page_data(
+                channel_url, force_refresh=force_refresh
+            )
+        except VideoUnavailableError as e:
+            self.logger.error("Could not fetch initial channel streams page: %s", e)
+            return
+        # The selected tab on a /streams page is the "Live" tab.
+        tab_renderer = self._get_videos_tab_renderer(initial_data)
+        if not tab_renderer:
+            raise MetadataParsingError(
+                "Could not find streams (Live) tab renderer in channel page"
+            )
+        renderers = self._get_video_renderers(tab_renderer)
+        continuation_token = self._get_continuation_token(tab_renderer)
+        while True:
+            for renderer in renderers:
+                if "richItemRenderer" not in renderer:
+                    continue
+                content = renderer["richItemRenderer"]["content"]
+                if "lockupViewModel" in content:
+                    video = parsing.parse_lockup_view_model(content["lockupViewModel"])
+                elif "videoRenderer" in content:
+                    video = parsing.parse_video_renderer(content["videoRenderer"])
+                else:
+                    continue
+                if video:
+                    yield video
+            if not continuation_token:
+                break
+            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
+            if not continuation_data:
+                break
+            continuation_token = self._get_continuation_token_from_data(
+                continuation_data
+            )
+            renderers = self._get_video_renderers_from_data(continuation_data)
+
     def _get_channel_page_data(
         self, channel_url: str, force_refresh: bool = False
     ) -> tuple[dict, dict]:
@@ -608,6 +693,55 @@ class ChannelFetcher(_BaseFetcher):
             raw_shorts_generator,
             filters=filters,
             content_type="shorts",
+            fetch_full_metadata=fetch_full_metadata,
+            video_fetcher=self.video_fetcher,
+            logger=self.logger,
+            stop_at_video_id=stop_at_video_id,
+            max_videos=max_videos,
+        )
+
+    def get_channel_streams(
+        self,
+        channel_url,
+        force_refresh=False,
+        fetch_full_metadata=False,
+        filters=None,
+        stop_at_video_id=None,
+        max_videos=-1,
+    ):
+        """
+        Fetches live streams from a channel's Live (``/streams``) tab —
+        the tab that holds live, upcoming/scheduled, and past live
+        content, which the Videos tab does NOT include.
+
+        Items use the same shape as get_channel_videos. Upcoming streams
+        carry ``is_upcoming=True`` and ``scheduled_text`` (the listing's
+        "Scheduled for ..." text); set ``fetch_full_metadata=True`` to
+        also get the precise ``scheduled_start_time`` and ``status`` from
+        each stream's watch page.
+
+        Args:
+            channel_url: The channel URL (the ``/streams`` suffix is added
+                automatically if absent).
+            force_refresh: Bypass the cache and fetch fresh data.
+            fetch_full_metadata: Fetch full per-stream metadata.
+            filters: A dictionary of filter conditions.
+            stop_at_video_id: The ID of the stream to stop fetching at.
+            max_videos: The maximum number of streams to fetch (-1 for all).
+
+        Returns:
+            A generator of stream dictionaries.
+        """
+        validate_filters(filters)
+        if not channel_url.endswith("/streams"):
+            channel_url = f"{channel_url.rstrip('/')}/streams"
+        raw_streams_generator = self._get_raw_streams_generator(
+            channel_url, force_refresh
+        )
+        yield from _run_filtered_pipeline(
+            raw_streams_generator,
+            filters=filters,
+            content_type="videos",
             fetch_full_metadata=fetch_full_metadata,
             video_fetcher=self.video_fetcher,
             logger=self.logger,
