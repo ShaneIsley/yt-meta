@@ -99,6 +99,9 @@ debug/
 cache/
 *.db
 *.db-journal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
 
 # Ignore these file types...
 *.json

@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List
+
 from youtube_transcript_api import YouTubeTranscriptApi
 
 logger = logging.getLogger(__name__)
@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class TranscriptFetcher:
     """A fetcher for retrieving video transcripts from YouTube."""
 
-    def get_transcript(self, video_id: str, languages: List[str] = None) -> List[Dict]:
+    def get_transcript(self, video_id: str, languages: list[str] = None) -> list[dict]:
         """
         Fetches the transcript for a given video ID.
 
@@ -34,4 +34,4 @@ class TranscriptFetcher:
             ]
         except Exception as e:
             logger.error(f"Could not fetch transcript for {video_id}: {e}")
-            return [] 
+            return []

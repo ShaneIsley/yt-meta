@@ -3,7 +3,6 @@
 import logging
 from collections.abc import Callable, Generator, MutableMapping
 from datetime import date, datetime
-from typing import Dict, List
 
 from httpx import Client
 
@@ -206,10 +205,10 @@ class YtMeta:
     def get_video_transcript(
         self,
         video_id: str | None = None,
-        languages: List[str] = None,
+        languages: list[str] = None,
         *,
         youtube_url: str | None = None,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """
         Fetches the transcript for a given video.
 
