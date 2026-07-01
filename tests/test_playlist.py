@@ -3,7 +3,6 @@ from pathlib import Path
 import pytest
 
 from yt_meta import parsing
-from yt_meta.utils import _deep_get
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -54,6 +53,9 @@ def test_parse_playlist_metadata(
 @pytest.mark.parametrize(
     "playlist_fixture, expected_video_count, expect_token",
     [
+        # Current lockupViewModel shape (refreshed 2026-06).
+        ("playlist_lockup_page.html", 100, True),
+        # Legacy playlistVideoRenderer shape — kept to guard back-compat.
         ("playlist_page.html", 100, True),
         ("playlist_145_videos.html", 100, True),
         ("playlist_118_videos.html", 100, True),
@@ -65,23 +67,49 @@ def test_extract_videos_from_playlist(
 ):
     html = (FIXTURES_DIR / playlist_fixture).read_text()
     initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-    renderer = _deep_get(
-        initial_data,
-        "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.itemSectionRenderer.contents.0.playlistVideoListRenderer",
-    )
-    if not renderer:
-        renderer = _deep_get(
-            initial_data,
-            "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.playlistVideoListRenderer",
-        )
-
-    videos, continuation_token = parsing.extract_videos_from_playlist_renderer(renderer)
+    # Shape-agnostic resolution: works for both the legacy
+    # playlistVideoListRenderer wrapper and the bare-lockup item list.
+    items = parsing.get_playlist_item_list(initial_data)
+    videos, continuation_token = parsing.extract_videos_from_playlist_items(items)
 
     assert len(videos) == expected_video_count
     if expect_token:
         assert continuation_token is not None
     else:
         assert continuation_token is None
+
+
+def test_regression_playlist_lockup_migration():
+    """REGRESSION: YouTube migrated the playlist page from
+    ``playlistVideoListRenderer`` / ``playlistVideoRenderer`` to a bare
+    ``lockupViewModel`` item list with a ``continuationItemViewModel``
+    token (the same migration that broke get_channel_videos in 0.6.0).
+
+    The old fetcher hardcoded the ``playlistVideoListRenderer`` path, so
+    get_playlist_videos returned 0 videos against the current page while
+    every offline test stayed green on stale fixtures. This asserts the
+    current shape parses to videos AND yields a pagination token.
+    """
+    html = (FIXTURES_DIR / "playlist_lockup_page.html").read_text()
+    initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
+
+    items = parsing.get_playlist_item_list(initial_data)
+    videos, continuation_token = parsing.extract_videos_from_playlist_items(items)
+
+    assert videos, "lockup-shape playlist parsed to zero videos"
+    assert all(v["video_id"] for v in videos)
+    assert continuation_token, "no continuation token from continuationItemViewModel"
+
+
+def test_fixture_freshness_lockup_page_is_current_shape():
+    """Guard against fixture rot: the current-shape playlist fixture must
+    actually contain ``lockupViewModel`` (and not the legacy renderer),
+    otherwise it would silently re-freeze the pre-migration structure and
+    stop guarding the regression above.
+    """
+    html = (FIXTURES_DIR / "playlist_lockup_page.html").read_text()
+    assert "lockupViewModel" in html
+    assert "playlistVideoRenderer" not in html
 
 
 def test_get_playlist_videos_stops_at_id(client, mocker):

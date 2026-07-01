@@ -471,31 +471,69 @@ def extract_videos_from_lockup_renderers(
     return videos, continuation_token
 
 
-def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:
-    """
-    Parses a `playlistVideoListRenderer` from a playlist page.
+_PLAYLIST_ITEM_SECTION_PATH = (
+    "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content"
+    ".sectionListRenderer.contents.0.itemSectionRenderer.contents"
+)
 
-    This function iterates through the contents of the renderer, extracts
-    video data, and finds the continuation token for pagination.
+
+def get_playlist_item_list(initial_data: dict) -> list:
+    """Resolve the playlist page's item list, shape-agnostically.
+
+    YouTube migrated the playlist "Videos" listing from a
+    ``playlistVideoListRenderer`` wrapper (whose ``.contents`` were
+    ``playlistVideoRenderer`` items) to a bare ``lockupViewModel`` item
+    list sitting directly under ``itemSectionRenderer.contents`` — the
+    same ``lockupViewModel`` migration that broke the channel Videos tab
+    in 0.6.0. This returns the right list for either shape.
 
     Args:
-        renderer: A `playlistVideoListRenderer` dictionary from the page's data.
+        initial_data: Parsed ``ytInitialData`` from a playlist page.
 
     Returns:
-        A tuple containing:
-        - A list of dictionaries, where each dict is a simplified video object.
-        - A continuation token string for the next page, or None if not found.
+        The list of item dicts (``lockupViewModel`` / ``playlistVideoRenderer``
+        plus a trailing continuation item), or ``[]`` if neither shape is found.
+    """
+    section = _deep_get(initial_data, _PLAYLIST_ITEM_SECTION_PATH)
+    if not section:
+        return []
+    # Legacy shape: the items are nested one level deeper, inside the
+    # playlistVideoListRenderer wrapper.
+    legacy = _deep_get(section, "0.playlistVideoListRenderer.contents")
+    if legacy:
+        return legacy
+    # Current shape: itemSectionRenderer.contents IS the item list.
+    return section
+
+
+def extract_videos_from_playlist_items(items: list) -> tuple[list, str | None]:
+    """Parse a playlist page's item list into ``(videos, continuation_token)``.
+
+    Handles both shapes YouTube has served:
+      - legacy ``playlistVideoRenderer`` items + ``continuationItemRenderer``
+      - current bare ``lockupViewModel`` items + ``continuationItemViewModel``
+        (cf. ``parse_lockup_view_model`` and the channel Videos migration).
+
+    Non-video lockups and unparseable items are skipped.
     """
     videos = []
     continuation_token = None
-    if not renderer or "contents" not in renderer:
-        return videos, continuation_token
-
-    renderer_list = renderer["contents"]
-
-    for item in renderer_list:
+    for item in items or []:
         if "playlistVideoRenderer" in item:
-            videos.append(parse_video_renderer(item["playlistVideoRenderer"]))
+            video = parse_video_renderer(item["playlistVideoRenderer"])
+            if video:
+                videos.append(video)
+        elif "lockupViewModel" in item:
+            video = parse_lockup_view_model(item["lockupViewModel"])
+            if video:
+                videos.append(video)
+        elif "continuationItemViewModel" in item:
+            # Current shape: token is nested under an innertubeCommand.
+            continuation_token = _deep_get(
+                item,
+                "continuationItemViewModel.continuationCommand"
+                ".innertubeCommand.continuationCommand.token",
+            )
         elif "continuationItemRenderer" in item:
             continuation_endpoint = _deep_get(
                 item, "continuationItemRenderer.continuationEndpoint"
@@ -519,6 +557,19 @@ def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | N
                         break
 
     return videos, continuation_token
+
+
+def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:
+    """
+    Parses a playlist item container into ``(videos, continuation_token)``.
+
+    Thin back-compat wrapper around ``extract_videos_from_playlist_items``;
+    accepts any dict carrying a ``contents`` list (the legacy
+    ``playlistVideoListRenderer`` or a synthesized ``{"contents": [...]}``).
+    """
+    if not renderer or "contents" not in renderer:
+        return [], None
+    return extract_videos_from_playlist_items(renderer["contents"])
 
 
 def parse_video_renderer(renderer: dict) -> dict:

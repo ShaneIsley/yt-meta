@@ -270,9 +270,7 @@ class VideoFetcher:
             )
             return None
 
-        parsed = parsing.parse_video_metadata(
-            player_response_data, initial_data or {}
-        )
+        parsed = parsing.parse_video_metadata(player_response_data, initial_data or {})
         result = _apply_status_tracking(parsed, prior)
         self.cache[cache_key] = result
         return result
@@ -782,16 +780,17 @@ class PlaylistFetcher(_BaseFetcher):
             raise MetadataParsingError(
                 "Could not extract ytcfg from playlist page.", playlist_id=playlist_id
             )
-        path = "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content.sectionListRenderer.contents.0.itemSectionRenderer.contents.0.playlistVideoListRenderer"
-        renderer = _deep_get(initial_data, path)
-        if not renderer:
+        # Resolve the item list shape-agnostically: YouTube migrated the
+        # playlist listing from playlistVideoListRenderer/playlistVideoRenderer
+        # to a bare lockupViewModel list (same migration that broke the
+        # channel Videos tab in 0.6.0).
+        items = parsing.get_playlist_item_list(initial_data)
+        if not items:
             self.logger.warning(
                 "No video renderers found on the initial playlist page: %s", playlist_id
             )
             return
-        videos, continuation_token = parsing.extract_videos_from_playlist_renderer(
-            renderer
-        )
+        videos, continuation_token = parsing.extract_videos_from_playlist_items(items)
         while True:
             yield from videos
             if not continuation_token:
@@ -804,8 +803,8 @@ class PlaylistFetcher(_BaseFetcher):
                 "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
                 [],
             )
-            videos, continuation_token = parsing.extract_videos_from_playlist_renderer(
-                {"contents": renderers}
+            videos, continuation_token = parsing.extract_videos_from_playlist_items(
+                renderers
             )
 
     def get_playlist_videos(
