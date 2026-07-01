@@ -6,6 +6,41 @@ All notable changes to this project are documented in this file.
 
 - (Add new changes here)
 
+## [0.7.1] - 2026-07-01
+
+Bug-fix and test-hardening release. Restores `get_playlist_videos`
+against YouTube's current page structure and closes the coverage gaps
+that let the break ship green.
+
+### Fixed
+- **`get_playlist_videos` returned 0 videos for every playlist.** YouTube
+  migrated the playlist page off `playlistVideoListRenderer` /
+  `playlistVideoRenderer` to a bare `lockupViewModel` item list with a
+  `continuationItemViewModel` token — the same migration that broke
+  `get_channel_videos` in 0.6.0. The fetcher hardcoded the old path, so
+  it fetched successful 200s, paginated, and parsed nothing. Parsing is
+  now shape-agnostic (`get_playlist_item_list` +
+  `extract_videos_from_playlist_items`) and handles both the legacy and
+  current shapes; verified live across multiple pages.
+
+### Tests
+- Added offline coverage for the comment subsystem (continuation-token
+  extraction, pagination-break logic, comment/reply parsers): raised
+  `comment_api_client` 55→85%, `comment_fetcher` 56→91%,
+  `comment_parser` 58→98% (total 70→81%), no network required.
+- Extended the live `-m contract` suite from 13 to 20 tests so every
+  documented capability is exercised against YouTube — channel/playlist
+  date-range filters, video value filters, `stop_at_video_id`, comment
+  `since_date`, caching round-trip, and the `accept_cookies` consent
+  bypass — plus a refreshed lockup-shape playlist fixture and a
+  fixture-freshness guard.
+
+### Tooling
+- Added `make drift` / `scripts/check_shape_drift.sh` to run the live
+  contract suite locally and detect YouTube shape drift. (It cannot run
+  in GitHub Actions — YouTube blocks those runners — so run it locally
+  before a release.)
+
 ## [0.7.0] - 2026-06-06
 
 Video-status and edge-case release: surfaces availability/upcoming/live
