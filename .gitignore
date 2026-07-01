@@ -58,6 +58,9 @@ ipython_config.py
 
 # Environments
 .env
+env.sh
+*.token
+*.secret
 .venv
 env/
 venv/
