@@ -46,11 +46,19 @@ TARGETS (chosen for maximal permanence)
 If a target is ever removed by YouTube, update the constant — a target
 going away is not a library regression.
 """
-from datetime import datetime
+
+from datetime import date, datetime
 
 import pytest
 
 pytestmark = pytest.mark.contract
+
+
+def _as_date(value):
+    """Normalize a publish_date (datetime or date) to a date for range
+    comparisons."""
+    return value.date() if isinstance(value, datetime) else value
+
 
 # --- Permanent targets ---
 ZOO_ID = "jNQXAC9IVRw"
@@ -64,6 +72,9 @@ SHORTS_CHANNEL = "https://www.youtube.com/@MrBeast"
 MEMBERS_CHANNEL = "https://www.youtube.com/@bulwarkmedia/videos"
 # A channel with a busy Live tab (scheduled/upcoming streams).
 STREAMS_CHANNEL = "https://www.youtube.com/@AppleDeveloper"
+# An active, high-volume channel with a long dated history — used for the
+# date-range / value-filter / stop-at-id capabilities.
+VERITASIUM_URL = "https://www.youtube.com/@veritasium"
 
 STRUCTURE_CHANGED = (
     "Returned no data from a known-good permanent target. This usually "
@@ -244,9 +255,7 @@ def test_contract_comment_filters(client):
     """comment filters (M19): the filter pipeline runs against live data
     and every returned comment satisfies the predicate."""
     comments = list(
-        client.get_video_comments(
-            ZOO_URL, limit=20, filters={"like_count": {"gte": 1}}
-        )
+        client.get_video_comments(ZOO_URL, limit=20, filters={"like_count": {"gte": 1}})
     )
     # Don't require a specific count (volatile) — assert the predicate
     # holds on whatever passed the filter.
@@ -266,9 +275,7 @@ def test_contract_reply_tokens_and_replies(client):
     from commentRepliesRenderer.contents[] to .subThreads[]. A contract
     test that skipped here would have missed it."""
     top = list(
-        client.get_video_comments_with_reply_tokens(
-            ZOO_URL, sort_by="top", limit=20
-        )
+        client.get_video_comments_with_reply_tokens(ZOO_URL, sort_by="top", limit=20)
     )
     assert top, STRUCTURE_CHANGED
 
@@ -293,3 +300,124 @@ def test_contract_reply_tokens_and_replies(client):
     r = replies[0]
     assert isinstance(r["text"], str)
     assert isinstance(r["author"], str) and r["author"]
+
+
+# ---------------------------------------------------------------------------
+# Capability coverage: date-range filtering, value filters, stop-at-id,
+# caching, and the EU cookie-consent bypass. These exercise documented
+# parameters that the shape-only contracts above don't reach — notably the
+# date filtering where H1/H2 lived. Assertions are self-consistent (the
+# returned data must satisfy the predicate the library was asked to apply),
+# so they don't depend on volatile counts.
+# ---------------------------------------------------------------------------
+
+
+def test_contract_channel_videos_date_filter(client):
+    """channel videos with start_date: every returned video's publish_date
+    is on/after the cutoff. Exercises the FAST publish_date filter +
+    newest-first short-circuit against live listings."""
+    cutoff = date(2024, 1, 1)
+    videos = list(
+        client.get_channel_videos(VERITASIUM_URL, start_date=cutoff, max_videos=5)
+    )
+    assert videos, STRUCTURE_CHANGED
+    for v in videos:
+        assert v.get("publish_date") is not None, "date filter requires a publish_date"
+        assert _as_date(v["publish_date"]) >= cutoff
+
+
+def test_contract_playlist_videos_date_filter(client):
+    """REGRESSION (H1): get_playlist_videos with start_date AND end_date
+    previously built a tuple-shaped filter that crashed in apply_filters.
+    This drives the documented start/end params against a live playlist and
+    asserts no crash + every returned video falls inside the window."""
+    start, end = date(2017, 1, 1), date(2017, 12, 31)
+    videos = list(
+        client.get_playlist_videos(
+            PLAYLIST_ID, start_date=start, end_date=end, max_videos=5
+        )
+    )
+    assert videos, STRUCTURE_CHANGED
+    for v in videos:
+        assert v.get("publish_date") is not None
+        assert start <= _as_date(v["publish_date"]) <= end
+
+
+def test_contract_channel_videos_value_filter(client):
+    """channel videos with a value predicate (filters=): every returned
+    video satisfies it. Exercises the fast video-filter pipeline live (the
+    shape-only contracts only filter comments)."""
+    videos = list(
+        client.get_channel_videos(
+            VERITASIUM_URL, filters={"view_count": {"gte": 1000}}, max_videos=4
+        )
+    )
+    assert videos, STRUCTURE_CHANGED
+    for v in videos:
+        assert isinstance(v["view_count"], int) and v["view_count"] >= 1000
+
+
+def test_contract_channel_videos_stop_at_id(client):
+    """channel videos with stop_at_video_id: pagination halts at the given
+    id and yields it as the final item."""
+    base = [
+        v["video_id"] for v in client.get_channel_videos(VERITASIUM_URL, max_videos=4)
+    ]
+    assert len(base) >= 3, STRUCTURE_CHANGED
+    stop_id = base[2]
+    stopped = list(
+        client.get_channel_videos(
+            VERITASIUM_URL, stop_at_video_id=stop_id, max_videos=10
+        )
+    )
+    assert [v["video_id"] for v in stopped] == base[:3]
+    assert stopped[-1]["video_id"] == stop_id
+
+
+def test_contract_comments_since_date(client):
+    """comments with since_date (the only filter that short-circuits
+    pagination): every dated comment is on/after the cutoff, and since_date
+    with a non-recent sort is rejected."""
+    cutoff = date(2015, 1, 1)
+    comments = list(client.get_video_comments(ZOO_URL, since_date=cutoff, limit=10))
+    assert comments, STRUCTURE_CHANGED
+    for c in comments:
+        if c.get("publish_date"):
+            assert _as_date(c["publish_date"]) >= cutoff
+
+    with pytest.raises(ValueError):
+        list(client.get_video_comments(ZOO_URL, sort_by="top", since_date=cutoff))
+
+
+def test_contract_caching_roundtrip():
+    """persistent caching: a second fetch returns the same record and the
+    cache is populated under the documented key. Uses its own client (the
+    shared fixture is cache-less) so the round-trip is observable."""
+    from yt_meta import YtMeta
+
+    cache: dict = {}
+    c = YtMeta(cache=cache)
+    try:
+        m1 = c.get_video_metadata(ZOO_URL)
+        assert any(k.startswith("video_meta:") for k in cache), (
+            "watch-page parse was not cached under video_meta:*"
+        )
+        m2 = c.get_video_metadata(ZOO_URL)
+        assert m1["video_id"] == m2["video_id"] == ZOO_ID
+    finally:
+        c.close()
+
+
+def test_contract_accept_cookies_bypass():
+    """EU cookie-consent bypass: a client constructed with
+    accept_cookies=True sets the SOCS consent cookie and still fetches
+    content on the happy path (no regression for non-EU callers)."""
+    from yt_meta import YtMeta
+
+    c = YtMeta(accept_cookies=True)
+    try:
+        assert "SOCS" in {ck.name for ck in c.session.cookies.jar}
+        m = c.get_video_metadata(ZOO_URL)
+        assert m is not None and m["video_id"] == ZOO_ID, STRUCTURE_CHANGED
+    finally:
+        c.close()
