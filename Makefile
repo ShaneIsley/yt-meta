@@ -1,5 +1,5 @@
 # yt-meta developer tasks. Requires `uv` (https://docs.astral.sh/uv/).
-.PHONY: help test contract drift lint format check
+.PHONY: help test contract drift smoke-pypi lint format check
 
 help:                ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -10,6 +10,9 @@ test:                ## Run the fast offline suite (default; no network)
 
 contract drift:      ## Detect YouTube shape drift via the LIVE contract suite (not CI-able)
 	./scripts/check_shape_drift.sh
+
+smoke-pypi:          ## Install the PUBLISHED package from PyPI and smoke-test it (run after publish)
+	./scripts/smoke_pypi.sh
 
 lint:                ## Lint with ruff
 	uv run ruff check .
