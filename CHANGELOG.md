@@ -6,6 +6,100 @@ All notable changes to this project are documented in this file.
 
 - (Add new changes here)
 
+## [0.8.0] - 2026-07-05
+
+Correctness release driven by the 2026-07-05 four-lens review. Every
+fix landed test-first under the new testing rules (see TESTING.md,
+adopted with this release): boundary tests consume real captured
+payloads, cross-layer vocabularies are pinned by contract tests, and
+documented promises get their own cases.
+
+### BREAKING
+- **Comment filter keys renamed to match the comment dicts themselves**
+  (C1): `channel_id` → `author_channel_id`, `is_by_owner` →
+  `is_creator`, `is_hearted_by_owner` → `is_hearted`. The old spellings
+  never matched any key the parser emits — filtering on them silently
+  returned **zero comments** — and now raise `ValueError` at
+  validation instead. `is_pinned` is newly filterable.
+- **`description_snippet` filter removed** (C1): only the retired
+  `videoRenderer` shape emitted it, so as a fast filter it silently
+  dropped every video on current lockup-shaped pages. Use
+  `full_description` (slow) instead.
+- **Transcript errors are no longer swallowed** (M20): only
+  `NoTranscriptFound`/`TranscriptsDisabled`/`VideoUnavailable` map to
+  `[]`; rate limits, network failures, and upstream shape changes now
+  propagate instead of masquerading as "no transcript".
+- **Persistent HTTP failures during comment pagination now raise
+  `VideoUnavailableError`** (M-d) instead of silently truncating the
+  stream; parser bugs propagate with their real stack trace.
+
+### Fixed
+- **`is_hearted` and `is_pinned` are real data now** (C1): wired from
+  `engagementToolbarStateEntityPayload.heartState` (via
+  `toolbarStateKey`) and `commentViewModel.pinnedText` respectively.
+  Both were hardcoded `False`; examples 26/28 demonstrated nothing.
+- **Reply pagination past page one** (M-c): reply continuations use the
+  button-form token (`continuationItemRenderer.button.buttonRenderer
+  .command…`), which the extractor missed — `get_comment_replies`
+  silently capped at ~10 replies. Verified live (35/35 fetched).
+- **HTTP 4xx/5xx no longer crash generators with the wrong exception**
+  (C2): `httpx.HTTPStatusError` is not a `RequestError` subclass, so
+  status errors escaped every guard. All page GETs catch
+  `httpx.HTTPError` and honor the documented `VideoUnavailableError`
+  contract.
+- **Retry/backoff now covers every page GET** (C3): watch page (the
+  per-video hydration request), channel/shorts/streams tabs, playlist
+  page, and the comment initial page — previously only continuation
+  POSTs retried, so one transient 429 could kill a whole generator.
+  `Retry-After` is now capped at `max_delay`.
+- **`limit=-1` comments** (C4): the documented "unbounded" spelling
+  yielded an empty generator (`0 < -1`); negative limits normalize to
+  `None` in both `get_comments` and `get_comment_replies`.
+- **Selective comment filters no longer truncate pagination** (C5): the
+  empty-page breaker counted post-filter survivors, so a rare filter
+  stopped after 3 filtered-out pages; page progress is now measured by
+  new unique comment ids pre-filter.
+- **`datetime` accepted for `start_date`/`end_date`** (C8): previously
+  raised `TypeError` mid-pagination at the channel date short-circuit.
+- **Past live streams have `publish_date` again** (C7): "Streamed 2
+  days ago" text now parses (the `Streamed ` prefix broke dateparser),
+  so date filters no longer drop every completed stream.
+- **Status tracking preserves content on every unavailable check**
+  (M-b): ok → unavailable → unavailable (force_refresh) used to null
+  title/channel/counts on the second check, violating the "prior data
+  is never lost" guarantee.
+- **SQLite cache round-trips `datetime`/`date`** (M-a): `publish_date`
+  came back as a string on cache hits (`json.dumps(default=str)`).
+  Now a tagged, revivable encoding; unknown types raise at write time
+  instead of silently corrupting.
+- **Playlist date filtering is fast and truthfully documented** (M-e):
+  the docstring/README promised a per-video metadata fetch (written for
+  the retired renderer shape); current lockup listings carry relative
+  dates, which the filter uses directly. When `fetch_full_metadata=True`
+  and a fast-filter field is missing on the raw item, the filter defers
+  to the merged metadata instead of dropping the video early.
+
+### Docs
+- README caching section said in-memory caching was the default — a
+  bare `YtMeta()` caches **nothing**. Rewritten with the `cache={}`
+  opt-in ("Caching Is Off by Default").
+- Filter table updated to the real comment-filter vocabulary; examples
+  19/26/28 fixed or rewritten and verified live; example 05 no longer
+  prints a key no parser emits.
+
+### Tests
+- `TESTING.md`: retrospective on why strict TDD still shipped these
+  bugs (tests encoding the author's model of external reality) + rules
+  R1–R9 that governed this release.
+- New R2 contract module (`tests/test_filter_schema_contract.py`) pins
+  every advertised filter key to real parser output.
+- Two new real captured fixtures: first comment page of "Me at the
+  zoo" (1 pinned + 4 hearted comments) and a reply continuation page
+  (button-form token).
+- Live contract suite: past-stream `publish_date` assertion; reply
+  test now requires >10 replies (a limit of 2 could never catch the
+  page-1 cap).
+
 ## [0.7.1] - 2026-07-01
 
 Bug-fix and test-hardening release. Restores `get_playlist_videos`
