@@ -301,10 +301,18 @@ def test_contract_reply_tokens_and_replies(client):
 
     token = tokened[0]["reply_continuation_token"]
     assert isinstance(token, str) and len(token) > 10
+    # M-c (0.8.0): limit > one page (10). Reply pages carry the
+    # next-page token in the BUTTON continuation form; when extraction
+    # missed it, replies silently capped at ~10 — a limit of 2 could
+    # never catch that. The pinned thread has hundreds of replies.
     replies = list(
-        client.get_comment_replies(ZOO_URL, reply_continuation_token=token, limit=2)
+        client.get_comment_replies(ZOO_URL, reply_continuation_token=token, limit=25)
     )
     assert replies, "reply token did not resolve to any replies — reply fetch broke"
+    assert len(replies) > 10, (
+        "reply pagination stopped at the first page — the button-form "
+        "continuation token extraction broke. " + STRUCTURE_CHANGED
+    )
     r = replies[0]
     assert isinstance(r["text"], str)
     assert isinstance(r["author"], str) and r["author"]

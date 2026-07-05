@@ -370,6 +370,14 @@ class CommentAPIClient:
         items are comment threads, which themselves contain nested
         reply continuation tokens we MUST NOT pick up).
 
+        M-c: the renderer carries its token in one of two forms —
+        ``continuationEndpoint.continuationCommand.token`` (comment
+        pages) or ``button.buttonRenderer.command.continuationCommand
+        .token`` (reply "Show more replies" pages). Only the first was
+        handled, so reply pagination silently stopped after page one.
+        Verified against a live-captured reply page
+        (tests/fixtures/comment_reply_page_with_continuation.json).
+
         H3 history: the previous implementation did a free-form DFS
         and returned the first token whose value matched a fuzzy
         substring check (``_is_comment_token``). That check accepted
@@ -407,6 +415,9 @@ class CommentAPIClient:
                 token = _deep_get(
                     renderer,
                     "continuationEndpoint.continuationCommand.token",
+                ) or _deep_get(
+                    renderer,
+                    "button.buttonRenderer.command.continuationCommand.token",
                 )
                 if token:
                     return token

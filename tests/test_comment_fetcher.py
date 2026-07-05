@@ -1229,3 +1229,42 @@ def test_c5_selective_filter_does_not_truncate_pagination(
         f"expected the planted matches from pages 1 AND 6, got "
         f"{len(result)} — pagination truncated by filtered-empty pages"
     )
+
+
+def test_mc_extract_continuation_token_handles_button_form():
+    """REGRESSION (M-c, 2026-07-05 review): reply-thread "Show more
+    replies" pages carry the next-page token in the BUTTON form —
+    continuationItemRenderer.button.buttonRenderer.command
+    .continuationCommand.token — not the continuationEndpoint form the
+    H3 rewrite handled. extract_continuation_token returned None, so
+    get_comment_replies silently stopped after ~10 replies.
+
+    Fixture: REAL reply continuation page captured live from the pinned
+    'Me at the zoo' thread (hundreds of replies). Note the same page
+    also contains button-form continuation renderers NESTED inside
+    commentRepliesRenderer.subThreads — the H3 discipline (top-level
+    continuationItems only, reversed scan) must keep excluding those.
+    """
+    import json
+    from pathlib import Path
+
+    from yt_meta.comment_api_client import CommentAPIClient
+
+    with open(
+        Path(__file__).parent
+        / "fixtures"
+        / "comment_reply_page_with_continuation.json"
+    ) as f:
+        reply_response = json.load(f)
+
+    client = CommentAPIClient()
+    try:
+        token = client.extract_continuation_token(reply_response)
+    finally:
+        client.close()
+    assert token, "button-form next-page token was not extracted"
+    # the real token from the captured page
+    assert token.startswith("Eg0SC2pOUVhBQzlJVlJ3")
+    # H3 safety: the nested subThreads tokens must NOT be returned.
+    # (The top-level item is the LAST continuationItemRenderer; nested
+    # ones live inside commentThreadRenderer subtrees we never enter.)
