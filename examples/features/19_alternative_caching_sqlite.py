@@ -17,18 +17,19 @@ def clear_cache_files():
 
 def main():
     """
-    Demonstrates using SqliteDict as a persistent cache, mimicking the 3-step
+    Demonstrates the built-in SQLite persistent cache (cache_path=), mimicking the 3-step
     benchmark for clarity.
     """
     clear_cache_files()
-    print("--- Using SqliteDict as a persistent cache backend ---")
+    print("--- Using the built-in SQLite persistent cache ---")
     print("-" * 50)
 
-    # --- Step 1: Initial fetch time with no persistent cache ---
-    print("Step 1: Running with a standard client (in-memory cache).")
-    client_in_memory = YtMeta()
+    # --- Step 1: Initial fetch time with no cache at all ---
+    # (A bare YtMeta() does NOT cache — every call hits the network.)
+    print("Step 1: Running with a standard client (no caching).")
+    client_uncached = YtMeta()
     start_time = time.perf_counter()
-    client_in_memory.get_video_metadata(VIDEO_URL)
+    client_uncached.get_video_metadata(VIDEO_URL)
     duration_uncached = time.perf_counter() - start_time
     print(f"-> Initial fetch took: {duration_uncached:.4f} seconds.\n")
 

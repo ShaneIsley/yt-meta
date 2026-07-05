@@ -249,19 +249,22 @@ else:
 
 `yt-meta` includes a flexible caching system to improve performance and avoid re-fetching data from YouTube.
 
-### Default In-Memory Cache
+### Caching Is Off by Default
 
-By default, `YtMeta` uses a simple in-memory dictionary to cache results. This cache is temporary and only lasts for the lifetime of the client instance.
+A bare `YtMeta()` does **not** cache anything — every call hits the network. Opt in by passing either `cache=` (any dict-like object) or `cache_path=` (the built-in SQLite cache):
 
 ```python
 from yt_meta import YtMeta
 
-client = YtMeta()
-# The first call will fetch from the network
+# In-memory cache: lasts for the lifetime of the client instance.
+client = YtMeta(cache={})
+# The first call fetches from the network...
 meta1 = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
-# This second call will be instant, served from the in-memory cache
+# ...and this second call is instant, served from the cache.
 meta2 = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
 ```
+
+If you call the same endpoints repeatedly (loops, notebooks, retries), turn caching on — it is the difference between one request and hundreds.
 
 ### Persistent Caching
 

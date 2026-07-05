@@ -1,93 +1,73 @@
 """
 Example: Hierarchical Comment Organization
 
-This example demonstrates how to organize YouTube comments into hierarchical
-structures by identifying parent-child relationships (replies).
+This example demonstrates how to organize YouTube comments into
+hierarchical threads (a top-level comment plus its replies).
 
-This helps understand comment thread structure and conversation flow.
+`get_video_comments` returns only TOP-LEVEL comments — YouTube serves
+replies through per-thread continuation tokens, not inline. The correct
+workflow (also shown in example 30) is:
+
+  1. `get_video_comments_with_reply_tokens(...)` — top-level comments,
+     each carrying a `reply_continuation_token` when it has replies;
+  2. `get_comment_replies(video, token)` — the replies for one thread.
+
+(Before 0.8.0 this example built the hierarchy from `parent_id`, which
+is always None on top-level fetches — it demonstrated nothing.)
 """
 
 import logging
 
 from yt_meta import YtMeta
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logging.basicConfig(level=logging.WARNING, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def main():
     client = YtMeta()
-    video_url = "https://www.youtube.com/watch?v=feT7_wVmgv0"
+    video_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # Me at the zoo
 
-    try:
-        logger.info(f"Fetching comments from: {video_url}")
+    print(f"Fetching top comments from: {video_url}")
+    top_level = list(
+        client.get_video_comments_with_reply_tokens(
+            video_url, sort_by="top", limit=10
+        )
+    )
 
-        # Fetch comments that include replies
-        comments = list(client.get_video_comments(video_url, sort_by="top", limit=30))
+    # Build the hierarchy: fetch replies for the 3 most-replied threads.
+    threads = sorted(top_level, key=lambda c: c["reply_count"], reverse=True)
+    hierarchy = {}
+    for comment in threads[:3]:
+        token = comment.get("reply_continuation_token")
+        replies = (
+            list(client.get_comment_replies(video_url, token, limit=5))
+            if token
+            else []
+        )
+        hierarchy[comment["id"]] = (comment, replies)
 
-        # Organize comments by hierarchy
-        logger.info("Organizing comment hierarchy...")
-        top_level_comments = []
-        replies_by_parent = {}
+    total_replies = sum(c["reply_count"] for c in top_level)
+    print("\n📊 HIERARCHY SUMMARY:")
+    print(f"Top-level comments fetched: {len(top_level)}")
+    print(f"Replies reported across them: {total_replies}")
+    print(f"Threads expanded below: {len(hierarchy)}")
 
-        for comment in comments:
-            if comment["parent_id"]:
-                # This is a reply
-                parent_id = comment["parent_id"]
-                if parent_id not in replies_by_parent:
-                    replies_by_parent[parent_id] = []
-                replies_by_parent[parent_id].append(comment)
-            else:
-                # This is a top-level comment
-                top_level_comments.append(comment)
+    print("\n💬 MOST ACTIVE THREADS:")
+    for i, (comment, replies) in enumerate(hierarchy.values(), 1):
+        print(f"\n{i}. @{comment['author']} ({comment['reply_count']} replies)")
+        print(f"   💬 {comment['text'][:70]}...")
+        print(f"   👍 {comment['like_count']} likes")
+        for reply in replies:
+            print(f"   ↳ @{reply['author']}: {reply['text'][:50]}...")
+        if comment["reply_count"] > len(replies):
+            print(f"   ↳ ... and {comment['reply_count'] - len(replies)} more replies")
 
-        # Display results
-        total_replies = sum(len(replies) for replies in replies_by_parent.values())
-
-        print("\n📊 HIERARCHY SUMMARY:")
-        print(f"Total comments: {len(comments)}")
-        print(f"Top-level comments: {len(top_level_comments)}")
-        print(f"Reply threads: {len(replies_by_parent)}")
-        print(f"Total replies: {total_replies}")
-
-        # Show most active threads
-        if replies_by_parent:
-            print("\n💬 MOST ACTIVE THREADS:")
-            # Sort threads by reply count
-            sorted_threads = sorted(
-                replies_by_parent.items(), key=lambda x: len(x[1]), reverse=True
-            )
-
-            for i, (parent_id, replies) in enumerate(sorted_threads[:3], 1):
-                # Find parent comment
-                parent = next(
-                    (c for c in top_level_comments if c["id"] == parent_id), None
-                )
-                if parent:
-                    print(f"\n{i}. @{parent['author']} ({len(replies)} replies)")
-                    print(f"   💬 {parent['text'][:70]}...")
-                    print(f"   👍 {parent['like_count']} likes")
-
-                    # Show first reply
-                    if replies:
-                        first_reply = replies[0]
-                        print(
-                            f"   ↳ @{first_reply['author']}: {first_reply['text'][:50]}..."
-                        )
-                        if len(replies) > 1:
-                            print(f"   ↳ ... and {len(replies) - 1} more replies")
-
-        # Educational summary
-        print("\n✨ Hierarchical organization helps:")
-        print("• Identify popular discussion topics")
-        print("• Track conversation threads")
-        print("• Find most engaging comments")
-        print("• Understand community interactions")
-
-    except Exception as e:
-        logger.error(f"Failed to analyze comment hierarchy: {e}")
-        print(f"❌ Error: Could not process comments from {video_url}")
+    print("\n✨ Hierarchical organization helps:")
+    print("• Identify popular discussion topics")
+    print("• Track conversation threads")
+    print("• Find most engaging comments")
+    print("• Understand community interactions")
 
 
 if __name__ == "__main__":

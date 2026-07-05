@@ -22,7 +22,7 @@ recent_videos_generator = client.get_channel_videos(
 # We'll just look at the first 5 results for this example
 for video in itertools.islice(recent_videos_generator, 5):
     title = video.get("title", "N/A")
-    published = video.get("published_time_text", "N/A")
+    published = video.get("publish_date", "N/A")
     print(f"- Title: {title}")
     print(f"  Published: {published}\n")
 
@@ -40,6 +40,6 @@ past_videos_generator = client.get_channel_videos(
 
 for video in itertools.islice(past_videos_generator, 5):
     title = video.get("title", "N/A")
-    published = video.get("published_time_text", "N/A")
+    published = video.get("publish_date", "N/A")
     print(f"- Title: {title}")
     print(f"  Published: {published}\n")

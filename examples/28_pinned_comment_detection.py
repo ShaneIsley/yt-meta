@@ -19,14 +19,15 @@ logger = logging.getLogger(__name__)
 def main():
     client = YtMeta()
 
-    # This video has a pinned comment by the creator
-    video_url = "https://www.youtube.com/watch?v=ZMs2xCmosvI"
+    # "Me at the zoo" — its top comment is pinned ("Pinned by @jawed")
+    video_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
 
     try:
         logger.info(f"Fetching comments from: {video_url}")
 
-        # Fetch comments - pinned comments typically appear first
-        comments = list(client.get_video_comments(video_url, limit=15))
+        # Fetch comments — the pinned comment surfaces on the first page
+        # of the 'top' sort
+        comments = list(client.get_video_comments(video_url, sort_by="top", limit=15))
 
         # Separate pinned and regular comments
         pinned_comments = [c for c in comments if c.get("is_pinned", False)]
