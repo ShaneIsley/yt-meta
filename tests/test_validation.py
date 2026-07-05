@@ -76,7 +76,7 @@ def test_validate_filters_valid_filters():
         "title": {"contains": "test"},
         "keywords": {"contains_any": ["a", "b"]},
         "publish_date": {"eq": date(2023, 1, 1)},
-        "is_hearted_by_owner": {"eq": True},
+        "is_hearted": {"eq": True},
     }
     try:
         validate_filters(filters)

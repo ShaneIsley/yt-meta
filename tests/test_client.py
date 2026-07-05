@@ -309,7 +309,7 @@ def test_m19_filters_kwarg_threaded_to_comment_fetcher(client, mocker):
         client._comment_fetcher, "get_comments", side_effect=fake_get_comments
     )
 
-    filters = {"is_by_owner": {"eq": True}}
+    filters = {"is_creator": {"eq": True}}
     list(client.get_video_comments("dQw4w9WgXcQ", limit=10, filters=filters))
 
     assert seen_kwargs["filters"] == filters

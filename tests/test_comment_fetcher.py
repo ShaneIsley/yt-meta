@@ -488,23 +488,31 @@ def test_m19_get_comments_applies_filters_to_yielded_comments(mocker):
         fetcher.api_client, "extract_continuation_token", return_value=None
     )
 
-    fake_comments = [
-        {"id": "c1", "is_by_owner": True, "text": "creator reply"},
-        {"id": "c2", "is_by_owner": False, "text": "regular comment"},
-        {"id": "c3", "is_by_owner": True, "text": "another creator reply"},
-    ]
+    # R1 (2026-07-05): previously this test filtered synthetic dicts
+    # hand-written in the filter layer's vocabulary — which is exactly
+    # how the C1 phantom-key bug shipped. Now the REAL parser runs on a
+    # REAL captured page: @jawed's own comment is the one is_creator
+    # comment on it.
+    import json
+    from pathlib import Path
+
+    with open(
+        Path(__file__).parent / "fixtures" / "comment_first_page_pinned.json"
+    ) as f:
+        real_response = json.load(f)
     mocker.patch.object(
-        fetcher.parser, "extract_complete_comments", return_value=fake_comments
+        fetcher.api_client, "make_api_request", return_value=real_response
     )
 
-    filters = {"is_by_owner": {"eq": True}}
+    filters = {"is_creator": {"eq": True}}
     result = list(
         fetcher.get_comments(
             "dQw4w9WgXcQ", sort_by="recent", limit=10, filters=filters
         )
     )
 
-    assert [c["id"] for c in result] == ["c1", "c3"]
+    assert [c["id"] for c in result] == ["Ugxnp9ws0dexjE9L5UB4AaABAg"]
+    assert result[0]["is_creator"] is True
 
 
 class TestBestCommentFetcher:
@@ -1058,3 +1066,90 @@ def test_c4_limit_minus_one_is_unbounded_for_replies(
         fetcher.get_comment_replies("dQw4w9WgXcQ", "reply_tok", limit=-1)
     )
     assert len(replies) == 20
+
+
+# --- C1 (2026-07-05 review): pinned/hearted wiring + working filter keys ---
+
+
+@pytest.fixture(scope="module")
+def first_page_pinned_response():
+    """Real captured first page of 'Me at the zoo' (top sort): the
+    pinned @jawed comment + 4 hearted comments, with the
+    engagementToolbarStateEntityPayload ↔ toolbarStateKey linkage."""
+    import json
+    from pathlib import Path
+
+    with open(
+        Path(__file__).parent / "fixtures" / "comment_first_page_pinned.json"
+    ) as f:
+        return json.load(f)
+
+
+def test_c1_is_pinned_wired_from_comment_view_model(first_page_pinned_response):
+    """REGRESSION (C1): is_pinned was hardcoded False, making the
+    documented pinned-comment workflow (example 28) a dead demo. The
+    pinned state lives in commentViewModel.pinnedText, keyed by
+    commentId."""
+    from yt_meta.comment_parser import CommentParser
+
+    comments = CommentParser().extract_complete_comments(first_page_pinned_response)
+    pinned = [c for c in comments if c["is_pinned"]]
+    assert [c["id"] for c in pinned] == ["UgzuC3zzpRZkjc5Qzsd4AaABAg"]
+    # The pinnedText reads "Pinned by @jawed" — jawed pinned the
+    # @SanDiegoZoo comment, so the AUTHOR is the zoo.
+    assert pinned[0]["author"] == "@SanDiegoZoo"
+
+
+def test_c1_is_hearted_wired_from_toolbar_state(first_page_pinned_response):
+    """REGRESSION (C1): is_hearted was hardcoded False. The heart state
+    lives in engagementToolbarStateEntityPayload.heartState, linked via
+    properties.toolbarStateKey. The captured page has exactly 4 hearted
+    comments."""
+    from yt_meta.comment_parser import CommentParser
+
+    comments = CommentParser().extract_complete_comments(first_page_pinned_response)
+    hearted = {c["id"] for c in comments if c["is_hearted"]}
+    assert hearted == {
+        "UgzuC3zzpRZkjc5Qzsd4AaABAg",
+        "Ugxnp9ws0dexjE9L5UB4AaABAg",
+        "UgwVNlctFgmvFU1PTuN4AaABAg",
+        "UgwzcjB8EtglNtvqSox4AaABAg",
+    }
+
+
+def test_c1_filters_work_on_real_parser_output(first_page_pinned_response):
+    """REGRESSION (C1): filtering real parser output on the renamed
+    keys (author_channel_id / is_hearted) must actually match. The old
+    vocabulary (channel_id / is_hearted_by_owner / is_by_owner) never
+    matched anything the parser emits — 100% of comments were dropped
+    with no error."""
+    from yt_meta.comment_parser import CommentParser
+    from yt_meta.filtering import apply_comment_filters
+
+    comments = CommentParser().extract_complete_comments(first_page_pinned_response)
+
+    by_channel = [
+        c
+        for c in comments
+        if apply_comment_filters(
+            c, {"author_channel_id": {"eq": "UCC5NfQ6Mf0dq_eEwv4P_hWA"}}
+        )
+    ]
+    assert by_channel, "author_channel_id filter must match the real comment"
+    assert all(c["author"] == "@SanDiegoZoo" for c in by_channel)
+
+    hearted = [
+        c for c in comments if apply_comment_filters(c, {"is_hearted": {"eq": True}})
+    ]
+    assert len(hearted) == 4
+
+
+def test_c1_old_filter_vocabulary_is_rejected_loudly():
+    """REGRESSION (C1): the phantom keys must now fail fast at
+    validate_filters (ValueError) instead of silently yielding zero
+    comments."""
+    from yt_meta.validators import validate_filters
+
+    for key in ("channel_id", "is_by_owner", "is_hearted_by_owner"):
+        with pytest.raises(ValueError, match="Unknown filter field"):
+            validate_filters({key: {"eq": True}})

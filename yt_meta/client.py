@@ -407,7 +407,7 @@ class YtMeta:
                 with the number of comments fetched so far. Defaults to None.
             since_date (date | str | None, optional): The date from which to fetch comments.
                 Can be a date object, a string in the format "YYYY-MM-DD", or None for no filter. The only filter that short-circuits pagination.
-            filters (dict | None, optional): Comment-level predicates applied after fetch. Supported keys: text, author, like_count, reply_count, publish_date, is_reply, is_hearted_by_owner, is_by_owner, channel_id. These do NOT reduce request count — they operate on the in-memory comment list. Use `since_date` for request reduction.
+            filters (dict | None, optional): Comment-level predicates applied after fetch. Supported keys: text, author, author_channel_id, like_count, reply_count, publish_date, is_reply, is_hearted, is_creator, is_pinned. These do NOT reduce request count — they operate on the in-memory comment list. Use `since_date` for request reduction.
 
         Yields:
             dict: A dictionary representing a single comment.

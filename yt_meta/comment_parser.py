@@ -470,6 +470,34 @@ class CommentParser:
         """
         comments = []
 
+        # C1: heart and pinned state don't live in commentEntityPayload
+        # itself. Pre-scan the response once for both linkages:
+        #   - engagementToolbarStateEntityPayload.heartState, keyed by
+        #     its `key` == the comment's properties.toolbarStateKey;
+        #   - commentViewModel entries carrying `pinnedText`, keyed by
+        #     commentId.
+        # Both were previously hardcoded False, which made every
+        # is_hearted / is_pinned consumer (filters, example 28) a no-op.
+        toolbar_states: dict[str, str] = {}
+        pinned_ids: set[str] = set()
+
+        def scan_states(obj):
+            if isinstance(obj, dict):
+                if "engagementToolbarStateEntityPayload" in obj:
+                    payload = obj["engagementToolbarStateEntityPayload"]
+                    key = payload.get("key")
+                    if key:
+                        toolbar_states[key] = payload.get("heartState", "")
+                if "pinnedText" in obj and obj.get("commentId"):
+                    pinned_ids.add(obj["commentId"])
+                for value in obj.values():
+                    scan_states(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    scan_states(item)
+
+        scan_states(api_response)
+
         def search_complete_comments(obj):
             if isinstance(obj, dict):
                 if "commentEntityPayload" in obj:
@@ -518,6 +546,14 @@ class CommentParser:
                     reply_level = properties.get("replyLevel", 0)
                     is_reply = reply_level > 0
 
+                    # C1: resolve heart/pinned from the pre-scanned maps.
+                    toolbar_state_key = properties.get("toolbarStateKey")
+                    is_hearted = (
+                        toolbar_states.get(toolbar_state_key)
+                        == "TOOLBAR_HEART_STATE_HEARTED"
+                    )
+                    is_pinned = comment_id in pinned_ids
+
                     comment = {
                         "id": comment_id,
                         "text": text,
@@ -529,9 +565,9 @@ class CommentParser:
                         "time_parsed": None,
                         "like_count": like_count,
                         "reply_count": reply_count,
-                        "is_hearted": False,  # Can be extracted from toolbar states if needed
+                        "is_hearted": is_hearted,
                         "is_reply": is_reply,
-                        "is_pinned": False,  # Can be determined from other data if needed
+                        "is_pinned": is_pinned,
                         "paid_comment": None,
                         "author_badges": [],  # Can be extracted from author data if needed
                         "parent_id": None,  # For replies

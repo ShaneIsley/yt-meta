@@ -132,22 +132,29 @@ def test_apply_filters_view_count():
     assert apply_filters(video, {"view_count": {"gt": 1000}})
 
 
-def test_apply_filters_description_snippet():
-    """Tests filtering by description snippet."""
+def test_description_snippet_filter_rejected_full_description_works():
+    """C1 (0.8.0): description_snippet was removed — only the retired
+    videoRenderer shape emitted it, so the filter silently dropped every
+    video on current lockup pages. It now fails validation loudly, and
+    full_description (slow filter) covers the use case."""
+    import pytest as _pytest
+
+    from yt_meta.validators import validate_filters
+
+    with _pytest.raises(ValueError, match="Unknown filter field"):
+        validate_filters({"description_snippet": {"contains": "python"}})
+
     videos = [
-        {"description_snippet": "A video about Python programming."},
-        {"description_snippet": "A great video about cooking."},
-        {"description_snippet": "A tutorial on pyTEst and other tools."},
+        {"full_description": "A video about Python programming."},
+        {"full_description": "A great video about cooking."},
+        {"full_description": "A tutorial on pyTEst and other tools."},
     ]
+    filters_py = {"full_description": {"contains": "python"}}
+    filtered = [v for v in videos if apply_filters(v, filters_py)]
+    assert len(filtered) == 1
+    assert filtered[0]["full_description"] == "A video about Python programming."
 
-    # Test 'contains'
-    filters_py = {"description_snippet": {"contains": "python"}}
-    filtered_py = [v for v in videos if apply_filters(v, filters_py)]
-    assert len(filtered_py) == 1
-    assert filtered_py[0]["description_snippet"] == "A video about Python programming."
-
-    # Test 're'
-    filters_re = {"description_snippet": {"re": r"pyt(hon|est)"}}
+    filters_re = {"full_description": {"re": r"pyt(hon|est)"}}
     filtered_re = [v for v in videos if apply_filters(v, filters_re)]
     assert len(filtered_re) == 2
 

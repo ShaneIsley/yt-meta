@@ -19,12 +19,17 @@ logger = logging.getLogger(__name__)
 
 
 # These keys are available in the basic video metadata from channel/playlist pages.
+# C1/R2: this set must stay a subset of what parse_lockup_view_model
+# emits (pinned by tests/test_filter_schema_contract.py).
+# description_snippet was removed in 0.8.0 — only the retired
+# videoRenderer shape carried it, so as a fast filter it silently
+# dropped every video on current lockup-shaped pages. Use
+# full_description (slow) instead.
 FAST_VIDEO_FILTERS = {
     "view_count",
     "duration_seconds",
     "publish_date",
     "title",
-    "description_snippet",
 }
 FAST_SHORTS_FILTERS = {"view_count", "title"}
 
@@ -36,16 +41,22 @@ SLOW_FILTER_KEYS = {
     "full_description",
 }
 
+# C1/R2: these are the names the comment parser actually emits (pinned
+# by tests/test_filter_schema_contract.py). 0.8.0 renamed the three
+# phantom keys that never matched anything: channel_id →
+# author_channel_id, is_by_owner → is_creator, is_hearted_by_owner →
+# is_hearted; is_pinned is newly filterable.
 COMMENT_FILTER_KEYS = {
     "text",
     "author",
+    "author_channel_id",
     "like_count",
     "reply_count",
     "publish_date",
     "is_reply",
-    "is_hearted_by_owner",
-    "is_by_owner",
-    "channel_id",
+    "is_hearted",
+    "is_creator",
+    "is_pinned",
 }
 
 
@@ -345,9 +356,9 @@ def apply_comment_filters(comment: dict, filters: dict) -> bool:
         passes = True  # Assume true, break on first failure
         if key in {"like_count", "reply_count"}:
             passes = _check_numerical_condition(comment_value, condition)
-        elif key in {"text", "author", "channel_id"}:
+        elif key in {"text", "author", "author_channel_id"}:
             passes = _check_text_condition(comment_value, condition)
-        elif key in {"is_reply", "is_hearted_by_owner", "is_by_owner"}:
+        elif key in {"is_reply", "is_hearted", "is_creator", "is_pinned"}:
             passes = _check_boolean_condition(comment_value, condition)
         elif key == "publish_date":
             for op, condition_value in condition.items():

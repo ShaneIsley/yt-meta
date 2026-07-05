@@ -27,11 +27,9 @@ FILTER_SCHEMA = {
         "schema_type": "numerical",
     },
     "title": {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
-    "description_snippet": {
-        "type": str,
-        "operators": TEXT_OPERATORS,
-        "schema_type": "text",
-    },
+    # description_snippet was removed in 0.8.0 (C1): only the retired
+    # videoRenderer shape emitted it, so the filter silently dropped
+    # every video on current pages. full_description replaces it.
     "full_description": {
         "type": str,
         "operators": TEXT_OPERATORS,
@@ -52,14 +50,19 @@ FILTER_SCHEMA = {
     },
     "author": {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
     "text": {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
-    "channel_id": {"type": str, "operators": TEXT_OPERATORS, "schema_type": "text"},
-    "is_reply": {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
-    "is_hearted_by_owner": {
-        "type": bool,
-        "operators": BOOL_OPERATORS,
-        "schema_type": "bool",
+    # C1 (0.8.0): renamed to match the keys the comment parser actually
+    # emits. The old spellings (channel_id, is_hearted_by_owner,
+    # is_by_owner) never matched a real comment and now fail validation
+    # loudly instead of silently dropping everything.
+    "author_channel_id": {
+        "type": str,
+        "operators": TEXT_OPERATORS,
+        "schema_type": "text",
     },
-    "is_by_owner": {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
+    "is_reply": {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
+    "is_hearted": {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
+    "is_creator": {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
+    "is_pinned": {"type": bool, "operators": BOOL_OPERATORS, "schema_type": "bool"},
 }
 
 

@@ -325,7 +325,6 @@ The following table lists supported fields and their valid operators. Validation
 | Field                 | Supported Operators              | Content Type(s)                                             | Filter Speed |
 | :-------------------- | :------------------------------- | :---------------------------------------------------------- | :----------- |
 | `title`               | `contains`, `re`, `eq`           | Video, Short                                                | Fast         |
-| `description_snippet` | `contains`, `re`, `eq`           | Video                                                       | Fast         |
 | `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
 | `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
 | `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | Fast (Video), **Slow** (Short, Playlist) |
@@ -335,14 +334,18 @@ The following table lists supported fields and their valid operators. Validation
 | `full_description`    | `contains`, `re`, `eq`           | Video                                                       | **Slow**     |
 | `text`                | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
 | `author`              | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
-| `channel_id`          | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
+| `author_channel_id`   | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
 | `reply_count`         | `gt`, `gte`, `lt`, `lte`, `eq`   | Comment                                                     | N/A          |
-| `is_by_owner`         | `eq`                             | Comment                                                     | N/A          |
+| `is_creator`          | `eq`                             | Comment                                                     | N/A          |
 | `is_reply`            | `eq`                             | Comment                                                     | N/A          |
-| `is_hearted_by_owner` | `eq`                             | Comment                                                     | N/A          |
+| `is_hearted`          | `eq`                             | Comment                                                     | N/A          |
+| `is_pinned`           | `eq`                             | Comment                                                     | N/A          |
 
 > [!NOTE]
 > Some fields like `publish_date` can be "fast" for channel videos but "slow" for shorts or playlists because the basic metadata is not always available on those pages.
+
+> [!NOTE]
+> Renamed in 0.8.0: comment filter keys now match the keys on the comment dicts themselves — `channel_id` → `author_channel_id`, `is_by_owner` → `is_creator`, `is_hearted_by_owner` → `is_hearted` (the old names never matched and silently returned zero comments). `is_pinned` is newly filterable. `description_snippet` was removed — use `full_description` (slow) instead.
 
 #### Example: Basic Filtering (Fast)
 
