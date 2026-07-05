@@ -130,10 +130,15 @@ class CommentFetcher:
             # Fetch comments using continuation
             comment_count = 0
             seen_ids = set()
-            # H4: consecutive pages that yielded zero NEW comments. A
+            # H4: consecutive pages that carried zero NEW comment ids. A
             # legitimate all-duplicate page can happen (sort_by='top'
             # re-rankings overlap window boundaries) — break only after
             # several in a row so a one-off doesn't silently truncate.
+            # C5: "new" is measured PRE-filter — a page full of fresh
+            # comments that all fail the user's filters is progress, not
+            # an empty page. Counting post-filter survivors made a rare
+            # filter (one specific author) truncate pagination after
+            # EMPTY_PAGE_LIMIT filtered-out pages.
             consecutive_empty_pages = 0
             EMPTY_PAGE_LIMIT = 3
 
@@ -158,13 +163,21 @@ class CommentFetcher:
                         )
 
                     # Process comments
-                    found_comments = False
+                    found_new_ids = False
                     for comment in comments:
                         if limit and comment_count >= limit:
                             break
 
                         if not comment or comment["id"] in seen_ids:
                             continue
+
+                        # C5: record page progress BEFORE the user
+                        # filters run. Filters are deterministic, so
+                        # marking a filtered-out id as seen is safe —
+                        # it would fail the same filters on any later
+                        # page too.
+                        seen_ids.add(comment["id"])
+                        found_new_ids = True
 
                         # Apply date filtering
                         if since_date and comment.get("publish_date"):
@@ -175,9 +188,7 @@ class CommentFetcher:
                         if filters and not apply_comment_filters(comment, filters):
                             continue
 
-                        seen_ids.add(comment["id"])
                         comment_count += 1
-                        found_comments = True
 
                         # Add reply continuation token if available and requested
                         if include_reply_continuation and comment["id"] in reply_tokens:
@@ -195,7 +206,7 @@ class CommentFetcher:
                     # truncated results on any page that happened to
                     # land all-duplicates (legitimate for 'top' sort)
                     # AND masked H3's wrong-token bug.
-                    if found_comments:
+                    if found_new_ids:
                         consecutive_empty_pages = 0
                     else:
                         consecutive_empty_pages += 1

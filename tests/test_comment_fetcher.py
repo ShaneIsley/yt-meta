@@ -1153,3 +1153,79 @@ def test_c1_old_filter_vocabulary_is_rejected_loudly():
     for key in ("channel_id", "is_by_owner", "is_hearted_by_owner"):
         with pytest.raises(ValueError, match="Unknown filter field"):
             validate_filters({key: {"eq": True}})
+
+
+def test_c5_selective_filter_does_not_truncate_pagination(
+    mocker, comment_continuation_response
+):
+    """REGRESSION (C5, 2026-07-05 review) / R6 interaction test
+    (filters × pagination termination): found_comments counted
+    post-filter survivors, so a rare filter (e.g. one specific author)
+    tripped EMPTY_PAGE_LIMIT after 3 filtered-empty pages and silently
+    missed matches deeper in the stream — contradicting the docstring
+    ("filters do NOT reduce request count").
+
+    Six pages derived from the real captured response (R9: ids
+    re-suffixed per page so every page carries NEW comments; the target
+    author is planted on pages 1 and 6). The fix counts new unique
+    comment ids PRE-filter, so pagination must reach page 6.
+    """
+    import copy
+
+    def make_page(page_num, plant_author=None):
+        page = copy.deepcopy(comment_continuation_response)
+        planted = False
+
+        def rewrite(obj):
+            nonlocal planted
+            if isinstance(obj, dict):
+                payload = obj.get("commentEntityPayload")
+                if payload:
+                    props = payload.get("properties", {})
+                    if props.get("commentId"):
+                        props["commentId"] = f"{props['commentId']}-p{page_num}"
+                    if plant_author and not planted:
+                        payload.setdefault("author", {})["displayName"] = plant_author
+                        planted = True
+                for v in obj.values():
+                    rewrite(v)
+            elif isinstance(obj, list):
+                for v in obj:
+                    rewrite(v)
+
+        rewrite(page)
+        return page
+
+    target = "@the-needle-in-the-haystack"
+    pages = [make_page(1, plant_author=target)] + [
+        make_page(n) for n in range(2, 6)
+    ] + [make_page(6, plant_author=target)]
+
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client, "get_initial_video_data", return_value=({}, {})
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "get_sort_endpoints_flexible",
+        return_value={"newest first": "t1"},
+    )
+    mocker.patch.object(
+        fetcher.api_client, "select_sort_endpoint", return_value="t1"
+    )
+    mocker.patch.object(fetcher.api_client, "make_api_request", side_effect=pages)
+    mocker.patch.object(
+        fetcher.api_client,
+        "extract_continuation_token",
+        side_effect=["t2", "t3", "t4", "t5", "t6", None],
+    )
+
+    result = list(
+        fetcher.get_comments(
+            "dQw4w9WgXcQ", filters={"author": {"eq": target}}
+        )
+    )
+    assert len(result) == 2, (
+        f"expected the planted matches from pages 1 AND 6, got "
+        f"{len(result)} — pagination truncated by filtered-empty pages"
+    )
