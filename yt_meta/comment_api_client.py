@@ -101,10 +101,13 @@ class CommentAPIClient:
 
         url = f"https://www.youtube.com/watch?v={video_id}"
         try:
-            response = self.client.get(url)
-            response.raise_for_status()
+            # C3: retry transient failures on the initial watch-page GET,
+            # matching the continuation POSTs which were already wrapped.
+            response = request_with_retries(
+                lambda: self.client.get(url), retries=self.retries
+            )
             html_content = response.text
-        except (httpx.HTTPError, httpx.RequestError) as e:
+        except httpx.HTTPError as e:
             # M23: narrow to httpx errors. Anything else (KeyError,
             # programmer bug) surfaces unwrapped so the actual cause
             # isn't misleadingly reported as "video unavailable".

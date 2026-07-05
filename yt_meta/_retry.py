@@ -48,8 +48,8 @@ def request_with_retries(
     retries: int = 3,
     base_delay: float = 1.0,
     max_delay: float = 30.0,
-    sleep=time.sleep,
-    rng=random.random,
+    sleep=None,
+    rng=None,
 ) -> httpx.Response:
     """Call ``send()`` (a zero-arg callable returning an
     ``httpx.Response``), retrying transient failures.
@@ -65,8 +65,13 @@ def request_with_retries(
     is re-raised.
 
     ``sleep`` and ``rng`` are injectable so tests run without real
-    delays.
+    delays; they default to ``time.sleep`` / ``random.random`` resolved
+    at call time (not def time) so monkeypatching the modules works.
     """
+    if sleep is None:
+        sleep = time.sleep
+    if rng is None:
+        rng = random.random
     attempt = 0
     while True:
         try:

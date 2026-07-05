@@ -245,10 +245,19 @@ class VideoFetcher:
         # string).
         watch_url = f"https://www.youtube.com/watch?v={video_id}"
         try:
-            response = self.session.get(watch_url, timeout=10)
-            response.raise_for_status()
+            # C3: this GET runs once per video during full-metadata
+            # hydration — the library's highest-volume request — so a
+            # transient 429/5xx here must be retried, not kill the
+            # calling generator.
+            response = request_with_retries(
+                lambda: self.session.get(watch_url, timeout=10)
+            )
             html = response.text
-        except httpx.RequestError as e:
+        except httpx.HTTPError as e:
+            # C2: httpx.HTTPError covers BOTH RequestError (connection/
+            # timeout) and HTTPStatusError (raise_for_status on 4xx/5xx).
+            # Catching only RequestError let status errors escape
+            # unwrapped, contradicting the docstring's promise.
             logger.error(f"Failed to fetch video page {watch_url}: {e}")
             raise VideoUnavailableError(
                 f"Failed to fetch video page: {e}", video_id=video_id
@@ -313,12 +322,13 @@ class ChannelFetcher(_BaseFetcher):
         if not force_refresh and key in self.cache:
             return self.cache[key]
         try:
-            response = self.session.get(
-                key.replace("channel_streams_page:", ""), timeout=10
+            response = request_with_retries(
+                lambda: self.session.get(
+                    key.replace("channel_streams_page:", ""), timeout=10
+                )
             )
-            response.raise_for_status()
             html = response.text
-        except httpx.RequestError as e:
+        except httpx.HTTPError as e:
             raise VideoUnavailableError(
                 f"Could not fetch channel streams page: {e}", channel_url=key
             ) from e
@@ -394,10 +404,11 @@ class ChannelFetcher(_BaseFetcher):
             return self.cache[key]
         try:
             self.logger.info(f"Fetching channel page: {key}")
-            response = self.session.get(key.replace("channel_page:", ""), timeout=10)
-            response.raise_for_status()
+            response = request_with_retries(
+                lambda: self.session.get(key.replace("channel_page:", ""), timeout=10)
+            )
             html = response.text
-        except httpx.RequestError as e:
+        except httpx.HTTPError as e:
             self.logger.error(f"Request failed for channel page {key}: {e}")
             raise VideoUnavailableError(
                 f"Could not fetch channel page: {e}", channel_url=key
@@ -428,12 +439,13 @@ class ChannelFetcher(_BaseFetcher):
         if not force_refresh and key in self.cache:
             return self.cache[key]
         try:
-            response = self.session.get(
-                key.replace("channel_shorts_page:", ""), timeout=10
+            response = request_with_retries(
+                lambda: self.session.get(
+                    key.replace("channel_shorts_page:", ""), timeout=10
+                )
             )
-            response.raise_for_status()
             html = response.text
-        except httpx.RequestError as e:
+        except httpx.HTTPError as e:
             raise VideoUnavailableError(
                 f"Could not fetch channel shorts page: {e}", channel_url=key
             ) from e
@@ -762,10 +774,11 @@ class PlaylistFetcher(_BaseFetcher):
     def _get_raw_playlist_videos_generator(self, playlist_id: str):
         playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
         try:
-            response = self.session.get(playlist_url, timeout=10)
-            response.raise_for_status()
+            response = request_with_retries(
+                lambda: self.session.get(playlist_url, timeout=10)
+            )
             html = response.text
-        except httpx.RequestError as e:
+        except httpx.HTTPError as e:
             raise VideoUnavailableError(
                 f"Could not fetch playlist page: {e}", playlist_id=playlist_id
             ) from e
