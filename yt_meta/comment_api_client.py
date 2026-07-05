@@ -344,17 +344,16 @@ class CommentAPIClient:
 
         payload = {"context": context, "continuation": continuation_token}
 
-        try:
-            # H9: wire the previously-ignored ``retries`` constructor
-            # param through the actual retry/backoff helper.
-            response = request_with_retries(
-                lambda: self.client.post(url, json=payload), retries=self.retries
-            )
-            return response.json()
-
-        except Exception as e:
-            logger.error(f"API request failed: {e}")
-            return None
+        # H9: wire the previously-ignored ``retries`` constructor param
+        # through the actual retry/backoff helper. M-d: no blanket
+        # except — a persistent HTTP failure used to become None, which
+        # the pagination loop treated as a normal end-of-stream (silent
+        # truncation). Let it propagate; CommentFetcher wraps httpx
+        # errors as VideoUnavailableError.
+        response = request_with_retries(
+            lambda: self.client.post(url, json=payload), retries=self.retries
+        )
+        return response.json()
 
     def extract_continuation_token(self, api_response: dict) -> str | None:
         """Extract the next-page continuation token from a comment API response.
@@ -447,12 +446,8 @@ class CommentAPIClient:
 
         payload = {"context": context, "continuation": reply_continuation_token}
 
-        try:
-            response = request_with_retries(
-                lambda: self.client.post(url, json=payload), retries=self.retries
-            )
-            return response.json()
-
-        except Exception as e:
-            logger.error(f"Reply API request failed: {e}")
-            return None
+        # M-d: same as make_api_request — HTTP failures propagate.
+        response = request_with_retries(
+            lambda: self.client.post(url, json=payload), retries=self.retries
+        )
+        return response.json()

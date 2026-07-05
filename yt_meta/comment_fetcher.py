@@ -142,85 +142,86 @@ class CommentFetcher:
             consecutive_empty_pages = 0
             EMPTY_PAGE_LIMIT = 3
 
+            # M-d: no inner try/except here. HTTP failures propagate as
+            # httpx errors and are wrapped by the outer handler below;
+            # parser bugs (KeyError from a YouTube shape change) surface
+            # with their real stack trace instead of silently truncating
+            # a complete-looking stream.
             while continuation_token and (limit is None or comment_count < limit):
-                try:
-                    # Make API request for comments
-                    api_response = self.api_client.make_api_request(
-                        continuation_token, ytcfg
-                    )
+                # Make API request for comments
+                api_response = self.api_client.make_api_request(
+                    continuation_token, ytcfg
+                )
 
-                    if not api_response:
-                        break
+                if not api_response:
+                    break
 
-                    # Extract complete comments directly (new approach)
-                    comments = self.parser.extract_complete_comments(api_response)
+                # Extract complete comments directly (new approach)
+                comments = self.parser.extract_complete_comments(api_response)
 
-                    # Extract reply continuation tokens if requested
-                    reply_tokens = {}
-                    if include_reply_continuation:
-                        reply_tokens = self.parser.extract_reply_continuations(
-                            api_response
-                        )
-
-                    # Process comments
-                    found_new_ids = False
-                    for comment in comments:
-                        if limit and comment_count >= limit:
-                            break
-
-                        if not comment or comment["id"] in seen_ids:
-                            continue
-
-                        # C5: record page progress BEFORE the user
-                        # filters run. Filters are deterministic, so
-                        # marking a filtered-out id as seen is safe —
-                        # it would fail the same filters on any later
-                        # page too.
-                        seen_ids.add(comment["id"])
-                        found_new_ids = True
-
-                        # Apply date filtering
-                        if since_date and comment.get("publish_date"):
-                            if comment["publish_date"] < since_date:
-                                continue
-
-                        # Apply user-supplied predicate filters
-                        if filters and not apply_comment_filters(comment, filters):
-                            continue
-
-                        comment_count += 1
-
-                        # Add reply continuation token if available and requested
-                        if include_reply_continuation and comment["id"] in reply_tokens:
-                            comment["reply_continuation_token"] = reply_tokens[
-                                comment["id"]
-                            ]
-
-                        if progress_callback:
-                            progress_callback(comment_count)
-
-                        yield comment
-
-                    # H4: tolerate N-1 consecutive all-duplicate pages
-                    # before breaking. The previous unconditional break
-                    # truncated results on any page that happened to
-                    # land all-duplicates (legitimate for 'top' sort)
-                    # AND masked H3's wrong-token bug.
-                    if found_new_ids:
-                        consecutive_empty_pages = 0
-                    else:
-                        consecutive_empty_pages += 1
-                        if consecutive_empty_pages >= EMPTY_PAGE_LIMIT:
-                            break
-
-                    # Get next continuation token using API client
-                    continuation_token = self.api_client.extract_continuation_token(
+                # Extract reply continuation tokens if requested
+                reply_tokens = {}
+                if include_reply_continuation:
+                    reply_tokens = self.parser.extract_reply_continuations(
                         api_response
                     )
 
-                except Exception as e:
-                    logger.error(f"Error processing comment batch: {e}")
-                    break
+                # Process comments
+                found_new_ids = False
+                for comment in comments:
+                    if limit and comment_count >= limit:
+                        break
+
+                    if not comment or comment["id"] in seen_ids:
+                        continue
+
+                    # C5: record page progress BEFORE the user
+                    # filters run. Filters are deterministic, so
+                    # marking a filtered-out id as seen is safe —
+                    # it would fail the same filters on any later
+                    # page too.
+                    seen_ids.add(comment["id"])
+                    found_new_ids = True
+
+                    # Apply date filtering
+                    if since_date and comment.get("publish_date"):
+                        if comment["publish_date"] < since_date:
+                            continue
+
+                    # Apply user-supplied predicate filters
+                    if filters and not apply_comment_filters(comment, filters):
+                        continue
+
+                    comment_count += 1
+
+                    # Add reply continuation token if available and requested
+                    if include_reply_continuation and comment["id"] in reply_tokens:
+                        comment["reply_continuation_token"] = reply_tokens[
+                            comment["id"]
+                        ]
+
+                    if progress_callback:
+                        progress_callback(comment_count)
+
+                    yield comment
+
+                # H4: tolerate N-1 consecutive all-duplicate pages
+                # before breaking. The previous unconditional break
+                # truncated results on any page that happened to
+                # land all-duplicates (legitimate for 'top' sort)
+                # AND masked H3's wrong-token bug.
+                if found_new_ids:
+                    consecutive_empty_pages = 0
+                else:
+                    consecutive_empty_pages += 1
+                    if consecutive_empty_pages >= EMPTY_PAGE_LIMIT:
+                        break
+
+                # Get next continuation token using API client
+                continuation_token = self.api_client.extract_continuation_token(
+                    api_response
+                )
+
 
         except VideoUnavailableError:
             raise
@@ -272,55 +273,56 @@ class CommentFetcher:
             continuation_token = reply_continuation_token
 
             while continuation_token and (limit is None or reply_count < limit):
-                try:
-                    # Make API request for replies
-                    api_response = self.api_client.make_reply_request(
-                        continuation_token, ytcfg
-                    )
+                # M-d: no inner try/except — HTTP failures propagate to
+                # the outer handler; parser bugs surface unwrapped.
+                # Make API request for replies
+                api_response = self.api_client.make_reply_request(
+                    continuation_token, ytcfg
+                )
 
-                    if not api_response:
-                        break
-
-                    # Extract replies using the same direct extraction as main comments
-                    replies = self.parser.extract_complete_comments(api_response)
-                    replies_found = False
-
-                    for reply in replies:
-                        if not reply or reply["id"] in seen_ids:
-                            continue
-
-                        if limit and reply_count >= limit:
-                            break
-
-                        # Mark as reply and set reply-specific properties
-                        reply["is_reply"] = True
-                        reply["reply_count"] = 0  # Replies don't have nested replies
-                        reply["is_pinned"] = False  # Replies can't be pinned
-
-                        seen_ids.add(reply["id"])
-                        reply_count += 1
-                        replies_found = True
-
-                        if progress_callback:
-                            progress_callback(reply_count)
-
-                        yield reply
-
-                    if not replies_found:
-                        break
-
-                    # Look for next continuation token for more replies
-                    continuation_token = self.api_client.extract_continuation_token(
-                        api_response
-                    )
-
-                except Exception as e:
-                    logger.error(f"Error processing reply batch: {e}")
+                if not api_response:
                     break
+
+                # Extract replies using the same direct extraction as main comments
+                replies = self.parser.extract_complete_comments(api_response)
+                replies_found = False
+
+                for reply in replies:
+                    if not reply or reply["id"] in seen_ids:
+                        continue
+
+                    if limit and reply_count >= limit:
+                        break
+
+                    # Mark as reply and set reply-specific properties
+                    reply["is_reply"] = True
+                    reply["reply_count"] = 0  # Replies don't have nested replies
+                    reply["is_pinned"] = False  # Replies can't be pinned
+
+                    seen_ids.add(reply["id"])
+                    reply_count += 1
+                    replies_found = True
+
+                    if progress_callback:
+                        progress_callback(reply_count)
+
+                    yield reply
+
+                if not replies_found:
+                    break
+
+                # Look for next continuation token for more replies
+                continuation_token = self.api_client.extract_continuation_token(
+                    api_response
+                )
 
         except VideoUnavailableError:
             raise
-        except Exception as e:
+        except httpx.HTTPError as e:
+            # M-d: narrowed from `except Exception`, matching the M23
+            # fix in get_comments — only genuine HTTP failures get the
+            # VideoUnavailableError wrap; programmer bugs surface with
+            # their real stack trace.
             logger.error(f"Error fetching replies: {e}")
             raise VideoUnavailableError(
                 f"Could not fetch replies for video {video_id}: {e}"

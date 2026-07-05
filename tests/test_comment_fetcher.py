@@ -1268,3 +1268,95 @@ def test_mc_extract_continuation_token_handles_button_form():
     # H3 safety: the nested subThreads tokens must NOT be returned.
     # (The top-level item is the LAST continuationItemRenderer; nested
     # ones live inside commentThreadRenderer subtrees we never enter.)
+
+
+# --- M-d (2026-07-05 review): remaining broad excepts must not swallow bugs ---
+
+
+def _fetcher_with_pages(mocker, pages):
+    """CommentFetcher with the api boundary scripted; parser runs real."""
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client, "get_initial_video_data", return_value=({}, {})
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "get_sort_endpoints_flexible",
+        return_value={"newest first": "t1"},
+    )
+    mocker.patch.object(fetcher.api_client, "select_sort_endpoint", return_value="t1")
+    mocker.patch.object(fetcher.api_client, "make_api_request", side_effect=pages)
+    return fetcher
+
+
+def test_md_parser_bug_mid_pagination_propagates(mocker, comment_continuation_response):
+    """REGRESSION (M-d): the inner `except Exception: log + break` in the
+    get_comments loop converted any parser bug (KeyError from a YouTube
+    shape change) into a silently truncated — but complete-looking —
+    comment stream. Programmer errors must surface."""
+    fetcher = _fetcher_with_pages(mocker, [comment_continuation_response])
+    mocker.patch.object(
+        fetcher.parser,
+        "extract_complete_comments",
+        side_effect=KeyError("shape changed"),
+    )
+    with pytest.raises(KeyError):
+        list(fetcher.get_comments("dQw4w9WgXcQ"))
+
+
+def test_md_http_failure_mid_pagination_raises_video_unavailable(
+    mocker, monkeypatch
+):
+    """REGRESSION (M-d): make_api_request swallowed every exception to
+    None, so a persistent HTTP failure mid-pagination silently truncated
+    the stream. It must surface as VideoUnavailableError (the documented
+    HTTP-failure contract). R1: the 500s are real responses through
+    httpx.MockTransport; the real retry path runs (sleep patched)."""
+    import httpx
+
+    monkeypatch.setattr("yt_meta._retry.time.sleep", lambda _s: None)
+    session = httpx.Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(500))
+    )
+    try:
+        fetcher = CommentFetcher(session=session)
+        mocker.patch.object(
+            fetcher.api_client,
+            "get_initial_video_data",
+            return_value=({}, {"INNERTUBE_API_KEY": "k", "INNERTUBE_CONTEXT": {}}),
+        )
+        mocker.patch.object(
+            fetcher.api_client,
+            "get_sort_endpoints_flexible",
+            return_value={"newest first": "t1"},
+        )
+        mocker.patch.object(
+            fetcher.api_client, "select_sort_endpoint", return_value="t1"
+        )
+        with pytest.raises(VideoUnavailableError):
+            list(fetcher.get_comments("dQw4w9WgXcQ"))
+    finally:
+        session.close()
+
+
+def test_md_reply_parser_bug_propagates(mocker, comment_continuation_response):
+    """REGRESSION (M-d): same inner-swallow in get_comment_replies, plus
+    its OUTER handler still wrapped bare Exception as
+    VideoUnavailableError — misreporting programmer bugs as 'video
+    unavailable' (the M23 fix was applied only to get_comments)."""
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client, "get_initial_video_data", return_value=({}, {})
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "make_reply_request",
+        return_value=comment_continuation_response,
+    )
+    mocker.patch.object(
+        fetcher.parser,
+        "extract_complete_comments",
+        side_effect=KeyError("shape changed"),
+    )
+    with pytest.raises(KeyError):
+        list(fetcher.get_comment_replies("dQw4w9WgXcQ", "tok"))

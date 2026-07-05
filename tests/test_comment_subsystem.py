@@ -420,9 +420,13 @@ def test_make_api_request_success():
     assert out == {"ok": True}
 
 
-def test_make_api_request_swallows_errors_returns_none():
+def test_make_api_request_propagates_errors():
+    """M-d (0.8.0): make_api_request no longer swallows exceptions to
+    None — None looked like a normal end-of-stream to the pagination
+    loop, silently truncating results on persistent failures."""
     client = _client_with_post(post_side_effect=ValueError("boom"))
-    assert client.make_api_request("tok", ytcfg={"INNERTUBE_API_KEY": "k"}) is None
+    with pytest.raises(ValueError):
+        client.make_api_request("tok", ytcfg={"INNERTUBE_API_KEY": "k"})
 
 
 def test_make_reply_request_paths():
@@ -611,10 +615,20 @@ def test_get_comment_replies_stops_on_empty_response():
     assert list(fetcher.get_comment_replies("dQw4w9WgXcQ", "REPLYTOK")) == []
 
 
-def test_get_comment_replies_wraps_errors_as_unavailable():
+def test_get_comment_replies_wraps_http_errors_propagates_bugs():
+    """M-d (0.8.0): only genuine HTTP failures are wrapped as
+    VideoUnavailableError; programmer bugs propagate unwrapped (the
+    M23 contract, previously applied only to get_comments)."""
+    import httpx
+
+    fetcher = _fetcher_with_mocks()
+    fetcher.api_client.get_initial_video_data.side_effect = httpx.ConnectError("net down")
+    with pytest.raises(VideoUnavailableError):
+        list(fetcher.get_comment_replies("dQw4w9WgXcQ", "REPLYTOK"))
+
     fetcher = _fetcher_with_mocks()
     fetcher.api_client.get_initial_video_data.side_effect = RuntimeError("boom")
-    with pytest.raises(VideoUnavailableError):
+    with pytest.raises(RuntimeError):
         list(fetcher.get_comment_replies("dQw4w9WgXcQ", "REPLYTOK"))
 
 
