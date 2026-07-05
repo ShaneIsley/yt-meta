@@ -32,17 +32,20 @@ def _apply_status_tracking(parsed: dict, prior: dict | None) -> dict:
     - ``status_changed_at``: now if the status differs from the prior
       record (or there is no prior — first sighting); otherwise carried
       forward from the prior record.
-    - When a previously-``ok`` video is now ``unavailable``, the prior
-      record's content fields (title, channel, counts, …) are preserved
-      and the status fields overlaid — so callers never lose data they
-      already had.
+    - When a video is ``unavailable`` and a prior record exists, the
+      prior record's content fields (title, channel, counts, …) are
+      preserved and the status fields overlaid — so callers never lose
+      data they already had. M-b: this must hold on EVERY unavailable
+      check, not just the first ok→unavailable transition — a repeat
+      check of an already-unavailable video re-preserves the carried
+      content instead of overwriting it with the fresh parse's Nones.
     """
     now = _utcnow_iso()
     status = parsed.get("status", "ok")
     prior_status = prior.get("status") if prior else None
 
-    if status != "ok" and prior and prior_status == "ok":
-        # Became unavailable — keep the last-known-good content.
+    if status != "ok" and prior:
+        # Unavailable with history — keep the last-known-good content.
         result = dict(prior)
         result["status"] = status
         result["status_reason"] = parsed.get("status_reason")

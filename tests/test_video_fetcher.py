@@ -327,3 +327,45 @@ def test_h6_video_metadata_cache_key_canonical_across_url_forms():
     ):
         result = fetcher.get_video_metadata(url)
         assert result == cached, f"cache miss for url {url!r}"
+
+
+def test_mb_content_preserved_across_repeated_unavailable_checks():
+    """REGRESSION (M-b, 2026-07-05 review): _apply_status_tracking only
+    preserved content when the PRIOR status was 'ok'. On the second
+    consecutive unavailable check (ok → unavailable → unavailable with
+    force_refresh) the condition was False, result = dict(parsed), and
+    title/channel/counts all became None — violating the documented
+    "prior data is never lost" guarantee.
+
+    R5: stateful logic gets a ≥3-step sequence test with repeated
+    states, driven through the real HTTP layer (R1).
+    """
+    import httpx
+
+    responses = [
+        make_mock_html(_OK_PLAYER, {"contents": {}}),
+        make_mock_html(_DELETED_PLAYER, {"contents": {}}),
+        make_mock_html(_DELETED_PLAYER, {"contents": {}}),
+    ]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=responses.pop(0))
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as session:
+        fetcher = VideoFetcher(session=session, cache={})
+
+        m1 = fetcher.get_video_metadata("dQw4w9WgXcQ")
+        assert m1["status"] == "ok"
+        assert m1["title"] == "Never Gonna Give You Up"
+
+        m2 = fetcher.get_video_metadata("dQw4w9WgXcQ", force_refresh=True)
+        assert m2["status"] == "unavailable"
+        assert m2["title"] == "Never Gonna Give You Up"  # preserved
+
+        m3 = fetcher.get_video_metadata("dQw4w9WgXcQ", force_refresh=True)
+        assert m3["status"] == "unavailable"
+        assert m3["title"] == "Never Gonna Give You Up", (
+            "content lost on the SECOND consecutive unavailable check"
+        )
+        # status unchanged between check 2 and 3 → changed_at carried
+        assert m3["status_changed_at"] == m2["status_changed_at"]
