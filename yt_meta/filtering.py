@@ -232,10 +232,18 @@ def build_date_filter(
     final_start = start_date if start_date is not None else start_from_filter
     final_end = end_date if end_date is not None else end_from_filter
 
+    # C8: normalize every accepted shape to a plain date. datetime must
+    # be checked BEFORE the str branch's implicit date passthrough —
+    # datetime is a date subclass, and leaving one through crashed the
+    # channel generator's `publish_date.date() < final_start` comparison.
     if isinstance(final_start, str):
         final_start = parse_relative_date_string(final_start)
+    elif isinstance(final_start, datetime):
+        final_start = final_start.date()
     if isinstance(final_end, str):
         final_end = parse_relative_date_string(final_end)
+    elif isinstance(final_end, datetime):
+        final_end = final_end.date()
 
     date_conditions = {}
     if final_start is not None:

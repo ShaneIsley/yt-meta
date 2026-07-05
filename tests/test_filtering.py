@@ -353,3 +353,22 @@ def test_apply_filters_view_count_range():
 
     assert apply_filters(video_in_range, filters)
     assert not apply_filters(video_out_of_range, filters)
+
+
+def test_c8_build_date_filter_normalizes_datetime_to_date():
+    """REGRESSION (C8, 2026-07-05 review): only str inputs were
+    normalized; a datetime passed as start_date/end_date flowed through
+    to the channel generator's `video_publish_date.date() < final_start`
+    comparison and raised TypeError (can't compare date and datetime)."""
+    from datetime import date, datetime
+
+    from yt_meta.filtering import build_date_filter
+
+    merged, start, end = build_date_filter(
+        datetime(2024, 6, 1, 12, 30), datetime(2024, 12, 31, 23, 59)
+    )
+    assert start == date(2024, 6, 1)
+    assert type(start) is date
+    assert end == date(2024, 12, 31)
+    assert type(end) is date
+    assert merged["publish_date"] == {"gte": date(2024, 6, 1), "lte": date(2024, 12, 31)}

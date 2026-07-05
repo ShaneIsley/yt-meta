@@ -363,3 +363,63 @@ def test_get_channel_videos_paginates_correctly(channel_fetcher, mocker):
         }
         videos = list(channel_fetcher.get_channel_videos("https://any-url.com"))
         assert len(videos) == 2
+
+
+def test_c8_get_channel_videos_accepts_datetime_start_date():
+    """REGRESSION (C8, 2026-07-05 review): get_channel_videos(
+    start_date=datetime.now()) raised TypeError mid-pagination at the
+    date short-circuit comparison. Driven through the real HTTP layer
+    (R1) with real captured lockupViewModel renderers, so the real
+    parser produces publish_date and the real comparison runs (R6:
+    date-kwarg × pagination-short-circuit interaction)."""
+    import json
+    from datetime import datetime
+    from pathlib import Path
+
+    import httpx
+
+    from tests.conftest import make_mock_html
+
+    renderers = json.loads(
+        (
+            Path(__file__).parent / "fixtures" / "channel_videos_lockup_renderers.json"
+        ).read_text()
+    )["contents"]
+    # Single-page scenario: drop the fixture's continuation renderer so
+    # the generator ends after the initial page.
+    renderers = [r for r in renderers if "continuationItemRenderer" not in r]
+    initial_data = {
+        "contents": {
+            "twoColumnBrowseResultsRenderer": {
+                "tabs": [
+                    {
+                        "tabRenderer": {
+                            "selected": True,
+                            "title": "Videos",
+                            "content": {"richGridRenderer": {"contents": renderers}},
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    html = make_mock_html(None, initial_data)
+    session = httpx.Client(
+        transport=httpx.MockTransport(lambda req: httpx.Response(200, text=html))
+    )
+    try:
+        fetcher = ChannelFetcher(
+            session=session,
+            cache={},
+            video_fetcher=VideoFetcher(session=session, cache={}),
+        )
+        # Must not raise TypeError; a recent datetime start_date simply
+        # filters out the fixture's older videos.
+        videos = list(
+            fetcher.get_channel_videos(
+                "https://www.youtube.com/@x", start_date=datetime(2020, 1, 1, 8, 0)
+            )
+        )
+        assert isinstance(videos, list)
+    finally:
+        session.close()
