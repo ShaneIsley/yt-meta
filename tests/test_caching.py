@@ -330,3 +330,46 @@ def test_channel_page_caching(tmp_path):
         result3 = client.get_channel_metadata(channel_url, force_refresh=True)
         assert mock_get.call_count == 2
         assert result3 is not None
+
+
+def test_ma_sqlite_cache_round_trips_datetimes(tmp_path):
+    """REGRESSION (M-a, 2026-07-05 review): json.dumps(default=str)
+    silently converted publish_date to a string on write, so a cache
+    HIT returned str where a cache MISS returned datetime — the M4
+    type-drift bug reintroduced for persistent-cache users. R7:
+    round-trip a representative video_meta-shaped payload, not toy
+    values."""
+    from datetime import date, datetime
+
+    from yt_meta.caching import SQLiteCache
+
+    cache = SQLiteCache(path=str(tmp_path / "cache.db"))
+    payload = {
+        "video_id": "dQw4w9WgXcQ",
+        "title": "T",
+        "view_count": 1000,
+        "publish_date": datetime(2009, 10, 25, 6, 57, 33),
+        "comment_since": date(2024, 1, 1),
+        "keywords": ["a", "b"],
+        "status_reason": None,
+    }
+    cache["video_meta:dQw4w9WgXcQ"] = payload
+    result = cache["video_meta:dQw4w9WgXcQ"]
+    assert result["publish_date"] == datetime(2009, 10, 25, 6, 57, 33)
+    assert type(result["publish_date"]) is datetime
+    assert result["comment_since"] == date(2024, 1, 1)
+    assert type(result["comment_since"]) is date
+    assert result["view_count"] == 1000
+    cache.close()
+
+
+def test_ma_sqlite_cache_rejects_unserializable_types_loudly(tmp_path):
+    """REGRESSION (M-a/R7): default=str was a silent corruption
+    fallback — an unknown type became its repr string on the next read.
+    Unknown types must raise at WRITE time instead."""
+    from yt_meta.caching import SQLiteCache
+
+    cache = SQLiteCache(path=str(tmp_path / "cache.db"))
+    with pytest.raises(TypeError):
+        cache["key"] = {"bad": object()}
+    cache.close()
