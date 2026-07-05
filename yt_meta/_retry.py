@@ -95,6 +95,10 @@ def request_with_retries(
             delay = _retry_after_seconds(response)
             if delay is None:
                 delay = _backoff_delay(attempt, base_delay, max_delay, rng)
+            else:
+                # Cap a server-supplied (or hostile) Retry-After at the
+                # same ceiling as computed backoff.
+                delay = min(delay, max_delay)
             logger.warning(
                 "HTTP %d; retrying in %.2fs (attempt %d/%d)",
                 response.status_code,

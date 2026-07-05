@@ -105,3 +105,20 @@ def test_h9_backoff_grows_exponentially_with_full_jitter():
         rng=lambda: 1.0,
     )
     assert slept == [1.0, 2.0, 4.0]
+
+
+def test_retry_after_is_capped_at_max_delay():
+    """REGRESSION (2026-07-05 review, low #11): a large or hostile
+    Retry-After header was honored verbatim — sleeping the full
+    duration. It must be capped at max_delay like computed backoff."""
+    responses = [_response(429, {"Retry-After": "9999"}), _response(200)]
+    slept = []
+
+    request_with_retries(
+        lambda: responses.pop(0),
+        retries=3,
+        max_delay=30.0,
+        sleep=slept.append,
+        rng=lambda: 1.0,
+    )
+    assert slept == [30.0]
