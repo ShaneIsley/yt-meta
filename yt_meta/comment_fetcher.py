@@ -97,6 +97,11 @@ class CommentFetcher:
         if since_date and sort_by != "recent":
             raise ValueError("`since_date` can only be used with `sort_by='recent'`")
         validate_filters(filters)
+        # C4: the documented unbounded spellings are None and -1. A
+        # negative limit reaching the loop guard (`comment_count < limit`)
+        # would be instantly False and silently yield nothing.
+        if limit is not None and limit < 0:
+            limit = None
 
         video_id = extract_video_id(video_id)
         logger.info(f"Fetching comments for video: {video_id}")
@@ -240,6 +245,9 @@ class CommentFetcher:
         Yields:
             Dict containing complete reply data
         """
+        # C4: same normalization as get_comments — -1 means unbounded.
+        if limit is not None and limit < 0:
+            limit = None
         video_id = extract_video_id(video_id)
         logger.info(f"Fetching replies for video: {video_id}")
 

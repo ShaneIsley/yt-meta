@@ -998,3 +998,63 @@ class TestBestCommentFetcher:
                 {"commentSurfaceKey": "surface_key_old", "commentId": "old_comment"},
             ],
         }
+
+
+def test_c4_limit_minus_one_is_unbounded_for_comments(
+    mocker, comment_continuation_response
+):
+    """REGRESSION (C4, 2026-07-05 review): the docstring promises
+    ``limit=-1`` (with since_date) means unbounded, but the loop guard
+    ``comment_count < limit`` evaluated ``0 < -1`` → False, so no
+    request was ever made and the generator was silently empty.
+    R3: the documented special value gets its own test, on the real
+    fixture through the real parser (R1)."""
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client, "get_initial_video_data", return_value=({}, {})
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "get_sort_endpoints_flexible",
+        return_value={"newest first": "tok"},
+    )
+    mocker.patch.object(
+        fetcher.api_client, "select_sort_endpoint", return_value="tok"
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "make_api_request",
+        return_value=comment_continuation_response,
+    )
+    mocker.patch.object(
+        fetcher.api_client, "extract_continuation_token", return_value=None
+    )
+
+    comments = list(
+        fetcher.get_comments("dQw4w9WgXcQ", limit=-1, since_date=date(2005, 1, 1))
+    )
+    # The real fixture page carries 20 comments; unbounded must yield all.
+    assert len(comments) == 20
+
+
+def test_c4_limit_minus_one_is_unbounded_for_replies(
+    mocker, comment_continuation_response
+):
+    """REGRESSION (C4): same dead-loop guard in get_comment_replies."""
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client, "get_initial_video_data", return_value=({}, {})
+    )
+    mocker.patch.object(
+        fetcher.api_client,
+        "make_reply_request",
+        return_value=comment_continuation_response,
+    )
+    mocker.patch.object(
+        fetcher.api_client, "extract_continuation_token", return_value=None
+    )
+
+    replies = list(
+        fetcher.get_comment_replies("dQw4w9WgXcQ", "reply_tok", limit=-1)
+    )
+    assert len(replies) == 20
