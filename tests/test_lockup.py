@@ -142,3 +142,46 @@ def test_lockup_skips_continuation_and_non_video_content():
     videos, token = parsing.extract_videos_from_lockup_renderers(renderers)
     assert videos == []
     assert token == "TOK"
+
+
+def test_c7_completed_stream_streamed_ago_text_parses_publish_date():
+    """REGRESSION (C7, 2026-07-05 review): completed live streams render
+    "Streamed 2 days ago". The 'ago' probe matched, but
+    dateparser.parse("Streamed 2 days ago") returns None — so every past
+    stream got publish_date=None and any publish_date filter silently
+    dropped all of them.
+
+    R4/R9: the captured streams fixture contains only SCHEDULED items —
+    the completed-stream state was the uncovered gap that let this ship.
+    This lockup is DERIVED from the captured scheduled-stream fixture
+    (metadata text swapped to the completed-stream form, view part added
+    to match live pages); the live counterpart is asserted in
+    test_live_contract.py::test_contract_channel_streams_and_upcoming.
+    """
+    import copy
+
+    with open(FIXTURES / "channel_streams_lockup_renderers.json") as f:
+        renderers = json.load(f)["contents"]
+    lvm = copy.deepcopy(
+        renderers[0]["richItemRenderer"]["content"]["lockupViewModel"]
+    )
+    lvm["metadata"]["lockupMetadataViewModel"]["metadata"][
+        "contentMetadataViewModel"
+    ]["metadataRows"] = [
+        {
+            "metadataParts": [
+                {"text": {"content": "12K views"}},
+                {"text": {"content": "Streamed 2 days ago"}},
+            ]
+        }
+    ]
+
+    video = parsing.parse_lockup_view_model(lvm)
+    assert video is not None
+    assert video["is_upcoming"] is False
+    assert video["view_count"] == 12000
+    assert video["publish_date"] is not None, (
+        "'Streamed X ago' must parse to a publish_date"
+    )
+    # ~2 days ago, sanity-check the parse actually used the relative date
+    assert (datetime.now() - video["publish_date"]).days in (1, 2, 3)

@@ -224,6 +224,14 @@ def test_contract_channel_streams_and_upcoming(client):
         assert isinstance(s["is_upcoming"], bool)
         if s["is_upcoming"]:
             assert s["scheduled_text"] and "cheduled" in s["scheduled_text"]
+        else:
+            # C7: past streams render "Streamed X ago" — the parser must
+            # produce a publish_date from it (the offline unit test uses
+            # a DERIVED fixture; this is its live counterpart per R9).
+            assert s["publish_date"] is not None, (
+                "past stream lost its publish_date — 'Streamed X ago' "
+                "text no longer parses"
+            )
 
 
 def test_contract_playlist_videos(client):

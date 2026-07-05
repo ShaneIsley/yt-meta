@@ -428,8 +428,13 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
 
     publish_date = None
     if publish_text:
+        # C7: completed live streams render "Streamed 2 days ago";
+        # dateparser returns None for that full string (while "2 days
+        # ago" parses fine), so every past stream lost its publish_date.
+        # Strip the prefix before parsing.
+        date_text = re.sub(r"^Streamed\s+", "", publish_text)
         publish_date = dateparser.parse(
-            publish_text, settings={"PREFER_DATES_FROM": "past"}
+            date_text, settings={"PREFER_DATES_FROM": "past"}
         )
 
     return {
