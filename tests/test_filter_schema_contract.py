@@ -99,3 +99,20 @@ def test_c1_every_fast_shorts_filter_key_exists_in_shorts_output():
     for short in shorts:
         missing = FAST_SHORTS_FILTERS - set(short.keys())
         assert not missing, f"fast shorts filter keys {missing} missing"
+
+
+def test_me_playlist_items_emit_publish_date():
+    """R2 (M-e): the playlist docstring/README said date filtering
+    'will trigger a full metadata fetch' — written for the retired
+    playlistVideoRenderer shape which had no dates. The current lockup
+    shape DOES carry 'X ago' text: all 100 items on the captured page
+    parse a publish_date. This pins that emission; if YouTube drops the
+    date text from playlist lockups, this fails before users see silent
+    zero-result date filters."""
+    html = (FIXTURES / "playlist_lockup_page.html").read_text()
+    initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
+    items = parsing.get_playlist_item_list(initial_data)
+    videos, _ = parsing.extract_videos_from_playlist_items(items)
+    assert len(videos) == 100
+    missing = [v["video_id"] for v in videos if v.get("publish_date") is None]
+    assert not missing, f"playlist items without publish_date: {missing}"

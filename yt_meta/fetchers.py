@@ -78,7 +78,22 @@ def _process_videos(
     survivors until stop_at_video_id or max_videos."""
     videos_processed = 0
     for video in video_generator:
-        if not apply_filters(video, fast_filters):
+        # M-e: when full metadata will be fetched anyway, a fast-filter
+        # field that is missing/None on the raw item is DEFERRED to the
+        # merged dict instead of dropping the video one request too
+        # early (e.g. a page shape without date text + a publish_date
+        # filter + fetch_full_metadata=True). Without hydration the
+        # documented M6 missing-field semantics apply unchanged.
+        if must_fetch_full_metadata:
+            deferred_filters = {
+                k: v for k, v in fast_filters.items() if video.get(k) is None
+            }
+            immediate_filters = {
+                k: v for k, v in fast_filters.items() if k not in deferred_filters
+            }
+        else:
+            deferred_filters, immediate_filters = {}, fast_filters
+        if not apply_filters(video, immediate_filters):
             continue
         merged_video = video
         if must_fetch_full_metadata:
@@ -96,7 +111,7 @@ def _process_videos(
                     e,
                 )
                 continue
-        if not apply_filters(merged_video, slow_filters):
+        if not apply_filters(merged_video, {**slow_filters, **deferred_filters}):
             continue
         yield merged_video
         videos_processed += 1
@@ -836,8 +851,13 @@ class PlaylistFetcher(_BaseFetcher):
         """
         Fetches videos from a YouTube playlist.
 
-        Handles pagination and filtering. Note that date filtering for playlists
-        is a "slow" operation and will trigger a full metadata fetch for each video.
+        Handles pagination and filtering. Date filtering is FAST on
+        playlists: the current lockup listing carries approximate
+        relative dates ("2 years ago"), which is what the filter
+        compares against. Pass ``fetch_full_metadata=True`` when you
+        need precise publish dates; if the listing shape ever lacks a
+        date, the filter is deferred to the per-video metadata rather
+        than dropping the item (M-e).
 
         Args:
             playlist_id (str): The ID of the playlist.

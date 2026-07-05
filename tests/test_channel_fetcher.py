@@ -423,3 +423,39 @@ def test_c8_get_channel_videos_accepts_datetime_start_date():
         assert isinstance(videos, list)
     finally:
         session.close()
+
+
+def test_me_missing_fast_filter_field_defers_to_hydration():
+    """REGRESSION (M-e, 2026-07-05 review) / R6 interaction (fast
+    filters × full-metadata hydration): a fast-filter field missing on
+    the raw item (e.g. publish_date on a page shape without date text)
+    dropped the video BEFORE hydration — even when fetch_full_metadata
+    =True guaranteed the field one request later. Result: date-filtered
+    playlists could return 0 items with no error. When hydration is on,
+    a missing-field fast filter must be deferred to the merged dict."""
+    from datetime import date, datetime
+    from unittest.mock import MagicMock
+
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    raw = iter([{"video_id": "a", "publish_date": None}])
+    video_fetcher = MagicMock()
+    video_fetcher.get_video_metadata.return_value = {
+        "publish_date": datetime(2024, 1, 2)
+    }
+
+    result = list(
+        _run_filtered_pipeline(
+            raw,
+            filters={"publish_date": {"gte": date(2024, 1, 1)}},
+            content_type="videos",
+            fetch_full_metadata=True,
+            video_fetcher=video_fetcher,
+            logger=MagicMock(),
+            stop_at_video_id=None,
+            max_videos=-1,
+        )
+    )
+    assert [v["video_id"] for v in result] == ["a"], (
+        "item dropped before hydration could supply the filter field"
+    )

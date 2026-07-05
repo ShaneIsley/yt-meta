@@ -327,7 +327,7 @@ The following table lists supported fields and their valid operators. Validation
 | `title`               | `contains`, `re`, `eq`           | Video, Short                                                | Fast         |
 | `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
 | `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
-| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | Fast (Video), **Slow** (Short, Playlist) |
+| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | Fast (Video, Playlist), **Slow** (Short) |
 | `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | **Slow**     |
 | `category`            | `contains`, `re`, `eq`           | Video, Short                                                | **Slow**     |
 | `keywords`            | `contains_any`, `contains_all` | Video, Short                                                | **Slow**     |
@@ -342,7 +342,7 @@ The following table lists supported fields and their valid operators. Validation
 | `is_pinned`           | `eq`                             | Comment                                                     | N/A          |
 
 > [!NOTE]
-> Some fields like `publish_date` can be "fast" for channel videos but "slow" for shorts or playlists because the basic metadata is not always available on those pages.
+> Some fields like `publish_date` can be "fast" for channel videos and playlists but "slow" for shorts because the basic metadata is not always available on those pages. Fast playlist dates are approximate (parsed from the listing's relative "2 years ago" text) — pass `fetch_full_metadata=True` when you need precision.
 
 > [!NOTE]
 > Renamed in 0.8.0: comment filter keys now match the keys on the comment dicts themselves — `channel_id` → `author_channel_id`, `is_by_owner` → `is_creator`, `is_hearted_by_owner` → `is_hearted` (the old names never matched and silently returned zero comments). `is_pinned` is newly filterable. `description_snippet` was removed — use `full_description` (slow) instead.
@@ -428,7 +428,7 @@ for video in itertools.islice(recent_videos, 5):
 ```
 
 > **Important Note on Playlist Filtering:**
-> When filtering a playlist by date, the library fetches metadata for **all** videos first, as playlists may not be chronological. Large playlists will be slow.
+> Playlists may not be chronological, so date filters scan the **whole** playlist (no early-stop like channel videos). Since 0.8.0 the date comes fast from the listing's relative "2 years ago" text — no per-video fetch unless you pass `fetch_full_metadata=True` (or the listing lacks a date, in which case the filter defers to the per-video metadata automatically).
 
 > **Important Note on Shorts Filtering:**
 > Similarly, the Shorts feed does not provide a publish date on its fast path. Any date-based filter on `get_channel_shorts` will automatically trigger the slower, full metadata fetch for each short.
