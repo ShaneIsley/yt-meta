@@ -369,3 +369,13 @@ def test_mb_content_preserved_across_repeated_unavailable_checks():
         )
         # status unchanged between check 2 and 3 → changed_at carried
         assert m3["status_changed_at"] == m2["status_changed_at"]
+
+
+def test_option_a_full_metadata_is_exact_precision():
+    """Option A: watch-page dates come from microformat.publishDate —
+    precision 'exact'. The watch page has no relative text, so
+    publish_date_text is None here (listings supply it via the merge)."""
+    fetcher = _video_fetcher_returning(_OK_PLAYER)
+    m = fetcher.get_video_metadata("dQw4w9WgXcQ")
+    assert m["publish_date_precision"] == "exact"
+    assert m["publish_date_text"] is None

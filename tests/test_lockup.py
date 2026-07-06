@@ -185,3 +185,51 @@ def test_c7_completed_stream_streamed_ago_text_parses_publish_date():
     )
     # ~2 days ago, sanity-check the parse actually used the relative date
     assert (datetime.now() - video["publish_date"]).days in (1, 2, 3)
+
+
+def test_option_a_lockup_emits_precision_and_raw_text(lockup_renderers):
+    """Option A (0.8.0): every listing item carries provenance —
+    publish_date_precision ('approximate' for relative-text dates) and
+    publish_date_text (the raw string YouTube displayed, undestroyed by
+    parsing). Approximate datetimes carry query-time noise and up to
+    ~6 months error at year granularity; the marker travels with the
+    record so downstream data can be audited."""
+    videos, _ = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    dated = [v for v in videos if v["publish_date"] is not None]
+    assert dated, "fixture must contain dated videos"
+    for v in dated:
+        assert v["publish_date_precision"] == "approximate"
+        assert isinstance(v["publish_date_text"], str)
+        assert "ago" in v["publish_date_text"]
+    for v in videos:
+        if v["publish_date"] is None:
+            assert v["publish_date_precision"] is None
+
+
+def test_option_a_completed_stream_keeps_raw_streamed_text():
+    """Option A: the raw text keeps the 'Streamed ' prefix — parsing
+    strips it for the datetime, but provenance keeps what was shown."""
+    import copy
+
+    with open(FIXTURES / "channel_streams_lockup_renderers.json") as f:
+        renderers = json.load(f)["contents"]
+    lvm = copy.deepcopy(renderers[0]["richItemRenderer"]["content"]["lockupViewModel"])
+    lvm["metadata"]["lockupMetadataViewModel"]["metadata"]["contentMetadataViewModel"][
+        "metadataRows"
+    ] = [{"metadataParts": [{"text": {"content": "Streamed 2 days ago"}}]}]
+    video = parsing.parse_lockup_view_model(lvm)
+    assert video["publish_date_text"] == "Streamed 2 days ago"
+    assert video["publish_date_precision"] == "approximate"
+
+
+def test_option_a_upcoming_stream_has_no_precision():
+    """Option A: upcoming items have no publish date at all —
+    precision and text are None (scheduled_text covers the schedule)."""
+    with open(FIXTURES / "channel_streams_lockup_renderers.json") as f:
+        renderers = json.load(f)["contents"]
+    lvm = renderers[0]["richItemRenderer"]["content"]["lockupViewModel"]
+    video = parsing.parse_lockup_view_model(lvm)
+    assert video["is_upcoming"] is True
+    assert video["publish_date"] is None
+    assert video["publish_date_precision"] is None
+    assert video["publish_date_text"] is None

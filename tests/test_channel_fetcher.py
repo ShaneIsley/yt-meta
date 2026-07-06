@@ -459,3 +459,48 @@ def test_me_missing_fast_filter_field_defers_to_hydration():
     assert [v["video_id"] for v in result] == ["a"], (
         "item dropped before hydration could supply the filter field"
     )
+
+
+def test_option_a_hydration_upgrades_precision_and_keeps_listing_text():
+    """Option A (R6 merge interaction): fetch_full_metadata=True
+    replaces the approximate date with the exact one and upgrades the
+    marker — but the listing's raw text must SURVIVE the merge (the
+    watch page has none), so even exact records show what the listing
+    claimed."""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    raw = iter(
+        [
+            {
+                "video_id": "a",
+                "publish_date": datetime(2023, 7, 5, 23, 45),
+                "publish_date_precision": "approximate",
+                "publish_date_text": "3 years ago",
+            }
+        ]
+    )
+    video_fetcher = MagicMock()
+    video_fetcher.get_video_metadata.return_value = {
+        "publish_date": datetime(2023, 7, 5, 8, 0, 29),
+        "publish_date_precision": "exact",
+        "publish_date_text": None,
+    }
+    result = list(
+        _run_filtered_pipeline(
+            raw,
+            filters=None,
+            content_type="videos",
+            fetch_full_metadata=True,
+            video_fetcher=video_fetcher,
+            logger=MagicMock(),
+            stop_at_video_id=None,
+            max_videos=-1,
+        )
+    )
+    (v,) = result
+    assert v["publish_date"] == datetime(2023, 7, 5, 8, 0, 29)
+    assert v["publish_date_precision"] == "exact"
+    assert v["publish_date_text"] == "3 years ago"

@@ -442,6 +442,16 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
         "title": title,
         "view_count": parse_view_count(view_count_text) if view_count_text else None,
         "publish_date": publish_date,
+        # Option A (0.8.0): provenance travels with the record. Listing
+        # dates are parsed from relative text ("2 years ago") — i.e.
+        # query-time minus the stated interval — so they carry a
+        # meaningless time-of-day and up to ~6 months error at year
+        # granularity. The marker + raw text make that auditable after
+        # the dict leaves the library.
+        "publish_date_precision": "approximate" if publish_date else None,
+        # Raw text is kept even when parsing fails — that's exactly when
+        # provenance matters most.
+        "publish_date_text": publish_text,
         "duration_seconds": parse_duration(duration_label) if duration_label else None,
         "url": f"https://www.youtube.com/watch?v={video_id}",
         "is_members_only": is_members_only,
@@ -623,6 +633,10 @@ def parse_video_renderer(renderer: dict) -> dict:
         "view_count": parse_view_count(view_count_text),
         "publish_date": publish_date,
         "published_time_text": published_time_text,
+        # Option A — same provenance fields as the lockup parser;
+        # published_time_text is kept as a legacy alias.
+        "publish_date_precision": "approximate" if publish_date else None,
+        "publish_date_text": published_time_text,
         "is_live": is_live,
         "is_premiere": is_premiere,
         "url": f"https://www.youtube.com/watch?v={video_id}",
@@ -762,6 +776,14 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
         "duration_seconds": int(video_details.get("lengthSeconds", 0)),
         "view_count": int(video_details.get("viewCount", 0)),
         "publish_date": _parse_iso_datetime(microformat.get("publishDate")),
+        # Option A: microformat.publishDate is the actual upload moment
+        # (tz-aware) — precision "exact". The watch page shows no
+        # relative text; the merge in _process_videos preserves the
+        # listing's text so hydrated records keep both.
+        "publish_date_precision": (
+            "exact" if microformat.get("publishDate") else None
+        ),
+        "publish_date_text": None,
         "upload_date": microformat.get("uploadDate"),
         "category": microformat.get("category"),
         "like_count": find_like_count(player_response_data),

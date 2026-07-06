@@ -562,6 +562,15 @@ class CommentParser:
                         "author_avatar_url": author_avatar_url,
                         "publish_date": publish_date,
                         "time_human": published_time,
+                        # Option A: comments exist upstream ONLY as
+                        # relative text — permanently approximate, to
+                        # the day at best. publish_date_text mirrors
+                        # time_human for cross-surface schema
+                        # uniformity with videos/streams/playlists.
+                        "publish_date_precision": (
+                            "approximate" if publish_date else None
+                        ),
+                        "publish_date_text": published_time or None,
                         "time_parsed": None,
                         "like_count": like_count,
                         "reply_count": reply_count,

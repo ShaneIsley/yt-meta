@@ -1360,3 +1360,19 @@ def test_md_reply_parser_bug_propagates(mocker, comment_continuation_response):
     )
     with pytest.raises(KeyError):
         list(fetcher.get_comment_replies("dQw4w9WgXcQ", "tok"))
+
+
+def test_option_a_comments_are_always_approximate(first_page_pinned_response):
+    """Option A: comments exist upstream only as relative text — every
+    dated comment is precision 'approximate' permanently, and
+    publish_date_text carries the REAL captured string (including
+    markers like '(edited)')."""
+    from yt_meta.comment_parser import CommentParser
+
+    comments = CommentParser().extract_complete_comments(first_page_pinned_response)
+    dated = [c for c in comments if c["publish_date"] is not None]
+    assert dated
+    for c in dated:
+        assert c["publish_date_precision"] == "approximate"
+        assert c["publish_date_text"] == c["time_human"]
+        assert "ago" in c["publish_date_text"]
