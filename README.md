@@ -294,6 +294,45 @@ metadata = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVR
 
 Any object implementing the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) works as a cache via the `cache=` kwarg — plain `dict` for in-memory, `diskcache.Cache` for disk-backed, or `sqlitedict.SqliteDict` if you `pip install sqlitedict` yourself. See `examples/features/19_alternative_caching_sqlite.py` for the built-in SQLite path via `cache_path=`.
 
+## Workflow Helpers
+
+Three helpers wrap the most common multi-step workflows (0.8.0):
+
+### Incremental sync — `iter_new_videos`
+
+"What's new since I last looked?" Yields newest-first, stops **before** the marker (which you've already seen), and pagination stops at it too — request cost is proportional to what's new, not channel size. The first yielded video's id is your new high-water mark.
+
+```python
+new = list(client.iter_new_videos(channel_url, since_video_id=last_seen_id))
+if new:
+    last_seen_id = new[0]["video_id"]  # persist for the next run
+```
+
+### Exact date windows — `get_videos_published_between`
+
+Videos published in an exact window — including hour-level `datetime` bounds — found with ~2·log₂(n) probe hydrations by binary-searching the chronological listing, instead of one hydration per video in the padded window (~365 requests for a year-old target on a daily channel). Every yielded video is full-metadata with `publish_date_precision == "exact"`.
+
+```python
+videos = client.get_videos_published_between(
+    channel_url,
+    start_date=datetime(2023, 7, 5, 7, 30),
+    end_date=datetime(2023, 7, 5, 12, 0),
+)
+```
+
+### Comment hierarchies — `get_comment_threads`
+
+`(comment, replies)` tuples in one call, wrapping the reply-token two-step. Request cost stays explicit: `replies_per_thread` caps the per-thread reply fetch; `0` fetches structure only.
+
+```python
+for comment, replies in client.get_comment_threads(
+    youtube_url, limit=20, replies_per_thread=10
+):
+    print(comment["author"], f"({comment['reply_count']} replies)")
+    for r in replies:
+        print("  ↳", r["author"])
+```
+
 ## Advanced Features
 
 ### Filtering Videos, Shorts, and Comments

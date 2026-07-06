@@ -34,6 +34,16 @@ documented promises get their own cases.
   stream; parser bugs propagate with their real stack trace.
 
 ### Added
+- **Workflow helpers:** `iter_new_videos(channel, since_video_id=...)`
+  (incremental sync — yields only what's new, stops pagination at the
+  marker and excludes it), `get_videos_published_between(channel,
+  start, end)` (exact date/hour windows via chronological bisection —
+  ~2·log₂ n probe hydrations instead of hydrating the whole padded
+  window; tolerates locally non-chronological listings via a margin
+  re-check), and `get_comment_threads(video, limit,
+  replies_per_thread)` ((comment, replies) tuples wrapping the
+  reply-token two-step with explicit request cost). All three verified
+  live.
 - **Date provenance (Option A):** every dated record now carries
   `publish_date_precision` (`"exact"` from the watch page /
   `"approximate"` from listing relative text) and `publish_date_text`

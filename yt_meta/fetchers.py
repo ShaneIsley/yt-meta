@@ -751,6 +751,119 @@ class ChannelFetcher(_BaseFetcher):
             max_videos=max_videos,
         )
 
+    def get_videos_published_between(
+        self,
+        channel_url,
+        start_date,
+        end_date=None,
+        force_refresh=False,
+        margin=3,
+    ):
+        """Videos published in an exact window, found by bisecting the
+        chronological listing with probe hydrations (~2·log₂ n) instead
+        of hydrating every video in the padded window. See the facade
+        docstring for the request-cost rationale.
+
+        ``margin`` extra items are hydrated on each side of the bisected
+        boundaries — channel listings are only approximately
+        chronological (premieres, pinned items), so the final
+        exact-date membership check runs over a slightly widened slice.
+        """
+        if start_date is None:
+            raise ValueError(
+                "start_date is required — an open-ended start would paginate "
+                "the whole channel. Use get_channel_videos for that."
+            )
+
+        def norm(bound):
+            if isinstance(bound, str):
+                from .date_utils import parse_relative_date_string
+
+                return parse_relative_date_string(bound)
+            return bound
+
+        def day_of(bound):
+            return bound.date() if isinstance(bound, datetime) else bound
+
+        start, end = norm(start_date), norm(end_date)
+        start_day, end_day = day_of(start), day_of(end) if end else None
+
+        if not channel_url.endswith("/videos"):
+            channel_url = f"{channel_url.rstrip('/')}/videos"
+        raw = list(
+            self._get_raw_channel_videos_generator(
+                channel_url, force_refresh, start_day, stop_pad=True
+            )
+        )
+        if not raw:
+            return
+
+        condition = {"gte": start}
+        if end is not None:
+            condition["lte"] = end
+
+        hydrated: dict[str, dict] = {}
+
+        def hydrate(i):
+            video = raw[i]
+            vid = video["video_id"]
+            if vid not in hydrated:
+                full = self.video_fetcher.get_video_metadata(
+                    f"https://www.youtube.com/watch?v={vid}"
+                )
+                if full:
+                    merged = {**video, **full}
+                    if video.get("publish_date_text") and not merged.get(
+                        "publish_date_text"
+                    ):
+                        merged["publish_date_text"] = video["publish_date_text"]
+                else:
+                    merged = dict(video)
+                hydrated[vid] = merged
+            return hydrated[vid]
+
+        def probe_day(i):
+            """Exact calendar day of raw[i] (falls back to the
+            approximate date if the watch page had none)."""
+            merged = hydrate(i)
+            dt = merged.get("publish_date") or raw[i].get("publish_date")
+            if dt is None:
+                return None
+            return dt.date() if isinstance(dt, datetime) else dt
+
+        n = len(raw)
+        # raw is newest-first: days are (approximately) non-increasing.
+        # Upper boundary: first index with day <= end_day.
+        if end_day is None:
+            i0 = 0
+        else:
+            lo, hi = 0, n
+            while lo < hi:
+                mid = (lo + hi) // 2
+                d = probe_day(mid)
+                if d is not None and d > end_day:
+                    lo = mid + 1
+                else:
+                    hi = mid
+            i0 = lo
+        # Lower boundary: first index with day < start_day (exclusive end).
+        lo, hi = i0, n
+        while lo < hi:
+            mid = (lo + hi) // 2
+            d = probe_day(mid)
+            if d is None or d >= start_day:
+                lo = mid + 1
+            else:
+                hi = mid
+        i1 = lo
+
+        for i in range(max(0, i0 - margin), min(n, i1 + margin)):
+            merged = hydrate(i)
+            if merged.get("publish_date") is None:
+                continue
+            if apply_filters(merged, {"publish_date": condition}):
+                yield merged
+
     def get_channel_shorts(
         self,
         channel_url,

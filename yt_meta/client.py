@@ -274,6 +274,87 @@ class YtMeta:
             max_videos,
         )
 
+    def iter_new_videos(
+        self,
+        channel_url: str,
+        since_video_id: str | None = None,
+        fetch_full_metadata: bool = False,
+        force_refresh: bool = False,
+        max_videos: int = -1,
+    ):
+        """
+        Incremental sync: yield a channel's videos newest-first, stopping
+        BEFORE ``since_video_id`` — i.e. only what's new since you last
+        looked. The first yielded video's id is your new high-water mark.
+
+        Unlike ``get_channel_videos(stop_at_video_id=...)``, the marker
+        video itself is NOT yielded (you've already seen it). Pagination
+        still stops at the marker, so request cost is proportional to
+        how much is new, not to channel size.
+
+        Args:
+            channel_url: The channel URL.
+            since_video_id: The last video id seen on a previous run.
+                ``None`` yields from the newest video onward — bound it
+                with ``max_videos`` (a deleted/never-found marker also
+                falls back to streaming the whole channel).
+            fetch_full_metadata: Fetch full metadata for each new video.
+            force_refresh: Bypass the cache for the listing pages.
+            max_videos: Safety cap on yielded videos (-1 for no cap).
+
+        Yields:
+            A dictionary for each video newer than the marker.
+        """
+        for video in self._channel_fetcher.get_channel_videos(
+            channel_url,
+            force_refresh=force_refresh,
+            fetch_full_metadata=fetch_full_metadata,
+            stop_at_video_id=since_video_id,
+            max_videos=max_videos,
+        ):
+            if since_video_id is not None and video["video_id"] == since_video_id:
+                return
+            yield video
+
+    def get_videos_published_between(
+        self,
+        channel_url: str,
+        start_date: "str | date | datetime | None" = None,
+        end_date: "str | date | datetime | None" = None,
+        force_refresh: bool = False,
+    ):
+        """
+        Videos published in an exact window, found with O(log n)
+        hydrations — the efficient path for old / narrow date targets.
+
+        Listing dates are approximate (rounded relative text), so a
+        plain date filter must hydrate every video in the padded window
+        (~365 requests for a ±6-month pad on a daily channel). This
+        helper exploits the listing's chronological order instead: it
+        binary-searches the window's boundaries with probe hydrations
+        (~2·log₂ n), then hydrates only the videos inside.
+
+        Bounds may be ``datetime`` for hour-level windows — membership
+        is decided on EXACT (hydrated) dates, naive bounds matching
+        wall-clock. Every yielded video is full-metadata with
+        ``publish_date_precision == "exact"``.
+
+        Args:
+            channel_url: The channel URL.
+            start_date: Window start (required) — str/date/datetime.
+            end_date: Window end (None = up to the newest video).
+            force_refresh: Bypass the cache for the listing pages.
+
+        Yields:
+            Full-metadata video dictionaries, newest first.
+        """
+        return self._channel_fetcher.get_videos_published_between(
+            channel_url,
+            start_date=start_date,
+            end_date=end_date,
+            force_refresh=force_refresh,
+        )
+
     def get_playlist_videos(
         self,
         playlist_id: str,
@@ -513,6 +594,63 @@ class YtMeta:
         )
 
         yield from replies_generator
+
+    def get_comment_threads(
+        self,
+        youtube_url: str | None = None,
+        *,
+        video_id: str | None = None,
+        limit: int | None = 20,
+        replies_per_thread: int = 10,
+        sort_by: str = "top",
+        since_date: date | str | None = None,
+        filters: dict | None = None,
+    ):
+        """
+        Yield ``(comment, replies)`` tuples — the comment hierarchy in
+        one call, wrapping the reply-token two-step
+        (``get_video_comments_with_reply_tokens`` +
+        ``get_comment_replies`` per thread).
+
+        Request cost is explicit: one request per ~20 top-level
+        comments, plus one request per ~10 replies for each comment
+        that has replies. Set ``replies_per_thread=0`` for structure
+        only (no reply requests at all).
+
+        Args:
+            youtube_url: The video URL. Alias: ``video_id=``.
+            limit: Maximum top-level comments (same semantics as
+                get_video_comments).
+            replies_per_thread: Max replies fetched per thread
+                (0 = don't fetch replies).
+            sort_by: 'top' (default — YouTube's ranking, best for
+                thread exploration) or 'recent'.
+            since_date: Same semantics as get_video_comments.
+            filters: Applied to top-level comments only.
+
+        Yields:
+            Tuples of (comment_dict, list_of_reply_dicts). Comments
+            without replies yield an empty list.
+        """
+        target = self._resolve_video_target(youtube_url, video_id)
+        for comment in self.get_video_comments_with_reply_tokens(
+            video_id=target,
+            limit=limit,
+            sort_by=sort_by,
+            since_date=since_date,
+            filters=filters,
+        ):
+            token = comment.get("reply_continuation_token")
+            replies = []
+            if token and replies_per_thread:
+                replies = list(
+                    self.get_comment_replies(
+                        video_id=target,
+                        reply_continuation_token=token,
+                        limit=replies_per_thread,
+                    )
+                )
+            yield comment, replies
 
     def _resolve_date(self, d: str | date | None) -> date | None:
         if d is None:
