@@ -504,3 +504,222 @@ def test_option_a_hydration_upgrades_precision_and_keeps_listing_text():
     assert v["publish_date"] == datetime(2023, 7, 5, 8, 0, 29)
     assert v["publish_date_precision"] == "exact"
     assert v["publish_date_text"] == "3 years ago"
+
+
+def test_hour_bounds_without_hydration_raise():
+    """REGRESSION: hour-level publish_date bounds are meaningless
+    against approximate listing dates. Without fetch_full_metadata=True
+    the pipeline must refuse loudly, not return silently-wrong results."""
+    from datetime import datetime
+    from unittest.mock import MagicMock
+
+    import pytest as _pytest
+
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    raw = iter([{"video_id": "a", "publish_date": datetime(2023, 7, 5, 23, 45)}])
+    with _pytest.raises(ValueError, match="fetch_full_metadata"):
+        list(
+            _run_filtered_pipeline(
+                raw,
+                filters={"publish_date": {"gte": datetime(2023, 7, 5, 8, 0)}},
+                content_type="videos",
+                fetch_full_metadata=False,
+                video_fetcher=MagicMock(),
+                logger=MagicMock(),
+                stop_at_video_id=None,
+                max_videos=-1,
+            )
+        )
+
+
+def test_padded_coarse_cut_hydrates_near_boundary_videos():
+    """REGRESSION (funnel padding): a video whose APPROXIMATE date fell
+    2 months before start_date was dropped before hydration — even
+    though its exact date is inside the window and '3 years ago' text
+    has ~±6 months of rounding error. When hydrating, the approximate
+    cut must be padded by the text's granularity; the exact post-merge
+    check tightens."""
+    from datetime import date, datetime
+    from unittest.mock import MagicMock
+
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    raw = iter(
+        [
+            {   # approximate date 2 months BEFORE the window, year-granular
+                "video_id": "near",
+                "publish_date": datetime(2023, 5, 1, 23, 45),
+                "publish_date_precision": "approximate",
+                "publish_date_text": "3 years ago",
+            },
+            {   # approximate date a full year before — outside any pad
+                "video_id": "far",
+                "publish_date": datetime(2022, 7, 1, 23, 45),
+                "publish_date_precision": "approximate",
+                "publish_date_text": "4 years ago",
+            },
+        ]
+    )
+    video_fetcher = MagicMock()
+    video_fetcher.get_video_metadata.return_value = {
+        "video_id": "near",
+        "publish_date": datetime(2023, 7, 10, 9, 30),  # exact: IN window
+        "publish_date_precision": "exact",
+        "publish_date_text": None,
+    }
+    result = list(
+        _run_filtered_pipeline(
+            raw,
+            filters={"publish_date": {"gte": date(2023, 7, 1), "lte": date(2023, 7, 31)}},
+            content_type="videos",
+            fetch_full_metadata=True,
+            video_fetcher=video_fetcher,
+            logger=MagicMock(),
+            stop_at_video_id=None,
+            max_videos=-1,
+        )
+    )
+    assert [v["video_id"] for v in result] == ["near"]
+    # 'far' must not even be hydrated — the padded coarse cut excludes it
+    assert video_fetcher.get_video_metadata.call_count == 1
+
+
+def test_padded_early_stop_paginates_past_approximate_boundary():
+    """REGRESSION (funnel padding, pagination side): the chronological
+    early-stop compared the APPROXIMATE date against start_date raw —
+    a page-1 video whose '3 years ago' date resolved 45 days before the
+    window stopped pagination dead, so the page-2 video whose EXACT
+    date IS in the window was never fetched. When hydrating, the stop
+    boundary must be padded by the approximate date's granularity.
+
+    R1: full HTTP layer via MockTransport (channel page GET →
+    continuation POST → per-video watch GETs); lockups derived from the
+    captured fixture with controlled date text."""
+    import copy
+    import json
+    from datetime import date, datetime, timedelta
+    from pathlib import Path
+    from urllib.parse import parse_qs, urlparse
+
+    import httpx
+
+    from tests.conftest import make_mock_html
+
+    base = json.loads(
+        (
+            Path(__file__).parent / "fixtures" / "channel_videos_lockup_renderers.json"
+        ).read_text()
+    )["contents"]
+    proto = copy.deepcopy(
+        next(r for r in base if "richItemRenderer" in r)
+    )
+
+    def lockup_item(video_id):
+        item = copy.deepcopy(proto)
+        lvm = item["richItemRenderer"]["content"]["lockupViewModel"]
+        lvm["contentId"] = video_id
+        lvm["metadata"]["lockupMetadataViewModel"]["metadata"][
+            "contentMetadataViewModel"
+        ]["metadataRows"] = [
+            {
+                "metadataParts": [
+                    {"text": {"content": "12K views"}},
+                    {"text": {"content": "3 years ago"}},
+                ]
+            }
+        ]
+        return item
+
+    today = date.today()
+    window_start = today - timedelta(days=3 * 365) + timedelta(days=45)
+    window_end = today - timedelta(days=3 * 365) + timedelta(days=75)
+    exact_dt = datetime.combine(
+        today - timedelta(days=3 * 365) + timedelta(days=60), datetime.min.time()
+    ).replace(hour=9)
+
+    page1 = {
+        "contents": {
+            "twoColumnBrowseResultsRenderer": {
+                "tabs": [
+                    {
+                        "tabRenderer": {
+                            "selected": True,
+                            "title": "Videos",
+                            "content": {
+                                "richGridRenderer": {
+                                    "contents": [
+                                        lockup_item("vidpage1xxx"),
+                                        {
+                                            "continuationItemRenderer": {
+                                                "continuationEndpoint": {
+                                                    "continuationCommand": {"token": "T2"}
+                                                }
+                                            }
+                                        },
+                                    ]
+                                }
+                            },
+                        }
+                    }
+                ]
+            }
+        }
+    }
+    page2 = {
+        "onResponseReceivedActions": [
+            {
+                "appendContinuationItemsAction": {
+                    "continuationItems": [lockup_item("vidpage2xxx")]
+                }
+            }
+        ]
+    }
+
+    def watch_html(video_id):
+        player = {
+            "playabilityStatus": {"status": "OK"},
+            "videoDetails": {
+                "videoId": video_id,
+                "title": "T",
+                "author": "A",
+                "lengthSeconds": "60",
+                "viewCount": "1",
+            },
+            "microformat": {
+                "playerMicroformatRenderer": {
+                    "publishDate": exact_dt.isoformat()
+                }
+            },
+        }
+        return make_mock_html(player, {"contents": {}})
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/watch":
+            vid = parse_qs(urlparse(str(request.url)).query)["v"][0]
+            return httpx.Response(200, text=watch_html(vid))
+        if request.method == "POST":
+            return httpx.Response(200, json=page2)
+        return httpx.Response(200, text=make_mock_html(None, page1))
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as session:
+        fetcher = ChannelFetcher(
+            session=session,
+            cache={},
+            video_fetcher=VideoFetcher(session=session, cache={}),
+        )
+        videos = list(
+            fetcher.get_channel_videos(
+                "https://www.youtube.com/@x",
+                start_date=window_start,
+                end_date=window_end,
+                fetch_full_metadata=True,
+            )
+        )
+
+    got = {v["video_id"] for v in videos}
+    assert "vidpage2xxx" in got, (
+        "pagination stopped at the approximate boundary — page 2's "
+        "in-window video was never fetched"
+    )
+    assert got == {"vidpage1xxx", "vidpage2xxx"}

@@ -65,3 +65,25 @@ def parse_relative_date_string(date_str: str) -> date:
 
 
 parse_human_readable_date = parse_relative_date_string
+
+
+def approx_date_resolution(text: str | None) -> timedelta:
+    """The rounding error bound of an APPROXIMATE publish date, derived
+    from its raw relative text (``publish_date_text``).
+
+    YouTube rounds listing dates to the largest unit ("3 years ago"
+    covers ~2.5–3.5 years), so the resolved datetime can be off by up
+    to half that unit. Used to pad the date-funnel coarse cuts so a
+    near-boundary video isn't dropped before hydration can supply its
+    exact date.
+    """
+    if not text:
+        return timedelta(days=1)
+    t = text.lower()
+    if "year" in t:
+        return timedelta(days=183)
+    if "month" in t:
+        return timedelta(days=16)
+    if "week" in t:
+        return timedelta(days=4)
+    return timedelta(days=1)

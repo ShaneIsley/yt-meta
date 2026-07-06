@@ -114,10 +114,19 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
     return True
 
 
-def _check_date_condition(video_value, filter_value, op) -> bool:
+def _check_date_condition(video_value, filter_value, op, precision=None) -> bool:
     """
     Checks if a date video value meets a single condition.
     Supports gt, gte, lt, lte, eq, after, before.
+
+    Granularity: when the filter bound is a ``datetime`` (the caller
+    cares about time-of-day) AND the record's value is precision-exact,
+    full datetimes are compared — a naive bound against a tz-aware
+    value compares wall-clock. In every other case both sides are
+    truncated to calendar dates: the time-of-day on an APPROXIMATE
+    value is query-time noise, and a bare ``date`` bound means "that
+    calendar day". (Previously hour bounds were ALWAYS truncated, which
+    made a same-day hour window drop everything, silently.)
     """
     # Ensure both values are datetime objects before comparison
     if isinstance(video_value, str):
@@ -134,13 +143,26 @@ def _check_date_condition(video_value, filter_value, op) -> bool:
     ):
         return False  # Cannot compare if parsing failed
 
-    # Standardize to date objects for comparison
-    comp_video_value = (
-        video_value.date() if isinstance(video_value, datetime) else video_value
-    )
-    comp_filter_value = (
-        filter_value.date() if isinstance(filter_value, datetime) else filter_value
-    )
+    if (
+        precision == "exact"
+        and isinstance(filter_value, datetime)
+        and isinstance(video_value, datetime)
+    ):
+        # Time-aware comparison. Mixed naive/aware compares wall-clock.
+        v_aware = video_value.tzinfo is not None
+        f_aware = filter_value.tzinfo is not None
+        if v_aware != f_aware:
+            video_value = video_value.replace(tzinfo=None)
+            filter_value = filter_value.replace(tzinfo=None)
+        comp_video_value, comp_filter_value = video_value, filter_value
+    else:
+        # Standardize to date objects for comparison
+        comp_video_value = (
+            video_value.date() if isinstance(video_value, datetime) else video_value
+        )
+        comp_filter_value = (
+            filter_value.date() if isinstance(filter_value, datetime) else filter_value
+        )
 
     if op == "eq":
         return comp_video_value == comp_filter_value
@@ -267,6 +289,52 @@ def build_date_filter(
     return filters, final_start, final_end
 
 
+def condition_has_time(condition: dict | None) -> bool:
+    """True when any bound in a publish_date condition is a ``datetime``
+    — i.e. the caller cares about time-of-day, which only exact
+    (hydrated) dates can honor."""
+    if not condition:
+        return False
+    return any(isinstance(v, datetime) for v in condition.values())
+
+
+def passes_padded_date_window(video: dict, condition: dict) -> bool:
+    """The padded coarse cut of the date funnel: does this video's
+    APPROXIMATE date fall inside the condition's window widened by the
+    date's own rounding error (from ``publish_date_text`` granularity)?
+
+    Used pre-hydration when full metadata will be fetched anyway: a "3
+    years ago" date can be ~6 months off, so near-boundary videos must
+    survive to hydration, where the exact date decides. Videos with no
+    approximate date pass (hydration supplies the field — M-e).
+    """
+    from .date_utils import approx_date_resolution
+
+    video_value = video.get("publish_date")
+    if video_value is None:
+        return True
+    if isinstance(video_value, datetime):
+        video_value = video_value.date()
+    pad = approx_date_resolution(video.get("publish_date_text"))
+
+    for op, bound in condition.items():
+        if isinstance(bound, str):
+            from .date_utils import parse_relative_date_string
+
+            bound = parse_relative_date_string(bound)
+        if isinstance(bound, datetime):
+            bound = bound.date()
+        if not isinstance(bound, date):
+            continue
+        if op in ("gt", "gte", "after") and video_value < bound - pad:
+            return False
+        if op in ("lt", "lte", "before") and video_value > bound + pad:
+            return False
+        if op == "eq" and abs(video_value - bound) > pad:
+            return False
+    return True
+
+
 def apply_filters(video: dict, filters: dict | None) -> bool:
     """
     Checks if a video dictionary passes a set of filters.
@@ -311,8 +379,13 @@ def apply_filters(video: dict, filters: dict | None) -> bool:
         if schema_type == "numerical":
             passes = _check_numerical_condition(video_value, condition)
         elif schema_type == "date":
+            precision = (
+                video.get("publish_date_precision") if key == "publish_date" else None
+            )
             for op, condition_value in condition.items():
-                if not _check_date_condition(video_value, condition_value, op):
+                if not _check_date_condition(
+                    video_value, condition_value, op, precision=precision
+                ):
                     passes = False
                     break
         elif schema_type == "text":

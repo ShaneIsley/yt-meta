@@ -7,8 +7,16 @@ import httpx
 
 from . import parsing
 from ._retry import request_with_retries
+from .date_utils import approx_date_resolution
 from .exceptions import MetadataParsingError, VideoUnavailableError
-from .filtering import apply_filters, build_date_filter, partition_filters
+from .filtering import (
+    FAST_VIDEO_FILTERS,
+    apply_filters,
+    build_date_filter,
+    condition_has_time,
+    partition_filters,
+    passes_padded_date_window,
+)
 from .utils import _deep_get, extract_video_id, validate_youtube_url
 from .validators import validate_filters
 
@@ -70,6 +78,7 @@ def _process_videos(
     stop_at_video_id,
     max_videos,
     log,
+    coarse_date_cond=None,
 ):
     """The per-video filter+enrich loop, extracted as a free function so
     it can be unit-tested without a fetcher instance (L5). Applies fast
@@ -78,6 +87,13 @@ def _process_videos(
     survivors until stop_at_video_id or max_videos."""
     videos_processed = 0
     for video in video_generator:
+        # Date-funnel coarse cut (see _run_filtered_pipeline): padded
+        # pre-hydration screen on the approximate date. Skips the
+        # hydration request for videos safely outside the window.
+        if coarse_date_cond is not None and not passes_padded_date_window(
+            video, coarse_date_cond
+        ):
+            continue
         # M-e: when full metadata will be fetched anyway, a fast-filter
         # field that is missing/None on the raw item is DEFERRED to the
         # merged dict instead of dropping the video one request too
@@ -160,12 +176,35 @@ def _run_filtered_pipeline(
             "Full metadata will be fetched.",
             list(slow_filters.keys()),
         )
+
+    # The date funnel: when hydrating, publish_date bounds are decided
+    # by the EXACT (post-merge) date; pre-merge, the approximate date
+    # only serves as a coarse cut padded by its own rounding error
+    # (passes_padded_date_window), so near-boundary videos survive to
+    # hydration. Without hydration, approximate dates are all there is
+    # — date-granularity bounds work as documented, but hour-level
+    # bounds cannot be honored and must fail loudly rather than compare
+    # against query-time noise.
+    coarse_date_cond = None
+    pd_cond = fast_filters.get("publish_date")
+    if must_fetch_full_metadata and pd_cond is not None:
+        coarse_date_cond = pd_cond
+        fast_filters = {k: v for k, v in fast_filters.items() if k != "publish_date"}
+        slow_filters = {**slow_filters, "publish_date": pd_cond}
+    elif condition_has_time(pd_cond):
+        raise ValueError(
+            "publish_date bounds with time-of-day require "
+            "fetch_full_metadata=True — listing dates are approximate "
+            "(parsed from relative text) and carry no meaningful time."
+        )
+
     yield from _process_videos(
         raw_generator,
         video_fetcher=video_fetcher,
         must_fetch_full_metadata=must_fetch_full_metadata,
         fast_filters=fast_filters,
         slow_filters=slow_filters,
+        coarse_date_cond=coarse_date_cond,
         stop_at_video_id=stop_at_video_id,
         max_videos=max_videos,
         log=logger,
@@ -539,7 +578,7 @@ class ChannelFetcher(_BaseFetcher):
         return None
 
     def _get_raw_channel_videos_generator(
-        self, channel_url, force_refresh, final_start_date
+        self, channel_url, force_refresh, final_start_date, stop_pad=False
     ):
         try:
             initial_data, ytcfg = self._get_channel_page_data(
@@ -578,10 +617,17 @@ class ChannelFetcher(_BaseFetcher):
                     continue
                 if final_start_date and video.get("publish_date"):
                     video_publish_date = video["publish_date"]
-                    if (
-                        video_publish_date
-                        and video_publish_date.date() < final_start_date
-                    ):
+                    # The early-stop compares APPROXIMATE dates. When
+                    # the pipeline will hydrate (stop_pad), pad the
+                    # boundary by the date's own rounding error ("3
+                    # years ago" ≈ ±6 months) so near-boundary videos
+                    # on later pages still reach the exact check.
+                    boundary = final_start_date
+                    if stop_pad:
+                        boundary = boundary - approx_date_resolution(
+                            video.get("publish_date_text")
+                        )
+                    if video_publish_date and video_publish_date.date() < boundary:
                         stop_pagination = True
                 yield video
             if stop_pagination or not continuation_token:
@@ -685,8 +731,14 @@ class ChannelFetcher(_BaseFetcher):
         filters, final_start_date, final_end_date = build_date_filter(
             start_date, end_date, filters
         )
+        # Pad the pagination early-stop only when the pipeline will
+        # hydrate — that's when an exact post-merge check exists to
+        # tighten what the padded boundary lets through.
+        will_hydrate = fetch_full_metadata or any(
+            k not in FAST_VIDEO_FILTERS for k in (filters or {})
+        )
         raw_video_generator = self._get_raw_channel_videos_generator(
-            channel_url, force_refresh, final_start_date
+            channel_url, force_refresh, final_start_date, stop_pad=will_hydrate
         )
         yield from _run_filtered_pipeline(
             raw_video_generator,

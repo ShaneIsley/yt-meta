@@ -33,6 +33,26 @@ documented promises get their own cases.
   `VideoUnavailableError`** (M-d) instead of silently truncating the
   stream; parser bugs propagate with their real stack trace.
 
+### Added
+- **Date provenance (Option A):** every dated record now carries
+  `publish_date_precision` (`"exact"` from the watch page /
+  `"approximate"` from listing relative text) and `publish_date_text`
+  (the raw displayed string, preserved through hydration and parse
+  failures). Comments are permanently approximate (`time_human` kept
+  as alias).
+- **Hour-level date filtering:** `publish_date` bounds given as
+  `datetime` compare with time-of-day against exact (hydrated) dates —
+  naive bounds match wall-clock against tz-aware values. Previously
+  bounds were silently truncated to dates, which made a same-day hour
+  window drop everything. Without `fetch_full_metadata=True` such
+  bounds now raise `ValueError` (approximate dates carry no meaningful
+  time).
+- **Precision-aware date funnel:** when hydrating, the approximate-date
+  pre-filter and the pagination early-stop are padded by the date's own
+  rounding granularity (±6 months for "N years ago", ±16 days for
+  months, …), and the exact post-hydration date makes the final call —
+  near-boundary videos are no longer dropped one request too early.
+
 ### Fixed
 - **`is_hearted` and `is_pinned` are real data now** (C1): wired from
   `engagementToolbarStateEntityPayload.heartState` (via

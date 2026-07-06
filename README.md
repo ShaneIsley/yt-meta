@@ -317,6 +317,21 @@ The client automatically detects when a slow filter is used and sets `fetch_full
 > [!NOTE]
 > Comment filtering does not use the fast/slow system. All comment filters apply after fetching comment data.
 
+#### Approximate vs exact publish dates (0.8.0)
+
+Every dated record carries two provenance fields alongside `publish_date`:
+
+- `publish_date_precision` — `"exact"` (from the watch page's `microformat.publishDate`, timezone-aware, the actual upload moment) or `"approximate"` (parsed from the listing's relative text, i.e. *query-time minus "2 years ago"*).
+- `publish_date_text` — the raw string YouTube displayed (`"3 years ago"`, `"Streamed 2 days ago"`, comments keep `"(edited)"` markers). Preserved even after `fetch_full_metadata=True` upgrades the date to exact.
+
+Approximate dates carry a meaningless time-of-day and a rounding error that grows with age (up to ~6 months at year granularity — the naive value is also timezone-naive, so don't subtract it from an exact one directly). Comments are **always** approximate; relative text is all YouTube serves for them.
+
+Consequences for filtering:
+
+- `publish_date` bounds given as `datetime` (hour-level) are honored **only with `fetch_full_metadata=True`** — against exact dates, compared with time (naive bounds match wall-clock). Without hydration they raise `ValueError` rather than silently comparing against noise.
+- Bare `date` bounds keep calendar-day semantics everywhere.
+- When hydrating, the library runs a *date funnel* automatically: the approximate date acts as a coarse pre-filter padded by its own rounding error (so near-boundary videos aren't dropped one request too early), pagination's early-stop is padded the same way, and the exact post-hydration date makes the final call.
+
 #### Missing-field semantics
 
 If a filter targets a field that's missing or `None` on a particular video, the video is **dropped** from the result — it can't match the filter. This is the right default for the common case (`publish_date >= 2023` should not include videos with no publish_date), but it can surprise users who expect "filter on a field that doesn't exist on every video" to behave differently. To investigate when drops happen, enable `logging.DEBUG` on the `yt_meta.filtering` logger — each drop emits a debug line with the video id and the missing field. See M6 in the v0.6.0 CHANGELOG.

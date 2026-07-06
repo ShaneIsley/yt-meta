@@ -379,3 +379,62 @@ def test_c8_build_date_filter_normalizes_datetime_to_date():
     assert end == date(2024, 12, 31)
     assert type(end) is date
     assert merged["publish_date"] == {"gte": date(2024, 6, 1), "lte": date(2024, 12, 31)}
+
+
+def test_hour_bounds_compare_datetimes_on_exact_values():
+    """REGRESSION (hour-truncation trap): _check_date_condition
+    normalized both sides to calendar dates, so an hour-window filter
+    was silently wrong — 'lt 12:00 same day' compared '5 July < 5 July'
+    and dropped EVERYTHING, in-window or not. When the record is
+    precision-exact and the bound carries time, compare full datetimes.
+    Naive bounds against tz-aware values compare wall-clock (no
+    TypeError)."""
+    from datetime import datetime, timedelta, timezone
+
+    tz = timezone(timedelta(hours=-7))
+    morning = {
+        "publish_date": datetime(2023, 7, 5, 8, 0, 29, tzinfo=tz),
+        "publish_date_precision": "exact",
+    }
+    afternoon = {
+        "publish_date": datetime(2023, 7, 5, 14, 0, 2, tzinfo=tz),
+        "publish_date_precision": "exact",
+    }
+    window = {
+        "publish_date": {
+            "gte": datetime(2023, 7, 5, 8, 0),
+            "lt": datetime(2023, 7, 5, 12, 0),
+        }
+    }
+    assert apply_filters(morning, window) is True
+    assert apply_filters(afternoon, window) is False
+
+
+def test_hour_bounds_fall_back_to_dates_on_approximate_values():
+    """A time-bearing bound against an APPROXIMATE value compares at
+    date granularity — the time-of-day on an approximate value is
+    query-time noise, not data."""
+    from datetime import datetime
+
+    video = {
+        "publish_date": datetime(2023, 7, 5, 23, 45, 11),  # noise time
+        "publish_date_precision": "approximate",
+        "publish_date_text": "3 years ago",
+    }
+    assert apply_filters(
+        video, {"publish_date": {"gte": datetime(2023, 7, 5, 8, 0)}}
+    ) is True  # same calendar day passes despite 23:45 > nothing-meaningful
+
+
+def test_bare_date_bounds_keep_calendar_semantics():
+    """A bare date bound means 'that calendar day' — unchanged, even on
+    exact values."""
+    from datetime import date, datetime, timedelta, timezone
+
+    video = {
+        "publish_date": datetime(
+            2023, 7, 5, 8, 0, tzinfo=timezone(timedelta(hours=-7))
+        ),
+        "publish_date_precision": "exact",
+    }
+    assert apply_filters(video, {"publish_date": {"eq": date(2023, 7, 5)}}) is True
