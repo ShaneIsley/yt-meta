@@ -438,3 +438,24 @@ def test_bare_date_bounds_keep_calendar_semantics():
         "publish_date_precision": "exact",
     }
     assert apply_filters(video, {"publish_date": {"eq": date(2023, 7, 5)}}) is True
+
+
+def test_date_kwargs_clobbering_hour_bounds_raises():
+    """REGRESSION (found in live validation): passing start_date/
+    end_date kwargs TOGETHER with a time-bearing publish_date filter
+    silently replaced the hour-level bounds with day-level kwargs —
+    the hour window evaporated with no error. Day-level override
+    (kwargs win) stays documented behavior; clobbering TIME bounds
+    must fail loudly."""
+    from datetime import date, datetime
+
+    import pytest as _pytest
+
+    from yt_meta.filtering import build_date_filter
+
+    with _pytest.raises(ValueError, match="publish_date"):
+        build_date_filter(
+            date(2026, 7, 1),
+            date(2026, 7, 3),
+            {"publish_date": {"gte": datetime(2026, 7, 1, 7, 30)}},
+        )

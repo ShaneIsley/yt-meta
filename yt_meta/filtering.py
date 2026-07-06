@@ -259,6 +259,18 @@ def build_date_filter(
         filters = dict(filters)  # shallow copy so we don't mutate the caller's dict
 
     existing_pd = filters.get("publish_date", {}) or {}
+    # Day-level kwargs overriding day-level filter bounds is documented
+    # ("kwargs win"). But silently replacing an HOUR-level bound with a
+    # day-level kwarg would evaporate the time window with no error —
+    # found live when both were passed together.
+    if (start_date is not None or end_date is not None) and condition_has_time(
+        existing_pd
+    ):
+        raise ValueError(
+            "Pass either start_date/end_date kwargs or a publish_date "
+            "filter with time-of-day bounds — not both. The kwargs are "
+            "day-granular and would silently discard the time bounds."
+        )
     start_from_filter = existing_pd.get("gt") or existing_pd.get("gte")
     end_from_filter = existing_pd.get("lt") or existing_pd.get("lte")
 

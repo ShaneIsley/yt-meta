@@ -53,6 +53,10 @@ documented promises get their own cases.
   months, …), and the exact post-hydration date makes the final call —
   near-boundary videos are no longer dropped one request too early.
 
+- **Mixing date kwargs with hour-level filter bounds raises** instead
+  of silently replacing the time bounds with day-granular kwargs
+  (found during live validation of the hour-window feature).
+
 ### Fixed
 - **`is_hearted` and `is_pinned` are real data now** (C1): wired from
   `engagementToolbarStateEntityPayload.heartState` (via
