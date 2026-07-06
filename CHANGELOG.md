@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 - (Add new changes here)
 
-## [0.8.0] - 2026-07-05
+## [0.8.0] - 2026-07-06
 
 Correctness release driven by the 2026-07-05 code review. All fixes
 landed test-first under the rules in TESTING.md, adopted with this
