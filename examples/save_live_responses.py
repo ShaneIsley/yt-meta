@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import requests
+import httpx
 
 # The three channels we want to inspect
 URLS = [
@@ -26,7 +26,7 @@ def save_channel_html():
     for url in URLS:
         try:
             print(f"Fetching {url}...")
-            response = requests.get(url, headers=HEADERS, timeout=15)
+            response = httpx.get(url, headers=HEADERS, timeout=15, follow_redirects=True)
             # Raise an exception for bad status codes (4xx or 5xx)
             response.raise_for_status()
 
@@ -38,7 +38,7 @@ def save_channel_html():
             file_path.write_text(response.text, encoding="utf-8")
             print(f"✅ Successfully saved response to {file_path}")
 
-        except requests.exceptions.RequestException as e:
+        except httpx.HTTPError as e:
             print(f"❌ Failed to fetch {url}: {e}")
 
 

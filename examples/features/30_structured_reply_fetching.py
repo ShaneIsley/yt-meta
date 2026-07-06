@@ -29,7 +29,7 @@ def main():
     print("Limit: 5 comments\n")
 
     comments_with_tokens = list(
-        client.get_video_comments_with_reply_tokens(video_url, limit=50, sort_by="top")
+        client.get_video_comments_with_reply_tokens(video_url, limit=5, sort_by="top")
     )
 
     print(f"Found {len(comments_with_tokens)} comments\n")
@@ -54,7 +54,10 @@ def main():
 
         print()
 
-    # Step 2: Fetch replies for comments that have them
+    # Step 2: Fetch replies on demand — here only for the first 3
+    # threads, since each thread costs one request.
+    total_replies = 0
+    comments_with_replies = comments_with_replies[:3]
     if comments_with_replies:
         print(
             f"\nStep 2: Fetching replies for {len(comments_with_replies)} comment(s) with replies...\n"
@@ -78,6 +81,7 @@ def main():
                 )
             )
 
+            total_replies += len(replies)
             print(f"  Found {len(replies)} replies:")
 
             for k, reply in enumerate(replies, 1):
@@ -100,10 +104,6 @@ def main():
     print(f"Total comments fetched: {len(comments_with_tokens)}")
     print(f"Comments with replies: {len(comments_with_replies)}")
 
-    total_replies = sum(
-        len(list(client.get_comment_replies(video_url, item["token"], limit=10)))
-        for item in comments_with_replies
-    )
     print(f"Total replies fetched: {total_replies}")
 
     print("\n=== Benefits of Structured Reply Fetching ===")

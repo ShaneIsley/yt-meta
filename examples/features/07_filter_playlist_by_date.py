@@ -17,9 +17,9 @@ channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 start_date = date(2025, 4, 1)
 end_date = date(2025, 6, 30)
 
-# The `publish_date` filter is a 'slow' filter, but the library optimizes
-# this by first using the 'fast' `published_time_text` to narrow down
-# the search space before fetching full metadata for precise filtering.
+# The `publish_date` filter is fast on playlists: the listing carries
+# approximate relative dates, so no per-video fetch is needed. Pass
+# fetch_full_metadata=True when you need precise dates.
 date_filter = {"publish_date": {"gte": start_date, "lte": end_date}}
 videos_generator = client.get_channel_videos(
     channel_url,

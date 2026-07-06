@@ -316,9 +316,19 @@ Three helpers cover common multi-step workflows (added in 0.8.0).
 Yields a channel's videos newest-first and stops before `since_video_id`, so you get only the videos published since your last run. Pagination also stops at the marker, keeping request cost proportional to the number of new videos. The first yielded video's id is the new high-water mark.
 
 ```python
-new = list(client.iter_new_videos(channel_url, since_video_id=last_seen_id))
+from yt_meta import YtMeta
+
+client = YtMeta()
+last_seen_id = "pRiu3lxPZAw"  # saved from a previous run
+
+new = list(client.iter_new_videos(
+    "https://www.youtube.com/@TED",
+    since_video_id=last_seen_id,
+    max_videos=50,  # safety cap in case the marker is gone
+))
 if new:
     last_seen_id = new[0]["video_id"]  # persist for the next run
+print(f"{len(new)} new videos")
 ```
 
 ### Exact Date Windows: `get_videos_published_between`
@@ -326,24 +336,38 @@ if new:
 Returns videos published in an exact window, including hour-level `datetime` bounds. It binary-searches the chronological listing with probe fetches (about 2·log₂(n) requests) instead of fetching full metadata for every video near the window, which for a year-old target on a daily channel would be several hundred requests. Yielded videos carry full metadata with `publish_date_precision == "exact"`.
 
 ```python
+from datetime import date, timedelta
+
+from yt_meta import YtMeta
+
+client = YtMeta()
 videos = client.get_videos_published_between(
-    channel_url,
-    start_date=datetime(2023, 7, 5, 7, 30),
-    end_date=datetime(2023, 7, 5, 12, 0),
+    "https://www.youtube.com/@TED",
+    start_date=date.today() - timedelta(days=7),
+    end_date=date.today(),
 )
+for v in videos:
+    print(v["publish_date"], v["title"])
 ```
+
+Bounds may also be `datetime` values for hour-level windows, e.g. `start_date=datetime(2023, 7, 5, 7, 30)`.
 
 ### Comment Hierarchies: `get_comment_threads`
 
 Yields `(comment, replies)` tuples, wrapping `get_video_comments_with_reply_tokens` and `get_comment_replies`. `replies_per_thread` caps the replies fetched per thread; `0` skips reply fetching.
 
 ```python
+from yt_meta import YtMeta
+
+client = YtMeta()
+video_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
+
 for comment, replies in client.get_comment_threads(
-    youtube_url, limit=20, replies_per_thread=10
+    video_url, limit=5, replies_per_thread=3
 ):
     print(comment["author"], f"({comment['reply_count']} replies)")
     for r in replies:
-        print("  ↳", r["author"])
+        print("  reply:", r["author"])
 ```
 
 ## Advanced Features

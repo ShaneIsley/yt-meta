@@ -30,12 +30,16 @@ filters = {"full_description": {"contains": "LangChain"}}
 print(f"Finding videos on {channel_url} with 'LangChain' in the full description...")
 print("Note: This may take longer as full metadata is required.\n")
 
-videos = client.get_channel_videos(channel_url, filters=filters, max_videos=20)
+# Bound the scan window: a slow filter costs one request per scanned
+# video until enough matches are found.
+videos = client.get_channel_videos(
+    channel_url, filters=filters, start_date="6 months ago", max_videos=3
+)
 
 # --- 4. Display results ---
 print("--- Matching Videos ---")
 count = 0
-for video in itertools.islice(videos, 5):
+for video in itertools.islice(videos, 3):
     count += 1
     title = video.get("title", "N/A")
     # Show a snippet of the description to confirm the match
