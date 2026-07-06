@@ -10,9 +10,17 @@ readme = "README.md"
 authors = [{ name = "Shane", email = "shane.isley@gmail.com" }]
 license = { file = "LICENSE" }
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Typing :: Typed",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -27,10 +35,16 @@ persistent_cache = ["diskcache>=5.6.3"]
 
 [project.urls]
 Homepage = "https://github.com/shaneisley/yt-meta"
+Repository = "https://github.com/shaneisley/yt-meta"
+Issues = "https://github.com/shaneisley/yt-meta/issues"
+Changelog = "https://github.com/shaneisley/yt-meta/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["yt_meta*"]
+
+[tool.setuptools.package-data]
+yt_meta = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -56,10 +70,6 @@ dev = [
     "pytest-mock>=3.14.1",
     "tqdm>=4.67.1",
 ]
-
-[tool.ruff]
-# Exclude a variety of commonly ignored directories.
-# ... existing code ...
 
 [tool.ruff.lint]
 # By default, ruff will lint all files in the current directory and its subdirectories
