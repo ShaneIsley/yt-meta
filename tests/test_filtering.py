@@ -141,7 +141,7 @@ def test_description_snippet_filter_rejected_full_description_works():
 
     from yt_meta.validators import validate_filters
 
-    with _pytest.raises(ValueError, match="Unknown filter field"):
+    with _pytest.raises(ValueError, match="full_description"):
         validate_filters({"description_snippet": {"contains": "python"}})
 
     videos = [

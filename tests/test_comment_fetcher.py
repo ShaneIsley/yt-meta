@@ -1081,7 +1081,7 @@ def test_c1_old_filter_vocabulary_is_rejected_loudly():
     from yt_meta.validators import validate_filters
 
     for key in ("channel_id", "is_by_owner", "is_hearted_by_owner"):
-        with pytest.raises(ValueError, match="Unknown filter field"):
+        with pytest.raises(ValueError, match="renamed"):
             validate_filters({key: {"eq": True}})
 
 

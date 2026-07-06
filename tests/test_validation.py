@@ -82,3 +82,26 @@ def test_validate_filters_valid_filters():
         validate_filters(filters)
     except (ValueError, TypeError) as e:
         pytest.fail(f"Valid filters raised an unexpected exception: {e}")
+
+
+def test_removed_and_renamed_filter_keys_raise_with_migration_guidance():
+    """Tombstone errors: a key that used to exist must not fail like a
+    typo. The error names what happened (removed/renamed in 0.8.0) and
+    the replacement, so users don't need the CHANGELOG to migrate."""
+    cases = {
+        "description_snippet": "full_description",
+        "channel_id": "author_channel_id",
+        "is_by_owner": "is_creator",
+        "is_hearted_by_owner": "is_hearted",
+    }
+    for old_key, replacement in cases.items():
+        with pytest.raises(ValueError, match=replacement):
+            validate_filters({old_key: {"eq": "x"}})
+        with pytest.raises(ValueError, match="0.8.0"):
+            validate_filters({old_key: {"eq": "x"}})
+
+
+def test_genuinely_unknown_filter_key_still_reads_as_unknown():
+    """A key with no history keeps the plain unknown-field error."""
+    with pytest.raises(ValueError, match="Unknown filter field"):
+        validate_filters({"view_cont": {"gt": 1}})

@@ -66,18 +66,40 @@ FILTER_SCHEMA = {
 }
 
 
+# Tombstones for keys that existed before 0.8.0. A key with history must
+# not fail like a typo — the error carries the migration, so users don't
+# need the CHANGELOG to fix their call.
+_RETIRED_FILTERS = {
+    "description_snippet": (
+        "removed in 0.8.0 — YouTube listings no longer carry description "
+        "text, so it silently matched nothing. Use 'full_description' "
+        "(slow: one request per scanned video; bound the scan with "
+        "start_date or max_videos)"
+    ),
+    "channel_id": "renamed to 'author_channel_id' in 0.8.0",
+    "is_by_owner": "renamed to 'is_creator' in 0.8.0",
+    "is_hearted_by_owner": "renamed to 'is_hearted' in 0.8.0",
+}
+
+
 def validate_filters(filters: dict):
     """
     Validates a filter dictionary against the defined FILTER_SCHEMA.
 
     Raises:
-        ValueError: If a filter field or operator is invalid.
+        ValueError: If a filter field or operator is invalid. Retired
+            pre-0.8.0 keys raise with migration guidance instead of a
+            plain unknown-field error.
         TypeError: If a filter value has an incorrect type.
     """
     if not filters:
         return
 
     for field, conditions in filters.items():
+        if field in _RETIRED_FILTERS:
+            raise ValueError(
+                f"Filter field '{field}' was {_RETIRED_FILTERS[field]}."
+            )
         if field not in FILTER_SCHEMA:
             raise ValueError(f"Unknown filter field: '{field}'")
 

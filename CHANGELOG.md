@@ -17,12 +17,12 @@ release.
   `channel_id` → `author_channel_id`, `is_by_owner` → `is_creator`,
   `is_hearted_by_owner` → `is_hearted`. The old spellings matched no
   key the parser emits, so filtering on them returned zero comments;
-  they now raise `ValueError` at validation. `is_pinned` is newly
-  filterable.
+  they now raise `ValueError` at validation, with the rename named in
+  the error. `is_pinned` is newly filterable.
 - **`description_snippet` filter removed** (C1): only the retired
   `videoRenderer` shape emitted it, so as a fast filter it silently
-  dropped every video on current lockup-shaped pages. Use
-  `full_description` (slow) instead.
+  dropped every video on current lockup-shaped pages. The error names
+  the replacement: `full_description` (slow).
 - **Transcript errors are no longer swallowed** (M20): only
   `NoTranscriptFound`/`TranscriptsDisabled`/`VideoUnavailable` map to
   `[]`. Rate limits, network failures, and upstream changes now
