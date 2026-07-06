@@ -113,7 +113,26 @@ documented promises get their own cases.
   and a fast-filter field is missing on the raw item, the filter defers
   to the merged metadata instead of dropping the video early.
 
+### Removed / Deprecated (cleanup)
+- Dead code purge (~450 LOC, zero-reference verified): `constants.py`,
+  the legacy `CommentParser` payload path (`parse_comment_complete` and
+  the six payload/toolbar/surface-key extractors superseded by
+  `extract_complete_comments`), `utils.parse_vote_count`,
+  `parsing.extract_videos_from_playlist_renderer`, dead pagination
+  guards, and test fixtures patching a `requests.Session` the package
+  never used.
+- `BestCommentFetcher` now emits `DeprecationWarning`; removal in 0.9.0.
+- `YtMeta.get_playlist_metadata()` wired (parser existed, was
+  unreachable). `py.typed` shipped; classifiers/URLs completed.
+- Review documents moved to `docs/reviews/` so the `H*/M*/C*` markers
+  in code comments resolve to their source.
+
 ### Docs
+- README: new "When YouTube Changes" section (drift symptom → upgrade →
+  `make drift` → report), client-lifecycle/context-manager docs, API
+  reference entries for shorts/transcript/playlist-metadata/helpers/
+  `close()`/`clear_cache(prefix=)`, and input-`ValueError` semantics in
+  Error Handling.
 - README caching section said in-memory caching was the default — a
   bare `YtMeta()` caches **nothing**. Rewritten with the `cache={}`
   opt-in ("Caching Is Off by Default").

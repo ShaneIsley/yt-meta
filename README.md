@@ -16,7 +16,7 @@ This library collects metadata for YouTube videos, channels, and playlists. It h
 -   **`CommentFetcher`**: Fetches comments and replies for videos.
 -   **`TranscriptFetcher`**: Fetches video transcripts.
 
-This architecture keeps the codebase clean, organized, and easy to maintain.
+The package ships type annotations (`py.typed`), so IDEs and type-checkers pick up signatures and return shapes.
 
 ## Installation
 
@@ -32,6 +32,19 @@ Persistent caching requires an optional dependency:
 # For disk-based caching
 uv pip install "yt-meta[persistent_cache]"
 ```
+
+## Client Lifecycle
+
+`YtMeta` owns an HTTP session (and a SQLite connection when `cache_path` is set). Use it as a context manager, or call `close()` when done:
+
+```python
+from yt_meta import YtMeta
+
+with YtMeta(cache_path=".cache/yt.db") as client:
+    meta = client.get_video_metadata("dQw4w9WgXcQ")
+```
+
+Short scripts can skip this — the OS reclaims everything at exit — but long-running processes and anything on Windows (where an open SQLite file stays locked) should close the client.
 
 ## Core Features
 
@@ -520,7 +533,7 @@ The main client for interacting with the library. Handles session management and
 Fetches metadata for a single YouTube video.
 -   **`youtube_url`** / **`video_id`**: The video URL or a bare id (either keyword works).
 -   **`force_refresh`**: Re-fetch even on a cache hit — use it to re-check a video's availability and pick up status changes.
--   **Returns**: A dictionary containing `title`, `view_count`, `like_count`, `publish_date` (a `datetime`), `category`, etc., **plus video-status lifecycle fields** (see below). Returns `None` only when the page yields no player response at all.
+-   **Returns**: A dictionary containing `title`, `view_count`, `like_count`, `publish_date` (a timezone-aware `datetime`, `publish_date_precision == "exact"`), `category`, etc., **plus video-status lifecycle fields** (see below). Returns `None` only when the page yields no player response at all.
 -   **Raises**: `VideoUnavailableError` if the HTTP fetch itself fails (network error, 404, rate-limit). A video that is *parsed but unavailable* is reported via the `status` field, not an exception.
 
 **Video status fields** (on every returned dict):
@@ -581,8 +594,29 @@ Yields metadata for videos from a playlist.
 -   **`stop_at_video_id`**: Stops fetching when this video ID is found.
 -   **`max_videos`**: The maximum number of videos to return.
 
-#### `clear_cache()`
-Clears all items from the configured cache (both in-memory and persistent).
+#### `get_channel_shorts(channel_url, ..., fetch_full_metadata=False, filters=None, max_videos=-1) -> Generator[dict, None, None]`
+Yields items from a channel's **Shorts** tab. The fast path carries `title`/`view_count`; pass `fetch_full_metadata=True` for the rest (including `publish_date`).
+
+#### `get_playlist_metadata(playlist_id) -> dict`
+Fetches a playlist's own metadata (`title`, `author`, `description`, `video_count`, ...) — not its videos.
+
+#### `get_video_transcript(video_id, languages=None) -> list[dict]`
+Fetches the transcript as `{text, start, duration}` snippets. Returns `[]` **only** when the video has no transcript to offer (none for the requested languages, transcripts disabled, video unavailable); any other failure — rate limiting, network — raises, so "no transcript" is never conflated with "request failed".
+
+#### `iter_new_videos(channel_url, since_video_id=None, ...) -> Generator[dict, None, None]`
+Incremental sync: everything newer than `since_video_id`, newest first, marker excluded. See [Workflow Helpers](#workflow-helpers).
+
+#### `get_videos_published_between(channel_url, start_date, end_date=None) -> Generator[dict, None, None]`
+Exact date/hour windows with ~2·log₂(n) probe hydrations. See [Workflow Helpers](#workflow-helpers).
+
+#### `get_comment_threads(youtube_url, *, limit=20, replies_per_thread=10, sort_by='top') -> Generator[tuple[dict, list], None, None]`
+`(comment, replies)` tuples. See [Workflow Helpers](#workflow-helpers).
+
+#### `clear_cache(prefix=None)`
+Clears the configured cache. Pass `prefix` (e.g. `"video_meta:"`) to clear only matching keys — useful for forcing fresh video metadata while keeping cached channel pages.
+
+#### `close()`
+Releases the HTTP session and (if `cache_path` was used) the SQLite connection. Idempotent; called automatically when using `with YtMeta() as client:`.
 
 ## Error Handling
 
@@ -605,6 +639,22 @@ except YtMetaError as e:
 Raised when an HTTP fetch itself fails — a network error, a 404, or a rate-limit response. Note: a video that is *fetched but unavailable* (deleted, members-only, etc.) is **not** an exception — it is reported via the `status` field on `get_video_metadata`'s result. Only a failure to fetch raises.
 
 ### `MetadataParsingError`
-Raised when a page is fetched successfully but the expected structure (e.g. `ytInitialData` / a channel tab) cannot be extracted — typically a sign YouTube changed its page shape.
+Raised when a page is fetched successfully but the expected structure (e.g. `ytInitialData` / a channel tab) cannot be extracted — typically a sign YouTube changed its page shape (see the next section).
 
-To fix a playlist parsing bug, look in `yt_meta/fetchers.py` in the `PlaylistFetcher` class; channel/stream/shorts logic lives in `ChannelFetcher`, and comment logic in `yt_meta/comment_*.py`.
+### Builtin `ValueError` / `TypeError` for input mistakes
+
+Invalid *inputs* raise builtin exceptions, not `YtMetaError`: a URL on a non-YouTube host, a malformed video id, an unknown filter key or operator, hour-level date bounds without `fetch_full_metadata=True`, or mixing date kwargs with time-bearing filter bounds. These are bugs in the calling code, so they surface immediately instead of being wrapped.
+
+## When YouTube Changes (and it will)
+
+This library parses YouTube's web pages, and YouTube periodically migrates its page structure — most recently `videoRenderer` → `lockupViewModel`, which broke the channel Videos tab (fixed in 0.6.0) and the playlist page (fixed in 0.7.1). Expect this to happen again.
+
+**The symptom:** requests succeed (HTTP 200, pagination runs) but a listing yields **zero items**, or `MetadataParsingError` is raised. Transient failures look different — the built-in retry (exponential backoff with jitter on 429/5xx, honoring `Retry-After`) absorbs those automatically, so persistent zero-results usually means drift, not throttling.
+
+**What to do:**
+
+1. Upgrade — `pip install -U yt-meta`. Migrations are usually fixed within a release or two (see the CHANGELOG for the history).
+2. Confirm it's drift: run the live structural contract suite against real YouTube — `pytest -m contract` (or `make drift`). It asserts the shapes this library depends on and fails loudly, naming what moved. Note the offline test suite **cannot** catch this: it runs against captured fixtures, which stay green while the live site drifts.
+3. Report it: open an issue with the failing contract-test output. That output pinpoints the migrated renderer, which is most of the diagnostic work.
+
+Maintainers: `docs/reviews/` holds the code-review history behind the `H*/M*/C*/R*` markers you'll see in code comments and test names, and `TESTING.md` explains the testing rules (real captured fixtures, contract tests) that exist precisely because of this failure mode.
