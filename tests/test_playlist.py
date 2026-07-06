@@ -136,3 +136,23 @@ def test_get_playlist_videos_stops_at_id(client, mocker):
     assert videos[0]["video_id"] == "vid1"
     assert videos[1]["video_id"] == "vid2"
     assert videos[2]["video_id"] == "vid3"
+
+
+def test_get_playlist_metadata_via_facade():
+    """parse_playlist_metadata existed with tests but was unreachable
+    from the facade (June review: 'wire it up or drop it'). Wired:
+    YtMeta.get_playlist_metadata fetches the playlist page and parses
+    it — driven here through the real HTTP layer (R1) with the captured
+    lockup-shape playlist page."""
+    import httpx
+
+    from yt_meta import YtMeta
+
+    html = (FIXTURES_DIR / "playlist_lockup_page.html").read_text()
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, text=html))
+    with YtMeta() as client:
+        client.session._transport = transport
+        client._playlist_fetcher.session = httpx.Client(transport=transport)
+        meta = client.get_playlist_metadata("PLxxxx")
+    assert isinstance(meta["title"], str) and meta["title"]
+    assert meta["author"]

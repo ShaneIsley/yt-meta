@@ -125,3 +125,8 @@ tmp*.py
 
 # Prevent accidentally committing saved HTML responses
 examples/saved_responses/*.html
+
+# local scrape outputs / transient DBs
+exports/
+dummy.db
+*.sqlite

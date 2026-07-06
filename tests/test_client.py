@@ -1,5 +1,5 @@
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -10,25 +10,6 @@ from yt_meta.exceptions import MetadataParsingError, VideoUnavailableError
 # Define the path to our test fixture
 FIXTURE_PATH = "tests/fixtures"
 CHANNEL_FIXTURE_PATH = Path(__file__).parent / "fixtures"
-
-
-@pytest.fixture
-def mocked_client():
-    with patch("yt_meta.client.requests.Session") as mock_session:
-        # Mock the session object
-        mock_get = MagicMock()
-        mock_session.return_value.get = mock_get
-
-        # Return a client instance
-        yield YtMeta(), mock_get
-
-
-@pytest.fixture
-def client_with_caching(tmp_path):
-    """Provides a YtMeta instance with caching enabled in a temporary directory."""
-    # cache_path = tmp_path / "yt_meta_cache"
-    # This is a placeholder as file-based caching is not implemented yet in YtMeta
-    return YtMeta()
 
 
 @pytest.fixture

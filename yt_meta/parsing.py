@@ -51,7 +51,7 @@ def find_ytcfg(html: str) -> dict | None:
     This data contains important context for making subsequent API requests,
     such as the INNERTUBE_API_KEY and client version.
     """
-    match = re.search(r"ytcfg\.set\s*\(\s*({.*?})\s*\)\s*;", html, re.DOTALL)
+    match = re.search(YT_CFG_RE, html, re.DOTALL)
     if match:
         try:
             return json.loads(match.group(1))
@@ -572,19 +572,6 @@ def extract_videos_from_playlist_items(items: list) -> tuple[list, str | None]:
                         break
 
     return videos, continuation_token
-
-
-def extract_videos_from_playlist_renderer(renderer: dict) -> tuple[list, str | None]:
-    """
-    Parses a playlist item container into ``(videos, continuation_token)``.
-
-    Thin back-compat wrapper around ``extract_videos_from_playlist_items``;
-    accepts any dict carrying a ``contents`` list (the legacy
-    ``playlistVideoListRenderer`` or a synthesized ``{"contents": [...]}``).
-    """
-    if not renderer or "contents" not in renderer:
-        return [], None
-    return extract_videos_from_playlist_items(renderer["contents"])
 
 
 def parse_video_renderer(renderer: dict) -> dict:

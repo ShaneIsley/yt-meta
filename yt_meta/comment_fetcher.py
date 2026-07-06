@@ -329,5 +329,17 @@ class CommentFetcher:
             ) from e
 
 
-# Maintain backward compatibility with the old class name
-BestCommentFetcher = CommentFetcher
+def __getattr__(name):
+    """Deprecated alias: ``BestCommentFetcher`` (the pre-0.4 class name).
+    Emits DeprecationWarning on access; scheduled for removal in 0.9.0."""
+    if name == "BestCommentFetcher":
+        import warnings
+
+        warnings.warn(
+            "BestCommentFetcher is deprecated; use CommentFetcher. "
+            "The alias will be removed in yt-meta 0.9.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return CommentFetcher
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

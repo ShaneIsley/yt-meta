@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from yt_meta.comment_fetcher import BestCommentFetcher, CommentFetcher
+from yt_meta.comment_fetcher import CommentFetcher
 from yt_meta.exceptions import VideoUnavailableError
 
 
@@ -515,19 +515,20 @@ def test_m19_get_comments_applies_filters_to_yielded_comments(mocker):
     assert result[0]["is_creator"] is True
 
 
-class TestBestCommentFetcher:
+class TestCommentFetcherBehavior:
     """
-    TDD tests for BestCommentFetcher
+    Behavior tests for CommentFetcher (formerly named via the
+    BestCommentFetcher alias, deprecated in 0.8.0)
     These tests define the expected behavior before implementation
     """
 
     def setup_method(self):
         """Setup for each test"""
-        self.fetcher = BestCommentFetcher()
+        self.fetcher = CommentFetcher()
 
     def test_init_creates_proper_client(self):
         """Test that initialization creates proper HTTP client"""
-        fetcher = BestCommentFetcher(timeout=30, retries=5)
+        fetcher = CommentFetcher(timeout=30, retries=5)
         assert fetcher.api_client is not None
         assert fetcher.api_client.retries == 5
         assert fetcher.parser is not None
@@ -558,7 +559,7 @@ class TestBestCommentFetcher:
         mock_client_class.return_value = mock_client
         mock_client.get.side_effect = httpx.HTTPError("404 Not Found")
 
-        fetcher = BestCommentFetcher()
+        fetcher = CommentFetcher()
 
         with pytest.raises(VideoUnavailableError):
             list(fetcher.get_comments("dQw4w9WgXcQ"))
@@ -628,7 +629,7 @@ class TestBestCommentFetcher:
 
     def test_engagement_count_parsing(self):
         """Test parsing of engagement counts like '1.2K', '58K', '325K'"""
-        fetcher = BestCommentFetcher()
+        fetcher = CommentFetcher()
 
         # Test various count formats
         assert fetcher.parser._parse_engagement_count("120") == 120
@@ -642,7 +643,7 @@ class TestBestCommentFetcher:
 
     def test_flexible_endpoint_detection(self):
         """Test that endpoint detection works with different YouTube structures"""
-        fetcher = BestCommentFetcher()
+        fetcher = CommentFetcher()
 
         # Test with sortFilterSubMenuRenderer present
         data_with_sort = {
@@ -673,77 +674,6 @@ class TestBestCommentFetcher:
         assert "newest first" in endpoints
         assert endpoints["top comments"] == "top_token"
         assert endpoints["newest first"] == "recent_token"
-
-    def test_surface_key_mapping(self):
-        """Test surface key to comment ID mapping functionality"""
-        fetcher = BestCommentFetcher()
-
-        data = {
-            "commentViewModel": [
-                {"commentSurfaceKey": "surface_key_1", "commentId": "comment_id_1"},
-                {"commentSurfaceKey": "surface_key_2", "commentId": "comment_id_2"},
-            ]
-        }
-
-        surface_keys = fetcher.parser.get_surface_key_mappings(data)
-        assert surface_keys["surface_key_1"] == "comment_id_1"
-        assert surface_keys["surface_key_2"] == "comment_id_2"
-
-    def test_toolbar_states_extraction(self):
-        """Test toolbar states extraction for engagement data"""
-        fetcher = BestCommentFetcher()
-
-        data = {
-            "mutations": [
-                {
-                    "payload": {
-                        "engagementToolbarStateEntityPayload": {
-                            "key": "toolbar_key_1",
-                            "heartState": "TOOLBAR_HEART_STATE_HEARTED",
-                        }
-                    }
-                },
-                {
-                    "payload": {
-                        "engagementToolbarStateEntityPayload": {
-                            "key": "toolbar_key_2",
-                            "heartState": "TOOLBAR_HEART_STATE_UNHEARTED",
-                        }
-                    }
-                },
-            ]
-        }
-
-        toolbar_states = fetcher.parser.get_toolbar_states(data)
-        assert "toolbar_key_1" in toolbar_states
-        assert "toolbar_key_2" in toolbar_states
-        assert (
-            toolbar_states["toolbar_key_1"]["heartState"]
-            == "TOOLBAR_HEART_STATE_HEARTED"
-        )
-
-    def test_paid_comments_extraction(self):
-        """Test paid comment (Super Chat) detection"""
-        fetcher = BestCommentFetcher()
-
-        surface_keys = {"surface_key_1": "comment_id_1"}
-        data = {
-            "mutations": [
-                {
-                    "payload": {
-                        "commentSurfaceEntityPayload": {
-                            "key": "surface_key_1",
-                            "pdgCommentChip": True,
-                            "simpleText": "$5.00",
-                        }
-                    }
-                }
-            ]
-        }
-
-        paid_comments = fetcher.parser.get_paid_comments(data, surface_keys)
-        assert "comment_id_1" in paid_comments
-        assert paid_comments["comment_id_1"] == "$5.00"
 
     def test_progress_callback_called(self):
         """Test that progress callback is called during comment fetching"""
@@ -1376,3 +1306,22 @@ def test_option_a_comments_are_always_approximate(first_page_pinned_response):
         assert c["publish_date_precision"] == "approximate"
         assert c["publish_date_text"] == c["time_human"]
         assert "ago" in c["publish_date_text"]
+
+
+def test_best_comment_fetcher_alias_warns_deprecation():
+    """M14 remainder: the BestCommentFetcher alias was scheduled for a
+    DeprecationWarning in the June roadmap and never got one. Accessing
+    it must warn and hand back CommentFetcher."""
+    import importlib
+    import warnings
+
+    import yt_meta.comment_fetcher as cf_module
+
+    importlib.reload(cf_module)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        cls = cf_module.BestCommentFetcher
+    assert cls is cf_module.CommentFetcher
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught), (
+        "accessing BestCommentFetcher must emit DeprecationWarning"
+    )

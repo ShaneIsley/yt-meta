@@ -395,6 +395,20 @@ class YtMeta:
             max_videos,
         )
 
+    def get_playlist_metadata(self, playlist_id: str) -> dict:
+        """
+        Fetches a playlist's own metadata (not its videos).
+
+        Args:
+            playlist_id: The playlist ID (the ``list=`` URL parameter).
+
+        Returns:
+            A dictionary with the playlist's ``title``, ``author``,
+            ``description``, ``video_count``, ``playlist_id`` and
+            related fields.
+        """
+        return self._playlist_fetcher.get_playlist_metadata(playlist_id)
+
     def get_channel_shorts(
         self,
         channel_url: str,

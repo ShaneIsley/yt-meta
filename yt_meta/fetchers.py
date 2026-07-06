@@ -453,8 +453,6 @@ class ChannelFetcher(_BaseFetcher):
             if not continuation_token:
                 break
             continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            if not continuation_data:
-                break
             continuation_token = self._get_continuation_token_from_data(
                 continuation_data
             )
@@ -633,8 +631,6 @@ class ChannelFetcher(_BaseFetcher):
             if stop_pagination or not continuation_token:
                 break
             continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            if not continuation_data:
-                break
             continuation_token = self._get_continuation_token_from_data(
                 continuation_data
             )
@@ -673,7 +669,6 @@ class ChannelFetcher(_BaseFetcher):
         continuation_token = self._get_continuation_token(shorts_tab_renderer)
 
         while True:
-            stop_pagination = False
             for renderer in renderers:
                 if "richItemRenderer" not in renderer:
                     continue
@@ -686,12 +681,10 @@ class ChannelFetcher(_BaseFetcher):
                 if shorts and shorts[0]:
                     yield shorts[0]
 
-            if stop_pagination or not continuation_token:
+            if not continuation_token:
                 break
 
             continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            if not continuation_data:
-                break
 
             continuation_token = self._get_continuation_token_from_data(
                 continuation_data
@@ -963,6 +956,28 @@ class PlaylistFetcher(_BaseFetcher):
     ):
         super().__init__(session, cache, video_fetcher)
 
+    def get_playlist_metadata(self, playlist_id: str) -> dict:
+        """Fetch and parse a playlist's own metadata (title, author,
+        description, video_count, ...). Wired in 0.8.0 — the parser
+        existed with tests but was unreachable from the facade."""
+        playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
+        try:
+            response = request_with_retries(
+                lambda: self.session.get(playlist_url, timeout=10)
+            )
+            html = response.text
+        except httpx.HTTPError as e:
+            raise VideoUnavailableError(
+                f"Could not fetch playlist page: {e}", playlist_id=playlist_id
+            ) from e
+        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
+        if not initial_data:
+            raise MetadataParsingError(
+                "Could not extract ytInitialData from playlist page.",
+                playlist_id=playlist_id,
+            )
+        return parsing.parse_playlist_metadata(initial_data)
+
     def _get_raw_playlist_videos_generator(self, playlist_id: str):
         playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
         try:
@@ -1001,8 +1016,6 @@ class PlaylistFetcher(_BaseFetcher):
             if not continuation_token:
                 break
             continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            if not continuation_data:
-                break
             renderers = _deep_get(
                 continuation_data,
                 "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
