@@ -8,42 +8,39 @@ All notable changes to this project are documented in this file.
 
 ## [0.8.0] - 2026-07-05
 
-Correctness release driven by the 2026-07-05 four-lens review. Every
-fix landed test-first under the new testing rules (see TESTING.md,
-adopted with this release): boundary tests consume real captured
-payloads, cross-layer vocabularies are pinned by contract tests, and
-documented promises get their own cases.
+Correctness release driven by the 2026-07-05 code review. All fixes
+landed test-first under the rules in TESTING.md, adopted with this
+release.
 
 ### BREAKING
-- **Comment filter keys renamed to match the comment dicts themselves**
-  (C1): `channel_id` → `author_channel_id`, `is_by_owner` →
-  `is_creator`, `is_hearted_by_owner` → `is_hearted`. The old spellings
-  never matched any key the parser emits — filtering on them silently
-  returned **zero comments** — and now raise `ValueError` at
-  validation instead. `is_pinned` is newly filterable.
+- **Comment filter keys renamed to match the comment dicts** (C1):
+  `channel_id` → `author_channel_id`, `is_by_owner` → `is_creator`,
+  `is_hearted_by_owner` → `is_hearted`. The old spellings matched no
+  key the parser emits, so filtering on them returned zero comments;
+  they now raise `ValueError` at validation. `is_pinned` is newly
+  filterable.
 - **`description_snippet` filter removed** (C1): only the retired
   `videoRenderer` shape emitted it, so as a fast filter it silently
   dropped every video on current lockup-shaped pages. Use
   `full_description` (slow) instead.
 - **Transcript errors are no longer swallowed** (M20): only
   `NoTranscriptFound`/`TranscriptsDisabled`/`VideoUnavailable` map to
-  `[]`; rate limits, network failures, and upstream shape changes now
-  propagate instead of masquerading as "no transcript".
+  `[]`. Rate limits, network failures, and upstream changes now
+  propagate instead of reading as "no transcript".
 - **Persistent HTTP failures during comment pagination now raise
-  `VideoUnavailableError`** (M-d) instead of silently truncating the
-  stream; parser bugs propagate with their real stack trace.
+  `VideoUnavailableError`** (M-d) instead of truncating the stream;
+  parser bugs propagate with their real stack trace.
 
 ### Added
 - **Workflow helpers:** `iter_new_videos(channel, since_video_id=...)`
-  (incremental sync — yields only what's new, stops pagination at the
-  marker and excludes it), `get_videos_published_between(channel,
-  start, end)` (exact date/hour windows via chronological bisection —
-  ~2·log₂ n probe hydrations instead of hydrating the whole padded
-  window; tolerates locally non-chronological listings via a margin
-  re-check), and `get_comment_threads(video, limit,
+  (incremental sync: yields only new videos, stops pagination at the
+  marker, excludes it), `get_videos_published_between(channel, start,
+  end)` (exact date/hour windows via chronological bisection, about
+  2·log₂(n) probe fetches instead of one per video in the padded
+  window; a margin re-check tolerates locally non-chronological
+  listings), and `get_comment_threads(video, limit,
   replies_per_thread)` ((comment, replies) tuples wrapping the
-  reply-token two-step with explicit request cost). All three verified
-  live.
+  reply-token two-step). All three verified live.
 - **Date provenance (Option A):** every dated record now carries
   `publish_date_precision` (`"exact"` from the watch page /
   `"approximate"` from listing relative text) and `publish_date_text`
@@ -51,41 +48,38 @@ documented promises get their own cases.
   failures). Comments are permanently approximate (`time_human` kept
   as alias).
 - **Hour-level date filtering:** `publish_date` bounds given as
-  `datetime` compare with time-of-day against exact (hydrated) dates —
-  naive bounds match wall-clock against tz-aware values. Previously
-  bounds were silently truncated to dates, which made a same-day hour
-  window drop everything. Without `fetch_full_metadata=True` such
-  bounds now raise `ValueError` (approximate dates carry no meaningful
-  time).
-- **Precision-aware date funnel:** when hydrating, the approximate-date
-  pre-filter and the pagination early-stop are padded by the date's own
-  rounding granularity (±6 months for "N years ago", ±16 days for
-  months, …), and the exact post-hydration date makes the final call —
-  near-boundary videos are no longer dropped one request too early.
-
+  `datetime` compare with time-of-day against exact (full-metadata)
+  dates; naive bounds match wall-clock time. Previously bounds were
+  truncated to dates, so a same-day hour window dropped everything.
+  Without `fetch_full_metadata=True` such bounds raise `ValueError`,
+  since approximate dates carry no meaningful time.
+- **Precision-aware date funnel:** with full metadata enabled, the
+  approximate-date pre-filter and the pagination early-stop are padded
+  by the date's rounding granularity (±6 months for "N years ago",
+  ±16 days for months), and the exact date decides membership.
+  Near-boundary videos are no longer dropped one request too early.
 - **Mixing date kwargs with hour-level filter bounds raises** instead
-  of silently replacing the time bounds with day-granular kwargs
-  (found during live validation of the hour-window feature).
+  of replacing the time bounds with day-granular kwargs.
 
 ### Fixed
-- **`is_hearted` and `is_pinned` are real data now** (C1): wired from
+- **`is_hearted` and `is_pinned` carry real data** (C1): wired from
   `engagementToolbarStateEntityPayload.heartState` (via
-  `toolbarStateKey`) and `commentViewModel.pinnedText` respectively.
-  Both were hardcoded `False`; examples 26/28 demonstrated nothing.
-- **Reply pagination past page one** (M-c): reply continuations use the
-  button-form token (`continuationItemRenderer.button.buttonRenderer
-  .command…`), which the extractor missed — `get_comment_replies`
-  silently capped at ~10 replies. Verified live (35/35 fetched).
+  `toolbarStateKey`) and `commentViewModel.pinnedText`. Both were
+  hardcoded `False`, which made examples 26/28 no-ops.
+- **Reply pagination past page one** (M-c): reply continuations use
+  the button-form token (`continuationItemRenderer.button
+  .buttonRenderer.command…`), which the extractor missed, so
+  `get_comment_replies` capped at ~10 replies. Verified live.
 - **HTTP 4xx/5xx no longer crash generators with the wrong exception**
   (C2): `httpx.HTTPStatusError` is not a `RequestError` subclass, so
   status errors escaped every guard. All page GETs catch
   `httpx.HTTPError` and honor the documented `VideoUnavailableError`
   contract.
-- **Retry/backoff now covers every page GET** (C3): watch page (the
-  per-video hydration request), channel/shorts/streams tabs, playlist
-  page, and the comment initial page — previously only continuation
-  POSTs retried, so one transient 429 could kill a whole generator.
-  `Retry-After` is now capped at `max_delay`.
+- **Retry/backoff covers every page GET** (C3): watch page,
+  channel/shorts/streams tabs, playlist page, and the comment initial
+  page. Previously only continuation POSTs retried, so one transient
+  429 could kill a whole generator. `Retry-After` is capped at
+  `max_delay`.
 - **`limit=-1` comments** (C4): the documented "unbounded" spelling
   yielded an empty generator (`0 < -1`); negative limits normalize to
   `None` in both `get_comments` and `get_comment_replies`.
@@ -104,8 +98,7 @@ documented promises get their own cases.
   is never lost" guarantee.
 - **SQLite cache round-trips `datetime`/`date`** (M-a): `publish_date`
   came back as a string on cache hits (`json.dumps(default=str)`).
-  Now a tagged, revivable encoding; unknown types raise at write time
-  instead of silently corrupting.
+  Now a tagged, revivable encoding; unknown types raise at write time.
 - **Playlist date filtering is fast and truthfully documented** (M-e):
   the docstring/README promised a per-video metadata fetch (written for
   the retired renderer shape); current lockup listings carry relative
@@ -128,22 +121,20 @@ documented promises get their own cases.
   in code comments resolve to their source.
 
 ### Docs
-- README: new "When YouTube Changes" section (drift symptom → upgrade →
-  `make drift` → report), client-lifecycle/context-manager docs, API
+- README: new "When YouTube Changes Its Page Structure" section
+  (symptom, upgrade, `make drift`, report), client-lifecycle docs, API
   reference entries for shorts/transcript/playlist-metadata/helpers/
   `close()`/`clear_cache(prefix=)`, and input-`ValueError` semantics in
   Error Handling.
-- README caching section said in-memory caching was the default — a
-  bare `YtMeta()` caches **nothing**. Rewritten with the `cache={}`
-  opt-in ("Caching Is Off by Default").
+- README caching section said in-memory caching was the default;
+  `YtMeta()` caches nothing. Rewritten with the `cache={}` opt-in.
 - Filter table updated to the real comment-filter vocabulary; examples
   19/26/28 fixed or rewritten and verified live; example 05 no longer
   prints a key no parser emits.
 
 ### Tests
-- `TESTING.md`: retrospective on why strict TDD still shipped these
-  bugs (tests encoding the author's model of external reality) + rules
-  R1–R9 that governed this release.
+- `TESTING.md`: retrospective on why the tests missed these bugs,
+  plus rules R1–R9, which governed this release.
 - New R2 contract module (`tests/test_filter_schema_contract.py`) pins
   every advertised filter key to real parser output.
 - Two new real captured fixtures: first comment page of "Me at the

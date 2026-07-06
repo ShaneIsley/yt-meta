@@ -284,13 +284,14 @@ class YtMeta:
     ):
         """
         Incremental sync: yield a channel's videos newest-first, stopping
-        BEFORE ``since_video_id`` — i.e. only what's new since you last
-        looked. The first yielded video's id is your new high-water mark.
+        before ``since_video_id``, so only videos published since the
+        last run are returned. The first yielded video's id is the new
+        high-water mark.
 
         Unlike ``get_channel_videos(stop_at_video_id=...)``, the marker
-        video itself is NOT yielded (you've already seen it). Pagination
-        still stops at the marker, so request cost is proportional to
-        how much is new, not to channel size.
+        video itself is not yielded. Pagination still stops at the
+        marker, so request cost is proportional to the number of new
+        videos.
 
         Args:
             channel_url: The channel URL.
@@ -325,18 +326,18 @@ class YtMeta:
     ):
         """
         Videos published in an exact window, found with O(log n)
-        hydrations — the efficient path for old / narrow date targets.
+        full-metadata fetches.
 
         Listing dates are approximate (rounded relative text), so a
-        plain date filter must hydrate every video in the padded window
-        (~365 requests for a ±6-month pad on a daily channel). This
-        helper exploits the listing's chronological order instead: it
-        binary-searches the window's boundaries with probe hydrations
-        (~2·log₂ n), then hydrates only the videos inside.
+        plain date filter must fetch full metadata for every video in
+        the padded window — several hundred requests for a year-old
+        target on a daily channel. This helper binary-searches the
+        chronological listing for the window's boundaries with probe
+        fetches (about 2·log2(n)), then fetches only the videos inside.
 
-        Bounds may be ``datetime`` for hour-level windows — membership
-        is decided on EXACT (hydrated) dates, naive bounds matching
-        wall-clock. Every yielded video is full-metadata with
+        Bounds may be ``datetime`` for hour-level windows; membership
+        is decided on exact dates, with naive bounds matching
+        wall-clock time. Every yielded video carries full metadata with
         ``publish_date_precision == "exact"``.
 
         Args:
@@ -621,15 +622,13 @@ class YtMeta:
         filters: dict | None = None,
     ):
         """
-        Yield ``(comment, replies)`` tuples — the comment hierarchy in
-        one call, wrapping the reply-token two-step
-        (``get_video_comments_with_reply_tokens`` +
-        ``get_comment_replies`` per thread).
+        Yield ``(comment, replies)`` tuples: the comment hierarchy in
+        one call, wrapping ``get_video_comments_with_reply_tokens`` and
+        ``get_comment_replies``.
 
-        Request cost is explicit: one request per ~20 top-level
-        comments, plus one request per ~10 replies for each comment
-        that has replies. Set ``replies_per_thread=0`` for structure
-        only (no reply requests at all).
+        Request cost: one request per ~20 top-level comments, plus one
+        request per ~10 replies for each comment that has replies. Set
+        ``replies_per_thread=0`` to skip reply fetching entirely.
 
         Args:
             youtube_url: The video URL. Alias: ``video_id=``.
@@ -637,8 +636,7 @@ class YtMeta:
                 get_video_comments).
             replies_per_thread: Max replies fetched per thread
                 (0 = don't fetch replies).
-            sort_by: 'top' (default — YouTube's ranking, best for
-                thread exploration) or 'recent'.
+            sort_by: 'top' (default; YouTube's ranking) or 'recent'.
             since_date: Same semantics as get_video_comments.
             filters: Applied to top-level comments only.
 
