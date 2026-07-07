@@ -17,7 +17,7 @@ if __name__ == "__main__":
     videos_any = client.get_channel_videos(
         channel_url,
         filters=filters_any,
-        start_date="6 months ago",  # bound the scan window
+        start_date="2 months ago",  # bound the scan window
         max_videos=5,
     )
     for video in itertools.islice(videos_any, 3):
@@ -31,7 +31,7 @@ if __name__ == "__main__":
     videos_all = client.get_channel_videos(
         channel_url,
         filters=filters_all,
-        start_date="6 months ago",
+        start_date="2 months ago",
         max_videos=5,
     )
     for video in itertools.islice(videos_all, 3):

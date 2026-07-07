@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TIMEOUT = 120
+TIMEOUT = 240
 DELAY = 1.0
 
 

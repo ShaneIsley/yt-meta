@@ -6,7 +6,28 @@ the progress of long-running operations like fetching a large number of comments
 import logging
 import sys
 
-from tqdm import tqdm
+try:
+    from tqdm import tqdm
+except ImportError:  # tqdm is optional — plain-text progress fallback
+    class tqdm:  # noqa: N801 - stand-in for the optional dependency
+        def __init__(self, total=None, desc="Progress", unit="", **kwargs):
+            self.desc, self.n = desc, 0
+
+        def update(self, n=1):
+            self.n += n
+            print(f"\r{self.desc}: {self.n}", end="", flush=True)
+
+        def refresh(self):
+            pass
+
+        def close(self):
+            print()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self.close()
 
 from yt_meta import YtMeta
 
