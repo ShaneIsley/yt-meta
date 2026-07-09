@@ -281,31 +281,34 @@ Enable caching if you call the same endpoints repeatedly (loops, notebooks, retr
 
 ### Persistent Caching
 
-To cache results across runs, pass a persistent dictionary-like object to the client. The library provides an optional `diskcache` integration.
+To cache results across runs, use the built-in SQLite cache via `cache_path=`. It stores values as JSON — never pickle — so reading a cache file that someone else tampered with cannot execute code in your process:
 
-Install the optional extra:
+```python
+from yt_meta import YtMeta
+
+with YtMeta(cache_path=".my_yt_meta_cache/cache.db") as client:
+    # The first run fetches from the network; subsequent runs
+    # read from the on-disk cache until the TTL (default 1 day) expires.
+    metadata = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
+```
+
+See `examples/features/19_alternative_caching_sqlite.py` for a benchmark of this path.
+
+Alternatively, any object implementing the `MutableMapping` protocol (`__getitem__`, `__setitem__`, `__delitem__`) works via the `cache=` kwarg: a plain `dict` for in-memory, or a third-party store like `diskcache.Cache` or `sqlitedict.SqliteDict`. The `persistent_cache` extra installs diskcache:
+
 ```bash
 uv pip install "yt-meta[persistent_cache]"
 ```
-
-Then, instantiate a `diskcache.Cache` object and pass it to the client:
 
 ```python
 from yt_meta import YtMeta
 from diskcache import Cache
 
-# The cache object can be any dict-like object.
-# Here, we use diskcache for a persistent, file-based cache.
-persistent_cache = Cache(".my_yt_meta_cache")
-
-client = YtMeta(cache=persistent_cache)
-
-# The first time this script runs, it will be slow (fetches from network).
-# Subsequent runs will be very fast, reading directly from the disk cache.
+client = YtMeta(cache=Cache(".my_yt_meta_cache"))
 metadata = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
 ```
 
-Any object implementing the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) works as a cache via the `cache=` kwarg: a plain `dict` for in-memory, `diskcache.Cache` for disk-backed, or `sqlitedict.SqliteDict` if you install sqlitedict yourself. See `examples/features/19_alternative_caching_sqlite.py` for the built-in SQLite path via `cache_path=`.
+> **Security note:** `diskcache` serializes values with Python's `pickle` ([CVE-2025-69872](https://github.com/advisories/GHSA-w8v5-vhqr-4h9v), unfixed as of 5.6.3). Anyone with write access to the cache directory can plant an entry that executes arbitrary code in your process when it is read back. Prefer the built-in `cache_path=` backend, which avoids pickle by design; if you do use diskcache, keep the cache directory private (e.g. mode `0700`).
 
 ## Workflow Helpers
 
@@ -549,7 +552,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 The main client for interacting with the library. Handles session management and delegates work to specialized fetcher classes.
 
 -   **`cache_path`**: Optional path to a SQLite file for persistent on-disk caching. The library opens and manages the file.
--   **`cache`**: Optional pre-built `MutableMapping` (e.g. a plain `dict` for in-memory caching, or a `diskcache.Cache` / `sqlitedict` instance for persistent). Takes precedence over `cache_path`. If both are `None`, caching is disabled.
+-   **`cache`**: Optional pre-built `MutableMapping` (e.g. a plain `dict` for in-memory caching, or a `diskcache.Cache` / `sqlitedict` instance for persistent — see the security note under §Persistent Caching before choosing diskcache). Takes precedence over `cache_path`. If both are `None`, caching is disabled.
 -   **`cache_ttl_seconds`**: TTL (seconds) for entries in the built-in SQLite cache. Default `86400` (1 day). Ignored when you inject your own `cache`.
 -   **`accept_cookies`**: Opt in to bypassing YouTube's EU cookie-consent wall. Default `False` (no consent cookie is set). If a call fails with a `302` redirect to `consent.youtube.com` (region-gated, e.g. the EU), construct the client with `YtMeta(accept_cookies=True)`; a `SOCS` consent cookie is then set on the session so YouTube serves content directly. It is opt-in because it accepts YouTube's cookies on your behalf.
 

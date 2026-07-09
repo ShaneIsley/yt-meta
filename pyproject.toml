@@ -30,7 +30,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-mock", "ruff", "tqdm"]
 persistent_cache = ["diskcache>=5.6.3"]
 
 [project.urls]
@@ -48,15 +47,14 @@ yt_meta = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Default to an offline run. Three markers hit the network / PyPI and are
-# excluded by default: `integration` (the older, value-asserting network
-# tests), `contract` (the structural live contract — run with
-# `pytest -m contract`), and `pypi` (installs the PUBLISHED package from PyPI
+# Default to an offline run. Two markers hit the network / PyPI and are
+# excluded by default: `contract` (the structural live contract — run with
+# `pytest -m contract`) and `pypi` (installs the PUBLISHED package from PyPI
 # and smoke-tests it — run with `pytest -m pypi`). See H12 in the v0.5.0
-# changelog.
-addopts = "-v -m 'not integration and not contract and not pypi'"
+# changelog. (The older `integration` marker's value-asserting network tests
+# were retired; the marker is gone.)
+addopts = "-v -m 'not contract and not pypi'"
 markers = [
-    "integration: marks tests as integration tests (makes network requests)",
     "contract: live structural contract test — rarely run, asserts the shape YouTube returns (run with `pytest -m contract`)",
     "pypi: installs yt-meta from PyPI into an isolated venv and smoke-tests the published artifact (run with `pytest -m pypi`)",
 ]
@@ -64,17 +62,19 @@ filterwarnings = [
     "ignore:Parsing dates involving a day of month without a year specified is ambiguous:DeprecationWarning",
 ]
 
+# The single source of truth for dev tooling. `uv sync` / `uv run` install
+# this group by default, so `make lint` / `make check` work on a fresh clone
+# without a globally-installed ruff.
 [dependency-groups]
 dev = [
     "pytest>=8.4.1",
+    "pytest-cov>=6.0.0",
     "pytest-mock>=3.14.1",
+    "ruff>=0.15.20",
     "tqdm>=4.67.1",
 ]
 
 [tool.ruff.lint]
-# By default, ruff will lint all files in the current directory and its subdirectories
-# except for those that are excluded by .gitignore, .ignore, .ruff_ignore, or global-exclude.
-# You can override this behavior by specifying the `select` option.
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings

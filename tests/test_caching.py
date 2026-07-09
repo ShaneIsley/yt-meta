@@ -160,15 +160,15 @@ def test_h8_journal_mode_is_wal(tmp_path):
     assert mode.lower() == "wal", f"expected WAL, got {mode!r}"
 
 
-def test_h12_default_pytest_addopts_excludes_integration():
+def test_h12_default_pytest_addopts_excludes_live_markers():
     """REGRESSION (H12): bare ``pytest`` invocation must not hit live
-    YouTube by default. The pyproject `addopts` includes
-    ``-m 'not integration'`` so casual developers and offline CI
-    automatically deselect the network-touching tests. To run them, pass
-    ``-m integration`` explicitly.
+    YouTube or PyPI by default. The pyproject `addopts` must deselect
+    every registered network-touching marker (originally `integration`,
+    now retired; today `contract` and `pypi`). To run them, pass the
+    marker explicitly (``pytest -m contract`` / ``pytest -m pypi``).
 
-    Without this guard, ``pytest`` (no args) fires ~25 live requests
-    against @LofiGirl/@TED/@MrBeast/dQw4w9WgXcQ on each invocation.
+    Without this guard, ``pytest`` (no args) fires live requests on
+    each invocation.
     """
     from pathlib import Path
 
@@ -176,11 +176,15 @@ def test_h12_default_pytest_addopts_excludes_integration():
 
     repo_root = Path(__file__).resolve().parent.parent
     cfg = tomllib.loads((repo_root / "pyproject.toml").read_text())
-    addopts = cfg["tool"]["pytest"]["ini_options"].get("addopts", "")
-    assert "not integration" in addopts, (
-        f"pyproject addopts is {addopts!r}; bare pytest will run "
-        f"integration tests against live YouTube by default"
-    )
+    ini = cfg["tool"]["pytest"]["ini_options"]
+    addopts = ini.get("addopts", "")
+    live_markers = [m.split(":")[0] for m in ini.get("markers", [])]
+    assert live_markers, "expected registered live markers in pyproject"
+    for marker in live_markers:
+        assert f"not {marker}" in addopts, (
+            f"pyproject addopts is {addopts!r}; bare pytest will run "
+            f"'{marker}'-marked tests against the live network by default"
+        )
 
 
 def test_m11_channel_page_cache_does_not_store_raw_html(tmp_path):
