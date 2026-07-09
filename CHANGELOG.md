@@ -4,7 +4,42 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-- (Add new changes here)
+### Security
+- **Dev lockfile refreshed against the 2026-07 Dependabot advisories**
+  (2026-07-07): urllib3 2.5.0→2.7.0, requests→2.33+, idna→3.15+,
+  pygments→2.20.0, pytest→9.x, youtube-transcript-api 1.1.0→1.2.4.
+  Clears 8 of 9 alerts; these pins only affect the dev environment —
+  the published package leaves its dependencies unpinned. The 9th
+  (diskcache CVE-2025-69872, pickle deserialization, no fixed upstream
+  release) does not affect yt-meta's own code: the library never
+  imports diskcache, and the built-in `SQLiteCache` has been JSON-only
+  since 0.5.
+- **README persistent-caching section now leads with the built-in
+  `cache_path=` SQLite backend** (JSON serialization — immune to the
+  pickle vector by design) and documents diskcache's CVE-2025-69872
+  risk with a keep-the-cache-directory-private note. The
+  `persistent_cache` extra remains available.
+
+### Changed
+- **Dev tooling consolidated into `[dependency-groups].dev`** — the
+  group `uv sync` actually installs. `ruff` (pinned to the locked
+  version) and `pytest-cov` now resolve in a fresh clone, so
+  `make lint` / `make check` no longer silently depend on a
+  globally-installed, differently-versioned ruff. The duplicate
+  `[project.optional-dependencies].dev` extra is gone (`yt-meta[dev]`
+  was never a supported install path; use `uv sync`).
+- **CI tests every supported Python (3.10–3.13)** instead of only
+  3.13, matching `requires-python` and the classifiers.
+- charset-normalizer 3.4.8 → 3.4.9 in the lockfile (3.4.8 was yanked
+  upstream).
+
+### Removed
+- **Vestigial `integration` pytest marker retired.** No test has
+  carried it since the value-asserting network tests were removed in
+  0.5.0; `pytest -m integration` selected zero tests. `addopts` now
+  excludes only the real live markers (`contract`, `pypi`), and the
+  H12 offline-by-default regression test derives its assertion from
+  the registered marker list instead of a hardcoded string.
 
 ## [0.8.0] - 2026-07-06
 
