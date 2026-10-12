@@ -11,7 +11,7 @@ import httpx
 
 from .comment_api_client import CommentAPIClient
 from .comment_parser import CommentParser
-from .exceptions import VideoUnavailableError
+from .exceptions import MetadataParsingError, VideoUnavailableError
 from .filtering import apply_comment_filters
 from .utils import extract_video_id
 from .validators import validate_filters
@@ -94,6 +94,8 @@ class CommentFetcher:
         Yields:
             Dict containing complete comment data, optionally including 'reply_continuation_token'
         """
+        if sort_by not in ("recent", "top"):
+            raise ValueError(f"sort_by must be 'recent' or 'top', got {sort_by!r}")
         if since_date and sort_by != "recent":
             raise ValueError("`since_date` can only be used with `sort_by='recent'`")
         validate_filters(filters)
@@ -120,9 +122,18 @@ class CommentFetcher:
                 return
 
             # Select appropriate endpoint
+            # since_date stops at the first older comment, so it needs a
+            # real newest-first ordering; no silent fallback to top.
             continuation_token = self.api_client.select_sort_endpoint(
-                sort_endpoints, sort_by
+                sort_endpoints, sort_by, allow_fallback=not since_date
             )
+            if not continuation_token and since_date:
+                raise MetadataParsingError(
+                    "No newest-first comment ordering found on the watch "
+                    f"page (available: {list(sort_endpoints)}); since_date "
+                    "needs chronological order.",
+                    video_id=video_id,
+                )
             if not continuation_token:
                 logger.warning(f"No continuation token found for sort_by='{sort_by}'")
                 return

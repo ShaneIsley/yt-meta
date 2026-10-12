@@ -18,7 +18,7 @@ import pytest
 from yt_meta.comment_api_client import CommentAPIClient
 from yt_meta.comment_fetcher import CommentFetcher
 from yt_meta.comment_parser import CommentParser
-from yt_meta.exceptions import VideoUnavailableError
+from yt_meta.exceptions import MetadataParsingError, VideoUnavailableError
 
 # ---------------------------------------------------------------------------
 # CommentParser._parse_engagement_count — the "1.2K"/"58K"/"3.4M" formats
@@ -248,8 +248,11 @@ def _client_with_post(post_return=None, post_side_effect=None):
     return CommentAPIClient(session=session)
 
 
-def test_make_api_request_no_api_key_returns_none():
-    assert _client_with_post().make_api_request("tok", ytcfg={}) is None
+def test_make_api_request_no_api_key_raises():
+    """REGRESSION (2026-10 review): a missing API key returned None, which
+    the pagination loop reads as end-of-stream: zero comments, no error."""
+    with pytest.raises(MetadataParsingError, match="INNERTUBE_API_KEY"):
+        _client_with_post().make_api_request("tok", ytcfg={})
 
 
 def test_make_api_request_success():
@@ -268,7 +271,8 @@ def test_make_api_request_propagates_errors():
 
 
 def test_make_reply_request_paths():
-    assert _client_with_post().make_reply_request("tok", {}) is None
+    with pytest.raises(MetadataParsingError, match="INNERTUBE_API_KEY"):
+        _client_with_post().make_reply_request("tok", {})
     ok = _client_with_post(post_return={"r": 1}).make_reply_request(
         "tok", {"INNERTUBE_API_KEY": "k"}
     )
@@ -489,3 +493,53 @@ def test_extract_reply_continuations_subthreads_fixture():
     tokens = CommentParser().extract_reply_continuations(data)
     assert tokens, "no reply tokens extracted from subThreads fixture"
     assert all(isinstance(t, str) and t for t in tokens.values())
+
+
+def _client_serving(html):
+    client = CommentAPIClient()
+    response = Mock(text=html, status_code=200)
+    response.raise_for_status.return_value = None
+    client.client.get = Mock(return_value=response)
+    return client
+
+
+def test_unusable_watch_page_parse_is_not_cached():
+    """REGRESSION (2026-10 review): a consent page (no ytcfg API key) was
+    cached under video_initial:<id>, so every later comment fetch for the
+    video returned nothing for the full cache TTL."""
+    client = _client_serving("<html>Before you continue to YouTube</html>")
+    client.cache = {}
+    client.get_initial_video_data("dQw4w9WgXcQ")
+    assert client.cache == {}
+
+    good = _client_serving(
+        'ytcfg.set({"INNERTUBE_API_KEY": "k"}); var ytInitialData = {"a": 1};'
+    )
+    good.cache = {}
+    good.get_initial_video_data("dQw4w9WgXcQ")
+    assert "video_initial:dQw4w9WgXcQ" in good.cache
+
+
+@pytest.mark.parametrize("bad", ["newest", "Recent", ""])
+def test_unknown_sort_by_raises(bad):
+    """REGRESSION (2026-10 review): any unknown sort_by silently returned
+    top-ranked comments."""
+    with pytest.raises(ValueError, match="sort_by"):
+        CommentAPIClient().select_sort_endpoint({"top": "t", "newest": "n"}, bad)
+    with pytest.raises(ValueError, match="sort_by"):
+        list(CommentFetcher().get_comments("dQw4w9WgXcQ", sort_by=bad))
+
+
+def test_recent_fallback_to_top_only_without_since_date(caplog):
+    """With no newest-first endpoint, plain 'recent' falls back with a
+    warning; since_date (which stops at the first older comment) refuses."""
+    client = CommentAPIClient()
+    assert client.select_sort_endpoint({"top": "t"}, "recent") == "t"
+    assert "falling back" in caplog.text
+    assert client.select_sort_endpoint({"top": "t"}, "recent", allow_fallback=False) is None
+
+    fetcher = CommentFetcher()
+    fetcher.api_client.get_initial_video_data = Mock(return_value=({}, {}))
+    fetcher.api_client.get_sort_endpoints_flexible = Mock(return_value={"top": "t"})
+    with pytest.raises(MetadataParsingError, match="newest-first"):
+        list(fetcher.get_comments("dQw4w9WgXcQ", since_date=date(2026, 1, 1)))

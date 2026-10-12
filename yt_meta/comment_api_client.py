@@ -11,7 +11,7 @@ import httpx
 
 from ._retry import request_with_retries
 from .caching import DummyCache
-from .exceptions import VideoUnavailableError
+from .exceptions import MetadataParsingError, VideoUnavailableError
 from .utils import _deep_get
 
 logger = logging.getLogger(__name__)
@@ -116,7 +116,11 @@ class CommentAPIClient:
         ytcfg = self._extract_ytcfg(html_content)
         initial_data = self._extract_initial_data(html_content)
         result = (initial_data, ytcfg)
-        self.cache[cache_key] = result
+        # Cache only a usable parse. A consent page or a markup change
+        # yields no API key; caching that made every comment fetch for
+        # the video return nothing, silently, for the whole cache TTL.
+        if initial_data and ytcfg.get("INNERTUBE_API_KEY"):
+            self.cache[cache_key] = result
         return result
 
     def _extract_ytcfg(self, html_content: str) -> dict:
@@ -279,28 +283,31 @@ class CommentAPIClient:
         return any(indicator in token_lower for indicator in comment_indicators)
 
     def select_sort_endpoint(
-        self, endpoints: dict[str, str], sort_by: str
+        self, endpoints: dict[str, str], sort_by: str, allow_fallback: bool = True
     ) -> str | None:
         """
         Select the appropriate endpoint based on the requested sort order.
 
         Args:
             endpoints: Dictionary of available endpoints
-            sort_by: Requested sort order ("top" or "recent")
+            sort_by: Requested sort order ("top" or "recent"); anything
+                else raises ValueError
+            allow_fallback: When no endpoint matches sort_by, return the
+                first endpoint (True) or None (False)
 
         Returns:
             Continuation token for the requested sort order
         """
+        if sort_by not in ("top", "recent"):
+            raise ValueError(f"sort_by must be 'recent' or 'top', got {sort_by!r}")
         if not endpoints:
             return None
 
         # Mapping of sort preferences to endpoint keywords
         if sort_by == "top":
             preferences = ["top comments", "top", "best comments", "best"]
-        elif sort_by == "recent":
-            preferences = ["newest first", "newest", "recent", "new comments", "latest"]
         else:
-            preferences = ["top comments", "top", "best comments"]
+            preferences = ["newest first", "newest", "recent", "new comments", "latest"]
 
         # Try to find exact matches first
         for pref in preferences:
@@ -311,16 +318,17 @@ class CommentAPIClient:
                     )
                     return token
 
-        # Fallback to first available endpoint
-        if endpoints:
-            first_endpoint = list(endpoints.keys())[0]
-            token = endpoints[first_endpoint]
-            logger.info(
-                f"Fallback to endpoint: {first_endpoint} for sort_by='{sort_by}'"
-            )
-            return token
-
-        return None
+        # No named match: fall back to the first endpoint (usually YouTube's
+        # default, top-ranked order) unless the caller needs the order
+        # guaranteed, as since_date does.
+        if not allow_fallback:
+            return None
+        first_endpoint = next(iter(endpoints))
+        logger.warning(
+            f"No '{sort_by}' comment ordering found; falling back to "
+            f"'{first_endpoint}'. Comments may not be in the requested order."
+        )
+        return endpoints[first_endpoint]
 
     def make_api_request(self, continuation_token: str, ytcfg: dict) -> dict | None:
         """
@@ -331,12 +339,18 @@ class CommentAPIClient:
             ytcfg: YouTube configuration data
 
         Returns:
-            API response data or None if failed
+            API response data. Raises MetadataParsingError when ytcfg
+            has no API key.
         """
         api_key = ytcfg.get("INNERTUBE_API_KEY")
         if not api_key:
-            logger.error("No API key found in ytcfg")
-            return None
+            # Raise rather than return None: the pagination loops read
+            # None as end-of-stream, so a missing key looked like a video
+            # with zero comments.
+            raise MetadataParsingError(
+                "No INNERTUBE_API_KEY in the watch page config (consent page "
+                "or a YouTube markup change); cannot request comments."
+            )
 
         url = f"https://www.youtube.com/youtubei/v1/next?key={api_key}"
 
@@ -433,12 +447,18 @@ class CommentAPIClient:
             ytcfg: YouTube configuration data
 
         Returns:
-            API response data containing replies or None if failed
+            API response data containing replies. Raises
+            MetadataParsingError when ytcfg has no API key.
         """
         api_key = ytcfg.get("INNERTUBE_API_KEY")
         if not api_key:
-            logger.error("No API key found in ytcfg")
-            return None
+            # Raise rather than return None: the pagination loops read
+            # None as end-of-stream, so a missing key looked like a video
+            # with zero comments.
+            raise MetadataParsingError(
+                "No INNERTUBE_API_KEY in the watch page config (consent page "
+                "or a YouTube markup change); cannot request comments."
+            )
 
         url = f"https://www.youtube.com/youtubei/v1/next?key={api_key}"
 
