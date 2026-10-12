@@ -11,7 +11,7 @@ from .comment_fetcher import CommentFetcher
 from .date_utils import parse_relative_date_string
 from .fetchers import ChannelFetcher, PlaylistFetcher, VideoFetcher
 from .transcript_fetcher import TranscriptFetcher
-from .utils import extract_video_id
+from .utils import CONSENT_COOKIE, extract_video_id
 
 logger = logging.getLogger(__name__)
 
@@ -58,11 +58,7 @@ class YtMeta:
             # YouTube's documented consent-bypass cookie. Set on the single
             # shared session, so it covers every fetcher (video / channel /
             # playlist / comment) — M1/L2 unified them onto this session.
-            self.session.cookies.set(
-                "SOCS",
-                "CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg",
-                domain=".youtube.com",
-            )
+            self.session.cookies.set(*CONSENT_COOKIE, domain=".youtube.com")
             logger.info("accept_cookies=True: set SOCS consent cookie on session.")
         if cache is not None:
             self.cache = cache
@@ -90,7 +86,7 @@ class YtMeta:
         self._comment_fetcher = CommentFetcher(
             session=self.session, cache=self.cache
         )
-        self._transcript_fetcher = TranscriptFetcher()
+        self._transcript_fetcher = TranscriptFetcher(accept_cookies=accept_cookies)
 
     @property
     def comment_fetcher(self) -> CommentFetcher:

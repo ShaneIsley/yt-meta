@@ -97,3 +97,36 @@ def test_m20_unexpected_error_propagates(mocker):
     ).return_value.list.side_effect = RuntimeError("YouTube blocked the request")
     with _pytest.raises(RuntimeError):
         fetcher.get_transcript("vid123")
+
+
+def test_transcript_session_mirrors_client_settings():
+    """REGRESSION (2026-10 review): transcripts went through
+    youtube_transcript_api's own default session, so accept_cookies and
+    the library's 429/5xx retry did not apply to them."""
+    from yt_meta.utils import CONSENT_COOKIE
+
+    plain = TranscriptFetcher()._make_session()
+    assert CONSENT_COOKIE[0] not in plain.cookies
+
+    session = TranscriptFetcher(accept_cookies=True, retries=4)._make_session()
+    assert session.cookies.get(CONSENT_COOKIE[0], domain=".youtube.com") == CONSENT_COOKIE[1]
+    retry = session.get_adapter("https://www.youtube.com").max_retries
+    assert retry.total == 4
+    assert {429, 503} <= set(retry.status_forcelist)
+    assert retry.respect_retry_after_header
+    assert retry.raise_on_status is False
+
+
+@patch("yt_meta.transcript_fetcher.YouTubeTranscriptApi")
+def test_transcript_api_gets_the_configured_session(mock_api_class):
+    fetcher = TranscriptFetcher(accept_cookies=True)
+    fetcher.get_transcript("dQw4w9WgXcQ")
+    session = mock_api_class.call_args.kwargs["http_client"]
+    assert "SOCS" in session.cookies
+
+
+def test_ytmeta_passes_accept_cookies_to_transcripts():
+    from yt_meta import YtMeta
+
+    assert YtMeta(accept_cookies=True)._transcript_fetcher.accept_cookies is True
+    assert YtMeta()._transcript_fetcher.accept_cookies is False

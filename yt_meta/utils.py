@@ -18,6 +18,12 @@ _YOUTUBE_HOSTNAMES = frozenset({
 })
 
 
+
+# YouTube's consent cookie: set when YtMeta(accept_cookies=True) to skip
+# the EU cookie-consent page. Shared by the httpx session and the
+# transcript fetcher's requests session.
+CONSENT_COOKIE = ("SOCS", "CAESEwgDEgk0ODE3Nzk3MjQaAmVuIAEaBgiA_LyaBg")
+
 def _is_valid_video_id(s: str) -> bool:
     return isinstance(s, str) and _VIDEO_ID_RE.fullmatch(s) is not None
 

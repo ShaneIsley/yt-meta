@@ -69,6 +69,11 @@ All notable changes to this project are documented in this file.
   string (code in a description) no longer cuts the data short.
 
 ### Changed
+- **Transcripts honor `accept_cookies` and retry on 429/5xx.**
+  `youtube_transcript_api` used its own default session, so neither
+  applied. It now gets a `requests.Session` with the consent cookie (when
+  enabled) and retry with backoff that honors `Retry-After`. `requests`
+  is now a declared dependency (it was already installed transitively).
 - **Removed unused helpers:** `parsing.extract_videos_from_renderers`,
   `parsing.extract_videos_from_lockup_renderers` (superseded by
   `parsing.parse_grid_page`) and the `date_utils.parse_human_readable_date`

@@ -1,11 +1,17 @@
 import logging
 
+from requests import Session
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from youtube_transcript_api import (
     NoTranscriptFound,
     TranscriptsDisabled,
     VideoUnavailable,
     YouTubeTranscriptApi,
 )
+
+from ._retry import RETRYABLE_STATUS
+from .utils import CONSENT_COOKIE
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +24,37 @@ _NO_TRANSCRIPT_ERRORS = (NoTranscriptFound, TranscriptsDisabled, VideoUnavailabl
 
 
 class TranscriptFetcher:
-    """A fetcher for retrieving video transcripts from YouTube."""
+    """A fetcher for retrieving video transcripts from YouTube.
+
+    youtube_transcript_api makes its own requests through a
+    ``requests.Session``, so it can't use YtMeta's httpx session. The
+    session built here mirrors that one's behavior: the consent cookie
+    when ``accept_cookies`` is set, and retry with backoff on 429/5xx,
+    honoring Retry-After. A new session per call, because the library
+    documents its client as not thread-safe.
+    """
+
+    def __init__(self, accept_cookies: bool = False, retries: int = 3):
+        self.accept_cookies = accept_cookies
+        self.retries = retries
+
+    def _make_session(self) -> Session:
+        session = Session()
+        if self.accept_cookies:
+            session.cookies.set(*CONSENT_COOKIE, domain=".youtube.com")
+        retry = Retry(
+            total=self.retries,
+            backoff_factor=1.0,
+            status_forcelist=sorted(RETRYABLE_STATUS),
+            allowed_methods=None,  # the transcript API also POSTs
+            respect_retry_after_header=True,
+            # Return the last response instead of raising RetryError, so
+            # youtube_transcript_api reports a persistent 429 the same
+            # way it did before.
+            raise_on_status=False,
+        )
+        session.mount("https://", HTTPAdapter(max_retries=retry))
+        return session
 
     def get_transcript(
         self, video_id: str, languages: list[str] | None = None
@@ -46,7 +82,8 @@ class TranscriptFetcher:
         if languages is None:
             languages = ["en"]
         try:
-            transcript_list = YouTubeTranscriptApi().list(video_id)
+            api = YouTubeTranscriptApi(http_client=self._make_session())
+            transcript_list = api.list(video_id)
             transcript = transcript_list.find_transcript(languages)
             fetched_transcript = transcript.fetch()
             return [
