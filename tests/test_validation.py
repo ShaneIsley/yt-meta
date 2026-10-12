@@ -105,3 +105,61 @@ def test_genuinely_unknown_filter_key_still_reads_as_unknown():
     """A key with no history keeps the plain unknown-field error."""
     with pytest.raises(ValueError, match="Unknown filter field"):
         validate_filters({"view_cont": {"gt": 1}})
+
+
+@pytest.mark.parametrize(
+    ("filters", "exc"),
+    [
+        ({"title": {"eq": 5}}, TypeError),
+        ({"view_count": {"eq": "100"}}, TypeError),
+        ({"view_count": {"gt": True}}, TypeError),
+        ({"is_pinned": {"eq": 1}}, TypeError),
+        ({"keywords": {"contains_any": "python"}}, TypeError),
+    ],
+)
+def test_value_type_is_checked_per_field(filters, exc):
+    """REGRESSION (2026-10 review): values were type-checked by operator,
+    and "eq" is shared by text, numeric and bool fields. A title compared
+    to 5 crashed later with AttributeError; a view_count compared to "100"
+    silently matched nothing."""
+    with pytest.raises(exc):
+        validate_filters(filters)
+
+
+def test_comment_field_rejected_on_video_filters():
+    """REGRESSION (2026-10 review): "text" on a video filter was routed to
+    the slow path, hydrating every video to return nothing."""
+    with pytest.raises(ValueError, match="does not apply to videos"):
+        validate_filters({"text": {"contains": "x"}}, kind="video")
+
+
+def test_video_field_rejected_on_comment_filters():
+    """REGRESSION (2026-10 review): "title" on a comment filter was
+    silently ignored."""
+    with pytest.raises(ValueError, match="does not apply to comments"):
+        validate_filters({"title": {"contains": "x"}}, kind="comment")
+
+
+def test_shared_fields_accepted_for_both_kinds():
+    shared = {"like_count": {"gte": 10}, "publish_date": {"after": "2024-01-01"}}
+    validate_filters(shared, kind="video")
+    validate_filters(shared, kind="comment")
+
+
+def test_field_families_match_the_filter_pipeline():
+    """The validator's per-kind field sets must agree with the sets the
+    filtering pipeline routes on, and together cover the schema."""
+    from yt_meta.filtering import (
+        COMMENT_FILTER_KEYS,
+        FAST_VIDEO_FILTERS,
+        SLOW_FILTER_KEYS,
+    )
+    from yt_meta.validators import (
+        COMMENT_FILTER_FIELDS,
+        FILTER_SCHEMA,
+        VIDEO_FILTER_FIELDS,
+    )
+
+    assert VIDEO_FILTER_FIELDS == FAST_VIDEO_FILTERS | SLOW_FILTER_KEYS
+    assert COMMENT_FILTER_FIELDS == COMMENT_FILTER_KEYS
+    assert VIDEO_FILTER_FIELDS | COMMENT_FILTER_FIELDS == set(FILTER_SCHEMA)

@@ -13,7 +13,7 @@ from datetime import date, datetime
 
 import dateparser
 
-from yt_meta.validators import FILTER_SCHEMA
+from yt_meta.validators import COMMENT_FILTER_FIELDS, FILTER_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +46,7 @@ SLOW_FILTER_KEYS = {
 # phantom keys that never matched anything: channel_id →
 # author_channel_id, is_by_owner → is_creator, is_hearted_by_owner →
 # is_hearted; is_pinned is newly filterable.
-COMMENT_FILTER_KEYS = {
-    "text",
-    "author",
-    "author_channel_id",
-    "like_count",
-    "reply_count",
-    "publish_date",
-    "is_reply",
-    "is_hearted",
-    "is_creator",
-    "is_pinned",
-}
+COMMENT_FILTER_KEYS = COMMENT_FILTER_FIELDS
 
 
 def partition_filters(filters: dict, content_type: str) -> tuple[dict, dict]:

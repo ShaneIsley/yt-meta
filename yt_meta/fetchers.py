@@ -728,7 +728,7 @@ class ChannelFetcher(_BaseFetcher):
         Returns:
             A generator of video dictionaries.
         """
-        validate_filters(filters)
+        validate_filters(filters, kind="video")
         # Strip first: a trailing slash ("…/videos/") used to defeat the
         # endswith check and produce "…/videos/videos". YouTube serves that
         # too, but it splits the cache key from the plain form.
@@ -898,7 +898,7 @@ class ChannelFetcher(_BaseFetcher):
         Returns:
             Generator[dict, None, None]: A generator of short dictionaries.
         """
-        validate_filters(filters)
+        validate_filters(filters, kind="video")
         raw_shorts_generator = self._get_raw_shorts_generator(
             channel_url, force_refresh
         )
@@ -945,7 +945,7 @@ class ChannelFetcher(_BaseFetcher):
         Returns:
             A generator of stream dictionaries.
         """
-        validate_filters(filters)
+        validate_filters(filters, kind="video")
         # Strip first: a trailing slash ("…/streams/") used to defeat the
         # endswith check and produce "…/streams/streams". YouTube serves that
         # too, but it splits the cache key from the plain form.
@@ -1080,7 +1080,7 @@ class PlaylistFetcher(_BaseFetcher):
         Returns:
             Generator[dict, None, None]: A generator of video dictionaries.
         """
-        validate_filters(filters)
+        validate_filters(filters, kind="video")
         filters, _, _ = build_date_filter(start_date, end_date, filters)
         yield from _run_filtered_pipeline(
             self._get_raw_playlist_videos_generator(playlist_id),

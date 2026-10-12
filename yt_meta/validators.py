@@ -66,6 +66,51 @@ FILTER_SCHEMA = {
 }
 
 
+# Which record each field exists on. A comment key on a video filter (or
+# the reverse) can never match: on videos it was routed to the slow path,
+# fetching full metadata for every video to return nothing; on comments
+# it was ignored. publish_date and like_count exist on both.
+VIDEO_FILTER_FIELDS = frozenset(
+    {
+        "view_count",
+        "duration_seconds",
+        "like_count",
+        "title",
+        "full_description",
+        "category",
+        "keywords",
+        "publish_date",
+    }
+)
+COMMENT_FILTER_FIELDS = frozenset(
+    {
+        "text",
+        "author",
+        "author_channel_id",
+        "like_count",
+        "reply_count",
+        "publish_date",
+        "is_reply",
+        "is_hearted",
+        "is_creator",
+        "is_pinned",
+    }
+)
+_FIELDS_BY_KIND = {"video": VIDEO_FILTER_FIELDS, "comment": COMMENT_FILTER_FIELDS}
+
+# Accepted value types per schema_type. Checked by FIELD, not operator:
+# "eq" is shared by text, numeric and bool, so an operator-based check let
+# {"title": {"eq": 5}} through (AttributeError later) and
+# {"view_count": {"eq": "100"}} through (silently matched nothing).
+_VALUE_TYPES = {
+    "numerical": (int, float),
+    "text": (str,),
+    "list": (list,),
+    "bool": (bool,),
+    "date": (str, date, datetime),
+}
+
+
 # Tombstones for keys that existed before 0.8.0. A key with history must
 # not fail like a typo — the error carries the migration, so users don't
 # need the CHANGELOG to fix their call.
@@ -82,15 +127,20 @@ _RETIRED_FILTERS = {
 }
 
 
-def validate_filters(filters: dict):
+def validate_filters(filters: dict, kind: str | None = None):
     """
     Validates a filter dictionary against the defined FILTER_SCHEMA.
 
+    Args:
+        filters: The filter dictionary.
+        kind: "video" or "comment" to also reject fields that don't exist
+            on that kind of record. None checks the schema only.
+
     Raises:
-        ValueError: If a filter field or operator is invalid. Retired
-            pre-0.8.0 keys raise with migration guidance instead of a
-            plain unknown-field error.
-        TypeError: If a filter value has an incorrect type.
+        ValueError: If a filter field or operator is invalid, or the field
+            doesn't apply to ``kind``. Retired pre-0.8.0 keys raise with
+            migration guidance instead of a plain unknown-field error.
+        TypeError: If a filter value has an incorrect type for its field.
     """
     if not filters:
         return
@@ -103,8 +153,15 @@ def validate_filters(filters: dict):
         if field not in FILTER_SCHEMA:
             raise ValueError(f"Unknown filter field: '{field}'")
 
+        if kind is not None and field not in _FIELDS_BY_KIND[kind]:
+            raise ValueError(
+                f"Filter field '{field}' does not apply to {kind}s. "
+                f"Valid {kind} fields: {sorted(_FIELDS_BY_KIND[kind])}"
+            )
+
         schema = FILTER_SCHEMA[field]
         valid_operators = schema["operators"]
+        allowed_types = _VALUE_TYPES[schema["schema_type"]]
 
         if not isinstance(conditions, dict):
             raise TypeError(f"Filter for '{field}' must be a dictionary.")
@@ -113,20 +170,10 @@ def validate_filters(filters: dict):
             if op not in valid_operators:
                 raise ValueError(f"Invalid operator '{op}' for field '{field}'")
 
-            # Type check the value
-            value_type_valid = False
-            if field == "publish_date":
-                if isinstance(value, str | date | datetime):
-                    value_type_valid = True
-            elif op in TEXT_OPERATORS and isinstance(value, str):
-                value_type_valid = True
-            elif op in NUMERIC_OPERATORS and isinstance(value, int | float):
-                value_type_valid = True
-            elif op in LIST_OPERATORS and isinstance(value, list):
-                value_type_valid = True
-            elif op in BOOL_OPERATORS and isinstance(value, bool):
-                value_type_valid = True
-
+            # bool is an int subclass; True is not a view count.
+            value_type_valid = isinstance(value, allowed_types) and not (
+                schema["schema_type"] == "numerical" and isinstance(value, bool)
+            )
             if not value_type_valid:
                 raise TypeError(
                     f"Invalid value type for '{field}' filter. "

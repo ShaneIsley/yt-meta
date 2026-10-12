@@ -98,7 +98,7 @@ class CommentFetcher:
             raise ValueError(f"sort_by must be 'recent' or 'top', got {sort_by!r}")
         if since_date and sort_by != "recent":
             raise ValueError("`since_date` can only be used with `sort_by='recent'`")
-        validate_filters(filters)
+        validate_filters(filters, kind="comment")
         # C4: the documented unbounded spellings are None and -1. A
         # negative limit reaching the loop guard (`comment_count < limit`)
         # would be instantly False and silently yield nothing.
