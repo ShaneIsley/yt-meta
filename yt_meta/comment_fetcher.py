@@ -236,14 +236,14 @@ class CommentFetcher:
 
                     yield comment
 
+                if reached_since_date:
+                    break
+
                 # H4: tolerate N-1 consecutive all-duplicate pages
                 # before breaking. The previous unconditional break
                 # truncated results on any page that happened to
                 # land all-duplicates (legitimate for 'top' sort)
                 # AND masked H3's wrong-token bug.
-                if reached_since_date:
-                    break
-
                 if found_new_ids:
                     consecutive_empty_pages = 0
                 else:
