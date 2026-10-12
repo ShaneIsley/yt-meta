@@ -1,321 +1,188 @@
 # yt-meta
 
-A Python library for finding video and channel metadata from YouTube.
-
-## Purpose
-
-yt-meta collects metadata for YouTube videos, channels, playlists, comments, and transcripts. It handles the network requests, parsing, and pagination.
-
-## Architecture
-
-`yt-meta` uses a **Facade** pattern. The `YtMeta` class provides a unified interface for all fetching operations, delegating calls to specialized `Fetcher` classes.
-
--   **`VideoFetcher`**: Fetches single-video metadata (incl. availability status).
--   **`ChannelFetcher`**: Fetches channel metadata, the Videos / Shorts / Live (streams) tabs, and pagination.
--   **`PlaylistFetcher`**: Fetches playlist details.
--   **`CommentFetcher`**: Fetches comments and replies for videos.
--   **`TranscriptFetcher`**: Fetches video transcripts.
-
-The package ships type annotations (`py.typed`), so IDEs and type-checkers pick up signatures and return shapes.
+A Python library for reading metadata about YouTube videos, channels, playlists, comments and transcripts. It fetches YouTube's public web pages, parses them, and follows pagination for you. No API key is needed.
 
 ## Installation
 
-This project uses `uv` for package management. You can install `yt-meta` from PyPI:
+```bash
+pip install yt-meta
+```
+
+or, with uv:
 
 ```bash
 uv pip install yt-meta
 ```
 
-Persistent caching requires an optional dependency:
+The package ships type annotations (`py.typed`), so IDEs and type checkers see the signatures.
 
-```bash
-# For disk-based caching
-uv pip install "yt-meta[persistent_cache]"
-```
+## Quick start
 
-## Client Lifecycle
-
-`YtMeta` owns an HTTP session (and a SQLite connection when `cache_path` is set). Use it as a context manager, or call `close()` when done:
-
-```python
-from yt_meta import YtMeta
-
-with YtMeta(cache_path=".cache/yt.db") as client:
-    meta = client.get_video_metadata("dQw4w9WgXcQ")
-```
-
-Short scripts can skip this; the OS reclaims everything at exit. Long-running processes should close the client, and on Windows an open SQLite cache file stays locked until closed.
-
-## Core Features
-
-### 1. Get Video Metadata
-
-Fetches metadata for a specific YouTube video.
-
-**Example:**
-
-```python
-from yt_meta import YtMeta
-
-client = YtMeta()
-video_url = "https://www.youtube.com/watch?v=B68agR-OeJM"
-metadata = client.get_video_metadata(video_url)
-print(f"Title: {metadata['title']}")
-```
-
-### 2. Get Channel Metadata
-
-Fetches metadata for a specific YouTube channel.
-
-**Example:**
-
-```python
-from yt_meta import YtMeta
-
-client = YtMeta()
-channel_url = "https://www.youtube.com/@samwitteveenai"
-channel_metadata = client.get_channel_metadata(channel_url)
-print(f"Channel Name: {channel_metadata['title']}")
-```
-
-### 3. Get All Videos from a Channel
-
-Returns a generator that yields metadata for all videos on a channel's "Videos" tab, handling pagination automatically.
-
-**Example:**
 ```python
 import itertools
+
+from yt_meta import YtMeta
+
+with YtMeta() as client:
+    video = client.get_video_metadata("https://www.youtube.com/watch?v=B68agR-OeJM")
+    print(video["title"], video["view_count"])
+
+    for v in itertools.islice(client.get_channel_videos("https://www.youtube.com/@ArjanCodes"), 3):
+        print(v["publish_date_text"], v["title"])
+```
+
+`YtMeta` owns an HTTP session, and a SQLite connection when `cache_path` is set. Use it as a context manager or call `close()` when you're done. Short scripts can skip this, since everything is released at exit. Long-running processes should close the client, and on Windows an open SQLite cache file stays locked until it is closed. The remaining examples omit `close()` for brevity.
+
+Listing and comment methods return generators: nothing is fetched until you iterate, and pages are requested as you go. Arguments are checked when you call the method, so a mistake raises on that line.
+
+## Usage
+
+### Video metadata
+
+```python
 from yt_meta import YtMeta
 
 client = YtMeta()
-channel_url = "https://www.youtube.com/@AI-Makerspace/videos"
-videos_generator = client.get_channel_videos(channel_url)
-
-# Print the first 5 videos
-for video in itertools.islice(videos_generator, 5):
-    print(f"- {video['title']} (ID: {video['video_id']})")
+video = client.get_video_metadata("https://www.youtube.com/watch?v=B68agR-OeJM")
+print(video["title"], video["publish_date"], video["status"])
 ```
 
-### 4. Get All Videos from a Playlist
+Any URL form works: `watch?v=`, `youtu.be/`, `/shorts/`, `/live/` (with or without a `?si=` share parameter), or a bare 11-character id. Every result carries status fields (`status`, `status_reason`, `status_checked_at`, `status_changed_at`); see [`get_video_metadata`](#get_video_metadatayoutube_url--video_idnone-force_refreshfalse) for what they mean.
 
-Returns a generator that yields metadata for all videos in a playlist, handling pagination automatically.
+### Channel metadata
 
-**Example:**
+```python
+from yt_meta import YtMeta
+
+client = YtMeta()
+channel = client.get_channel_metadata("https://www.youtube.com/@samwitteveenai")
+print(channel["title"], channel["channel_id"])
+```
+
+### Channel videos
+
+`get_channel_videos` yields the channel's Videos tab, newest first, following pagination.
+
 ```python
 import itertools
+
+from yt_meta import YtMeta
+
+client = YtMeta()
+for video in itertools.islice(client.get_channel_videos("https://www.youtube.com/@AI-Makerspace"), 5):
+    print(f"- {video['title']} ({video['video_id']})")
+```
+
+Live, upcoming and past live streams are on a separate tab and are not included; use [`get_channel_streams`](#live-streams).
+
+### Shorts
+
+`get_channel_shorts` yields the Shorts tab. The listing carries only `title` and `view_count`; pass `fetch_full_metadata=True` for everything else, at one extra request per Short.
+
+```python
+import itertools
+
+from yt_meta import YtMeta
+
+client = YtMeta()
+shorts = client.get_channel_shorts("https://www.youtube.com/@bashbunni", fetch_full_metadata=True)
+for short in itertools.islice(shorts, 3):
+    print(f"- {short['title']} ({short['like_count']} likes, {short['publish_date']:%Y-%m-%d})")
+```
+
+### Live streams
+
+`get_channel_streams` yields the channel's Live (`/streams`) tab: live, upcoming and past streams. Items have the same shape as channel videos. Upcoming streams have `is_upcoming=True` and `scheduled_text` (the listing's "Scheduled for …" text); pass `fetch_full_metadata=True` for the exact `scheduled_start_time` and `status`.
+
+```python
+import itertools
+
+from yt_meta import YtMeta
+
+client = YtMeta()
+for stream in itertools.islice(client.get_channel_streams("https://www.youtube.com/@AppleDeveloper"), 3):
+    print(stream["title"], stream["is_upcoming"], stream["publish_date_text"] or stream["scheduled_text"])
+```
+
+### Playlists
+
+```python
+import itertools
+
 from yt_meta import YtMeta
 
 client = YtMeta()
 playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"
-videos_generator = client.get_playlist_videos(playlist_id)
-
-# Print the first 5 videos
-for video in itertools.islice(videos_generator, 5):
-    print(f"- {video['title']} (ID: {video['video_id']})")
+print(client.get_playlist_metadata(playlist_id)["title"])
+for video in itertools.islice(client.get_playlist_videos(playlist_id), 5):
+    print(f"- {video['title']} ({video['video_id']})")
 ```
 
-### 5. Get All Shorts from a Channel
+### Comments
 
-You can fetch all Shorts from a channel. Both a fast path (basic metadata) and a slow path (full metadata) are supported.
-
-**Fast Path Example:**
-
-The fast path is the most efficient way to list shorts, but provides limited metadata.
+`get_video_comments` yields top-level comments. `sort_by='recent'` (the default for every comment method) is chronological, which `since_date` relies on. It is YouTube's "Newest" view, which YouTube says can include spam. `sort_by='top'` is YouTube's ranked view, the one the site shows by default.
 
 ```python
-import itertools
 from yt_meta import YtMeta
 
 client = YtMeta()
-channel_url = "https://www.youtube.com/@bashbunni"
-shorts_generator = client.get_channel_shorts(channel_url)
-
-# Print the first 5 shorts
-for short in itertools.islice(shorts_generator, 5):
-    print(f"- {short['title']} (ID: {short['video_id']})")
+for comment in client.get_video_comments("https://www.youtube.com/watch?v=B68agR-OeJM", limit=5):
+    print(f"- {comment['author']}: {comment['text'][:80]} ({comment['like_count']} likes)")
 ```
 
-**Slow Path Example (Full Metadata):**
+Pass `since_date` to get only comments posted on or after a date. Fetching stops at the first comment older than the cutoff, so it also limits the number of requests. Pinned comments are skipped by that check, since YouTube pins them to the top regardless of age.
 
-Set `fetch_full_metadata=True` to retrieve all details for each short, such as `like_count` and `publish_date`.
-
-```python
-import itertools
-from yt_meta import YtMeta
-
-client = YtMeta()
-channel_url = "https://www.youtube.com/@bashbunni"
-shorts_generator = client.get_channel_shorts(
-    channel_url,
-    fetch_full_metadata=True
-)
-
-# Print the first 5 shorts with full metadata
-for short in itertools.islice(shorts_generator, 5):
-    likes = short.get('like_count', 'N/A')
-    print(f"- {short['title']} (Likes: {likes})")
-```
-
-> **Streams live on a separate tab.** Live, upcoming, and past live streams are on the channel's **Live (`/streams`) tab**, which `get_channel_videos` does not include. Use `get_channel_streams(channel_url)` for those; it yields the same item shape, with `is_upcoming` and `scheduled_text` on scheduled items.
-
-### 6. Get Video Comments
-
-Fetches comments for a given video, sorted by **"Most Recent"** (`sort_by='recent'`, the default) or **"Top comments"** (`sort_by='top'`). Returns a generator yielding standardized comment data.
-
-`'recent'` is the default for every comment method because it is chronological, which `since_date` relies on. It is YouTube's "Newest" view, which YouTube describes as including potential spam; `'top'` is the ranked view the YouTube site shows by default.
-
-**Example:**
-
-```python
-import itertools
-from yt_meta import YtMeta
-
-client = YtMeta()
-video_url = "https://www.youtube.com/watch?v=B68agR-OeJM"
-
-# Fetch the 5 most recent comments
-print("--- Most Recent Comments ---")
-recent_comments = client.get_video_comments(
-    video_url,
-    sort_by='recent', # or 'top'
-    limit=5
-)
-for comment in recent_comments:
-    print(f"- Text: '{comment['text'][:80]}...'")
-    print(f"  - Author: {comment['author']} (Channel ID: {comment['author_channel_id']})")
-    print(f"  - Replies: {comment['reply_count']} | Is Reply: {comment['is_reply']}")
-
-# Fetch the 5 top comments
-print("\n--- Top Comments ---")
-top_comments = client.get_video_comments(
-    video_url,
-    sort_by='top',
-    limit=5
-)
-for comment in top_comments:
-    print(f"- Text: '{comment['text'][:80]}...'")
-    print(f"  - Author: {comment['author']} (Likes: {comment['like_count']})")
-    print(f"  - Replies: {comment['reply_count']} | Is Reply: {comment['is_reply']}")
-```
-
-#### Fetching Comments Since a Specific Date
-
-Pass the `since_date` parameter to fetch comments posted after a specific date. This feature **requires `sort_by='recent'`**. The library fetches comment pages until it finds one older than the target date, then stops to minimize network requests.
-
-**Example:**
 ```python
 from datetime import date, timedelta
+
 from yt_meta import YtMeta
 
 client = YtMeta()
-video_url = "https://www.youtube.com/watch?v=B68agR-OeJM"
-
-# Get comments from the last 30 days
-thirty_days_ago = date.today() - timedelta(days=30)
-
-recent_comments = client.get_video_comments(
-    video_url,
-    sort_by='recent',
-    since_date=thirty_days_ago,
-    limit=500 # The fetch will stop before this if all recent comments are found
+comments = client.get_video_comments(
+    "https://www.youtube.com/watch?v=B68agR-OeJM",
+    since_date=date.today() - timedelta(days=30),
+    limit=None,  # unbounded is allowed because since_date caps the fetch
 )
-
-for comment in recent_comments:
-    print(f"- {comment['publish_date']}: {comment['text'][:80]}...")
+for comment in comments:
+    print(f"- {comment['publish_date']}: {comment['text'][:80]}")
 ```
 
-### 7. Get Video Transcript
+Comment dates are always approximate: YouTube only shows relative text ("3 days ago") for them.
 
-Fetches the transcript (subtitles) for a given video. Specify preferred languages; the client returns the first available match.
+#### Replies
 
-**Example:**
+`get_comment_threads` yields `(comment, replies)` pairs. `replies_per_thread` caps the replies fetched per thread; `0` skips reply requests. YouTube's reply count can be higher than the replies it serves (it counts held or removed replies), so treat `reply_count` as an upper bound.
+
 ```python
 from yt_meta import YtMeta
 
 client = YtMeta()
-video_id = "dQw4w9WgXcQ"
-
-# Fetch the default transcript
-transcript = client.get_video_transcript(video_id)
-if transcript:
-    print("Transcript found. Showing the first 5 snippets:")
-    for snippet in transcript[:5]:
-        start_time = snippet["start"]
-        text = snippet["text"].replace("\\n", " ")
-        print(f"- [{start_time:.2f}s] {text}")
-else:
-    print("No transcript found.")
-
-# Fetch a transcript in a specific language (e.g., Spanish)
-# The client will try 'es' first, then fall back to 'en' if Spanish is not available.
-print("\n--- Attempting to fetch Spanish transcript ---")
-spanish_transcript = client.get_video_transcript(video_id, languages=['es', 'en'])
-if spanish_transcript:
-    print("Transcript found. Showing the first 5 snippets of the best available match:")
-    for snippet in spanish_transcript[:5]:
-        start_time = snippet["start"]
-        text = snippet["text"].replace("\\n", " ")
-        print(f"- [{start_time:.2f}s] {text}")
-else:
-    print("No transcript found for the specified languages.")
+for comment, replies in client.get_comment_threads(
+    "https://www.youtube.com/watch?v=B68agR-OeJM", limit=5, replies_per_thread=3
+):
+    print(comment["author"], f"({comment['reply_count']} replies)")
+    for reply in replies:
+        print("  reply:", reply["author"])
 ```
 
-## Caching
+For manual control, `get_video_comments_with_reply_tokens` adds a `reply_continuation_token` to each comment that has replies, and `get_comment_replies` fetches them.
 
-Caching avoids re-fetching data from YouTube.
+### Transcripts
 
-### Caching Is Off by Default
-
-`YtMeta()` does not cache anything by default; every call hits the network. To enable caching, pass `cache=` (any dict-like object) or `cache_path=` (the built-in SQLite cache):
+`get_video_transcript` returns `{text, start, duration}` snippets in the first available language from `languages` (default `["en"]`). It returns `[]` when the video has no transcript in those languages; other failures, such as rate limiting, raise.
 
 ```python
 from yt_meta import YtMeta
 
-# In-memory cache: lasts for the lifetime of the client instance.
-client = YtMeta(cache={})
-# First call fetches from the network.
-meta1 = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
-# Second call is served from the cache.
-meta2 = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
+client = YtMeta()
+transcript = client.get_video_transcript("dQw4w9WgXcQ", languages=["es", "en"])
+for snippet in transcript[:5]:
+    print(f"[{snippet['start']:.2f}s] {snippet['text'].replace(chr(10), ' ')}")
 ```
 
-Enable caching if you call the same endpoints repeatedly (loops, notebooks, retries).
+### New videos since the last run
 
-### Persistent Caching
-
-To cache results across runs, pass a persistent dictionary-like object to the client. The library provides an optional `diskcache` integration.
-
-Install the optional extra:
-```bash
-uv pip install "yt-meta[persistent_cache]"
-```
-
-Then, instantiate a `diskcache.Cache` object and pass it to the client:
-
-```python
-from yt_meta import YtMeta
-from diskcache import Cache
-
-# The cache object can be any dict-like object.
-# Here, we use diskcache for a persistent, file-based cache.
-persistent_cache = Cache(".my_yt_meta_cache")
-
-client = YtMeta(cache=persistent_cache)
-
-# The first time this script runs, it will be slow (fetches from network).
-# Subsequent runs will be very fast, reading directly from the disk cache.
-metadata = client.get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
-```
-
-Any object implementing the `MutableMapping` protocol (e.g., `__getitem__`, `__setitem__`, `__delitem__`) works as a cache via the `cache=` kwarg: a plain `dict` for in-memory, `diskcache.Cache` for disk-backed, or `sqlitedict.SqliteDict` if you install sqlitedict yourself. See `examples/features/19_alternative_caching_sqlite.py` for the built-in SQLite path via `cache_path=`.
-
-## Workflow Helpers
-
-Three helpers cover common multi-step workflows (added in 0.8.0).
-
-### Incremental Sync: `iter_new_videos`
-
-Yields a channel's videos newest-first and stops before `since_video_id`, so you get only the videos published since your last run. Pagination also stops at the marker, keeping request cost proportional to the number of new videos. The first yielded video's id is the new high-water mark.
+`iter_new_videos` yields a channel's videos newest first and stops before `since_video_id`, the newest id you saw last time. Pagination stops at the marker too, so the cost is proportional to the number of new videos. Save the first yielded id for the next run.
 
 ```python
 from yt_meta import YtMeta
@@ -324,18 +191,18 @@ client = YtMeta()
 last_seen_id = "pRiu3lxPZAw"  # saved from a previous run
 
 new = list(client.iter_new_videos(
-    "https://www.youtube.com/@TED",
+    "https://www.youtube.com/@ArjanCodes",
     since_video_id=last_seen_id,
-    max_videos=50,  # safety cap in case the marker is gone
+    max_videos=50,  # safety cap in case the marker video was deleted
 ))
 if new:
-    last_seen_id = new[0]["video_id"]  # persist for the next run
+    last_seen_id = new[0]["video_id"]
 print(f"{len(new)} new videos")
 ```
 
-### Exact Date Windows: `get_videos_published_between`
+### Videos published in an exact window
 
-Returns videos published in an exact window, including hour-level `datetime` bounds. It binary-searches the chronological listing with probe fetches (about 2·log₂(n) requests) instead of fetching full metadata for every video near the window, which for a year-old target on a daily channel would be several hundred requests. Yielded videos carry full metadata with `publish_date_precision == "exact"`.
+`get_videos_published_between` returns the videos published in a date or hour window, with exact dates. A plain date filter with `fetch_full_metadata=True` would fetch every video near the window, which can be hundreds of requests on a busy channel. This method binary-searches the listing instead, at about 2·log₂(n) full-metadata requests, then fetches only the videos inside the window.
 
 ```python
 from datetime import date, timedelta
@@ -344,345 +211,296 @@ from yt_meta import YtMeta
 
 client = YtMeta()
 videos = client.get_videos_published_between(
-    "https://www.youtube.com/@TED",
-    start_date=date.today() - timedelta(days=7),
+    "https://www.youtube.com/@ArjanCodes",
+    start_date=date.today() - timedelta(days=30),
     end_date=date.today(),
 )
 for v in videos:
     print(v["publish_date"], v["title"])
 ```
 
-Bounds may also be `datetime` values for hour-level windows, e.g. `start_date=datetime(2023, 7, 5, 7, 30)`.
+Bounds may be `datetime` values for hour-level windows, for example `start_date=datetime(2026, 7, 5, 7, 30)`.
 
-### Comment Hierarchies: `get_comment_threads`
+## Filtering
 
-Yields `(comment, replies)` tuples, wrapping `get_video_comments_with_reply_tokens` and `get_comment_replies`. `replies_per_thread` caps the replies fetched per thread; `0` skips reply fetching. Threads come newest first by default, like every comment method; pass `sort_by='top'` for YouTube's ranking, where threads with replies tend to come first.
-
-```python
-from yt_meta import YtMeta
-
-client = YtMeta()
-video_url = "https://www.youtube.com/watch?v=jNQXAC9IVRw"
-
-for comment, replies in client.get_comment_threads(
-    video_url, limit=5, replies_per_thread=3
-):
-    print(comment["author"], f"({comment['reply_count']} replies)")
-    for r in replies:
-        print("  reply:", r["author"])
-```
-
-## Advanced Features
-
-### Filtering Videos, Shorts, and Comments
-
-The `filters` argument selects items matching specific criteria. Video filters work on `get_channel_videos`, `get_channel_shorts`, `get_channel_streams` and `get_playlist_videos`; comment filters work on `get_video_comments`, `get_video_comments_with_reply_tokens` and `get_comment_threads`.
-
-#### Filter Validation
-`yt-meta` validates your `filters` dictionary when you call the method, before any network request. An unknown field, an invalid operator, or a field that doesn't exist on that kind of record (for example `is_reply` on `get_channel_videos`) raises `ValueError`; a value of the wrong type for its field (for example `{"view_count": {"eq": "100"}}`) raises `TypeError`.
-
-Typos fail immediately instead of after a slow query. See `examples/features/23_filter_validation.py` for a demonstration.
-
-#### Two-Stage Filtering: Fast vs. Slow
-
-Filtering for videos and shorts runs in two stages:
-
-*   **Fast filters** use metadata already present on the listing page (e.g. `title`, `view_count`) and cost no extra requests.
-*   **Slow filters** need full metadata, fetched with one extra request per item, and run only on items that passed the fast filters.
-
-The client automatically detects when a slow filter is used and sets `fetch_full_metadata=True` for you.
-
-> [!NOTE]
-> Comment filtering does not use the fast/slow system. All comment filters apply after fetching comment data.
-
-#### Approximate vs. Exact Publish Dates
-
-Every dated record carries two provenance fields alongside `publish_date`:
-
-- `publish_date_precision`: `"exact"` (the watch page's `microformat.publishDate`; a timezone-aware upload timestamp) or `"approximate"` (parsed from the listing's relative text, i.e. query time minus "2 years ago").
-- `publish_date_text`: the relative text the date was parsed from. For listings this is the long form from YouTube's accessibility label (`"11 days ago"`, `"Streamed 3 weeks ago"`), not the compact text the page shows (`"11d ago"`). Comments keep YouTube's text, including `"(edited)"` markers. Kept after `fetch_full_metadata=True` replaces the date with the exact one.
-
-The time-of-day on an approximate date is meaningless, and its rounding error grows with age, up to about six months at year granularity. Approximate datetimes are also timezone-naive, so do not subtract one from an exact (timezone-aware) date. Comment dates are always approximate; relative text is all YouTube serves for them.
-
-Filtering rules:
-
-- `datetime` bounds (hour-level) on `publish_date` require `fetch_full_metadata=True` and compare against exact dates, with naive bounds matching wall-clock time. Without full metadata they raise `ValueError`.
-- Bare `date` bounds compare calendar days everywhere.
-- With full metadata enabled, approximate dates act only as a coarse pre-filter, padded by their own rounding error, and the exact date decides membership. The pagination early-stop is padded the same way, so videos near the window boundary are not dropped before their exact date is known.
-
-#### Missing-field semantics
-
-A filter on a field that is missing or `None` for a video drops that video; it cannot match. This is usually what you want (`publish_date >= 2023` should not include videos with no publish date), but it can surprise. Enable `logging.DEBUG` on the `yt_meta.filtering` logger to see each drop with the video id and the missing field. See M6 in the v0.6.0 CHANGELOG.
-
-#### Supported Fields and Operators
-
-The following table lists supported fields and their valid operators. Validation enforces these rules.
-
-| Field                 | Supported Operators              | Content Type(s)                                             | Filter Speed |
-| :-------------------- | :------------------------------- | :---------------------------------------------------------- | :----------- |
-| `title`               | `contains`, `re`, `eq`           | Video, Short                                                | Fast         |
-| `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
-| `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast (Video), **Slow** (Short) |
-| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`, `after`, `before` | Video, Short, Comment                        | Fast (Video, Playlist), **Slow** (Short) |
-| `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | **Slow**     |
-| `category`            | `contains`, `re`, `eq`           | Video, Short                                                | **Slow**     |
-| `keywords`            | `contains_any`, `contains_all` | Video, Short                                                | **Slow**     |
-| `full_description`    | `contains`, `re`, `eq`           | Video                                                       | **Slow**     |
-| `text`                | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
-| `author`              | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
-| `author_channel_id`   | `contains`, `re`, `eq`           | Comment                                                     | N/A          |
-| `reply_count`         | `gt`, `gte`, `lt`, `lte`, `eq`   | Comment                                                     | N/A          |
-| `is_creator`          | `eq`                             | Comment                                                     | N/A          |
-| `is_reply`            | `eq`                             | Comment                                                     | N/A          |
-| `is_hearted`          | `eq`                             | Comment                                                     | N/A          |
-| `is_pinned`           | `eq`                             | Comment                                                     | N/A          |
-
-> [!NOTE]
-> `publish_date` is fast for channel videos and playlists but slow for shorts, whose listing pages carry no date. Fast dates are approximate (parsed from the listing's relative text); pass `fetch_full_metadata=True` when you need precision.
-
-> [!NOTE]
-> Comment filter keys were renamed in 0.8.0 to match the keys on the comment dicts: `channel_id` → `author_channel_id`, `is_by_owner` → `is_creator`, `is_hearted_by_owner` → `is_hearted`. The old names matched nothing and returned zero comments. `is_pinned` is new. `description_snippet` was removed; use `full_description` (slow) instead.
-
-#### Example: Basic Filtering (Fast)
-
-Both `view_count` and `duration_seconds` are fast filters, so this query needs no per-video requests.
+`filters` selects items by field. Video filters work on `get_channel_videos`, `get_channel_shorts`, `get_channel_streams` and `get_playlist_videos`. Comment filters work on `get_video_comments`, `get_video_comments_with_reply_tokens` and `get_comment_threads`. Each field maps to a dictionary of operator and value:
 
 ```python
 import itertools
+
 from yt_meta import YtMeta
 
 client = YtMeta()
-channel_url = "https://www.youtube.com/@TED/videos"
-
-# Find videos over 1M views AND shorter than 5 minutes (300s)
-adv_filters = {
-    "view_count": {"gt": 1_000_000},
-    "duration_seconds": {"lt": 300}
+filters = {
+    "view_count": {"gt": 20_000},
+    "duration_seconds": {"lt": 15 * 60},
 }
-
-# This is fast because both view_count and duration are available
-# in the basic metadata returned from the main channel page.
-videos = client.get_channel_videos(
-    channel_url,
-    filters=adv_filters
-)
-
+videos = client.get_channel_videos("https://www.youtube.com/@ArjanCodes", filters=filters)
 for video in itertools.islice(videos, 5):
-    views = video.get('view_count', 0)
-    duration = video.get('duration_seconds', 0)
-    print(f"- {video.get('title')} ({views:,} views, {duration}s)")
+    print(f"- {video['title']} ({video['view_count']:,} views, {video['duration_seconds']}s)")
 ```
 
-#### Example: Filtering by Date
+### Fields and operators
 
-The easiest way to filter by date is to use the `start_date` and `end_date` arguments. The library also optimizes this for channels by stopping the search early once videos are older than the specified `start_date`.
+| Field | Operators | Applies to | Speed |
+| :-- | :-- | :-- | :-- |
+| `title` | `contains`, `re`, `eq` | Video, Short | Fast |
+| `view_count` | `gt`, `gte`, `lt`, `lte`, `eq` | Video, Short | Fast |
+| `duration_seconds` | `gt`, `gte`, `lt`, `lte`, `eq` | Video, Short | Fast for videos, slow for Shorts |
+| `publish_date` | `gt`, `gte`, `lt`, `lte`, `eq`, `after`, `before` | Video, Short, Comment | Fast for videos and playlists, slow for Shorts |
+| `like_count` | `gt`, `gte`, `lt`, `lte`, `eq` | Video, Short, Comment | Slow |
+| `category` | `contains`, `re`, `eq` | Video, Short | Slow |
+| `keywords` | `contains_any`, `contains_all` | Video, Short | Slow |
+| `full_description` | `contains`, `re`, `eq` | Video | Slow |
+| `text` | `contains`, `re`, `eq` | Comment | |
+| `author` | `contains`, `re`, `eq` | Comment | |
+| `author_channel_id` | `contains`, `re`, `eq` | Comment | |
+| `reply_count` | `gt`, `gte`, `lt`, `lte`, `eq` | Comment | |
+| `is_creator`, `is_reply`, `is_hearted`, `is_pinned` | `eq` | Comment | |
 
-You can provide `datetime.date` objects or a relative date string (e.g., `"30d"`, `"6 months ago"`).
+Fast filters use what the listing page already shows and cost nothing extra. Slow filters need each item's full metadata, one extra request per item, and run only on items that passed the fast filters. Using a slow filter turns on `fetch_full_metadata` automatically. Comment filters run on the fetched comments and never cost extra requests; use `since_date` to limit how many are fetched.
 
-**Using `datetime.date` objects:**
+Filters are checked when you call the method, before any request. An unknown field or operator, or a field that doesn't exist on that kind of record (such as `is_reply` on `get_channel_videos`), raises `ValueError`. A value of the wrong type for its field (such as `{"view_count": {"eq": "100"}}`) raises `TypeError`. See `examples/features/23_filter_validation.py`.
+
+### Dates
+
+The simplest date filter is `start_date` and `end_date`. They accept `date` objects, `"YYYY-MM-DD"` strings and relative strings such as `"30d"` or `"6 months ago"`. On channel videos, pagination stops once the listing passes `start_date`.
 
 ```python
-from datetime import date
-from yt_meta import YtMeta
 import itertools
 
+from yt_meta import YtMeta
+
 client = YtMeta()
-channel_url = "https://www.youtube.com/@samwitteveenai/videos"
-
-# Get videos from a specific window
-start = date(2024, 1, 1)
-end = date(2024, 3, 31)
-
-videos = client.get_channel_videos(
-    channel_url,
-    start_date=start,
-    end_date=end
-)
-
+videos = client.get_channel_videos("https://www.youtube.com/@samwitteveenai", start_date="6 months ago")
 for video in itertools.islice(videos, 5):
-    p_date = video.get('publish_date', 'N/A')
-    print(f"- {video.get('title')} (Published: {p_date})")
+    print(f"- {video['title']} ({video['publish_date_text']})")
 ```
 
-**Using relative date strings:**
+A `publish_date` condition in `filters` does the same with any operator; `start_date` and `end_date`, when given, replace the bound on their side.
+
+Each dated record says how precise its date is:
+
+- `publish_date_precision` is `"exact"` when the date comes from the video's own page (a timezone-aware upload time), or `"approximate"` when it was parsed from relative listing text ("2 years ago").
+- `publish_date_text` is the relative text the date came from. For listings it is the long form YouTube gives screen readers (`"11 days ago"`, `"Streamed 3 weeks ago"`), not the compact text the page shows (`"11d ago"`). Comments keep YouTube's text, including `"(edited)"`. It is kept when `fetch_full_metadata=True` replaces the date with the exact one.
+
+An approximate date's time of day is meaningless, and its error grows with age, up to about six months for "N years ago". Approximate datetimes have no timezone, so don't subtract one from an exact, timezone-aware date.
+
+The rules:
+
+- `date` bounds compare calendar days.
+- `datetime` bounds compare exact times and need `fetch_full_metadata=True`; without it they raise `ValueError`. A bound without a timezone is compared with the video's local wall-clock time.
+- With `fetch_full_metadata=True`, approximate dates are only a pre-filter, widened by their possible error, and the exact date decides. Pagination stops with the same allowance, so videos near the edge of the window are not missed.
+- Playlists may not be in date order, so date filters scan the whole playlist. An item whose listing has no date is dropped, unless you pass `fetch_full_metadata=True`, in which case its exact date is checked instead.
+- The Shorts listing has no dates, so any date filter on `get_channel_shorts` fetches full metadata for each Short.
+
+### Missing fields
+
+A filter on a field that is missing or `None` for an item drops that item. `publish_date >= 2023` should not include videos with no date, but it can be surprising. Set the `yt_meta.filtering` logger to `DEBUG` to see each dropped item with its id and the missing field.
+
+### Renamed comment fields
+
+0.8.0 renamed comment filter fields to match the keys on comment records: `channel_id` became `author_channel_id`, `is_by_owner` became `is_creator`, and `is_hearted_by_owner` became `is_hearted`. The old names raise `ValueError` with the new name. `description_snippet` was removed; use `full_description` (slow) instead.
+
+## Caching
+
+`YtMeta()` caches nothing by default: every call goes to YouTube. Turn caching on when you request the same things repeatedly, in loops, notebooks or scheduled jobs.
+
+| Option | How | Lasts | Notes |
+| :-- | :-- | :-- | :-- |
+| In memory | `YtMeta(cache={})` | The client's lifetime | Any `dict` works. |
+| Built-in SQLite (recommended for persistence) | `YtMeta(cache_path="cache/yt.db")` | Until the entry's TTL expires (`cache_ttl_seconds`, default one day) | Stored as JSON. Safe to share between threads. |
+| Your own store | `YtMeta(cache=obj)` | Up to `obj` | Any `MutableMapping`, such as `diskcache.Cache` or `sqlitedict.SqliteDict`. |
 
 ```python
 from yt_meta import YtMeta
-import itertools
 
-client = YtMeta()
-channel_url = "https://www.youtube.com/@samwitteveenai/videos"
-
-recent_videos = client.get_channel_videos(
-    channel_url,
-    start_date="6 months ago"
-)
-
-for video in itertools.islice(recent_videos, 5):
-    p_date = video.get('publish_date', 'N/A')
-    print(f"- {video.get('title')} (Published: {p_date})")
+with YtMeta(cache_path=".cache/yt.db") as client:
+    client.get_video_metadata("dQw4w9WgXcQ")  # fetched from YouTube
+    client.get_video_metadata("dQw4w9WgXcQ")  # read from the cache
 ```
 
-> **Important Note on Playlist Filtering:**
-> Playlists may not be chronological, so date filters scan the whole playlist; there is no early-stop as with channel videos. The date comes from the listing's relative text, with no per-video fetch unless you pass `fetch_full_metadata=True`. If a listing item lacks a date, it is dropped, unless you pass `fetch_full_metadata=True`, in which case its full-metadata date is checked instead.
+Pass `force_refresh=True` to a method to skip the cache for that call, for example to re-check whether a video is still available. `clear_cache()` empties the cache; `clear_cache(prefix="video_meta:")` removes only cached video metadata.
 
-> **Important Note on Shorts Filtering:**
-> The Shorts feed provides no publish date on its fast path, so any date filter on `get_channel_shorts` triggers the full metadata fetch for each short.
+To use `diskcache`, install the extra and pass a `Cache`. It stores values with pickle, so keep its directory private:
+
+```bash
+pip install "yt-meta[persistent_cache]"
+```
+
+```python
+from diskcache import Cache
+
+from yt_meta import YtMeta
+
+client = YtMeta(cache=Cache(".my_yt_meta_cache"))
+client.get_video_metadata("dQw4w9WgXcQ")
+```
 
 ## Logging
 
-`yt-meta` uses Python's `logging` module. Configure a basic logger to see log output.
+yt-meta logs through Python's `logging` module under the `yt_meta` logger: requests at `INFO`, recoverable problems (a skipped video, an unparseable comment date, a fallback sort order) at `WARNING`.
 
-**Example:**
 ```python
 import logging
 
-# Configure logging to print INFO-level messages
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# Now, when you use the client, you will see logs
-# ...
+logging.basicConfig(level=logging.INFO, format="%(name)s %(levelname)s %(message)s")
+logging.getLogger("yt_meta.filtering").setLevel(logging.DEBUG)  # see why items were filtered out
 ```
 
-## API Reference
+## Errors
 
-### `YtMeta(cache_path=None, cache=None, cache_ttl_seconds=86400, accept_cookies=False)`
-
-The main client for interacting with the library. Handles session management and delegates work to specialized fetcher classes.
-
--   **`cache_path`**: Optional path to a SQLite file for persistent on-disk caching. The library opens and manages the file.
--   **`cache`**: Optional pre-built `MutableMapping` (e.g. a plain `dict` for in-memory caching, or a `diskcache.Cache` / `sqlitedict` instance for persistent). Takes precedence over `cache_path`. If both are `None`, caching is disabled.
--   **`cache_ttl_seconds`**: TTL (seconds) for entries in the built-in SQLite cache. Default `86400` (1 day). Ignored when you inject your own `cache`.
--   **`accept_cookies`**: Opt in to bypassing YouTube's EU cookie-consent wall. Default `False` (no consent cookie is set). If a call fails with a `302` redirect to `consent.youtube.com` (region-gated, e.g. the EU), construct the client with `YtMeta(accept_cookies=True)`; a `SOCS` consent cookie is then set on the session so YouTube serves content directly. It is opt-in because it accepts YouTube's cookies on your behalf.
-
-#### `get_video_metadata(youtube_url, *, video_id=None, force_refresh=False) -> dict | None`
-Fetches metadata for a single YouTube video.
--   **`youtube_url`** / **`video_id`**: The video URL or a bare id (either keyword works).
--   **`force_refresh`**: Re-fetch even on a cache hit; use it to re-check a video's availability and pick up status changes.
--   **Returns**: A dictionary containing `title`, `view_count`, `like_count`, `publish_date` (a timezone-aware `datetime`, `publish_date_precision == "exact"`), `category`, etc., **plus video-status lifecycle fields** (see below). Returns `None` only when the page yields no player response at all.
--   **Raises**: `VideoUnavailableError` if the HTTP fetch itself fails (network error, 404, rate-limit). A video that is *parsed but unavailable* is reported via the `status` field, not an exception.
-
-**Video status fields** (on every returned dict):
-
-| Field | Meaning |
-| --- | --- |
-| `status` | `"ok"`, `"upcoming"` (scheduled premiere / live event not started), or `"unavailable"`. |
-| `status_reason` | YouTube's reason text when not `ok` (e.g. `"Video unavailable"`, `"This live event will begin in 2 days."`), else `None`. |
-| `status_checked_at` | ISO-8601 UTC time of the last availability check. |
-| `status_changed_at` | ISO-8601 UTC time the status last changed (first sighting == `status_checked_at`). |
-| `is_live` | `True` only while *currently* streaming. |
-| `is_upcoming` | `True` for a scheduled premiere / live event not started. |
-| `scheduled_start_time` | ISO-8601 start time for an upcoming stream, else `None`. |
-
-URLs accepted everywhere include the `/live/<id>` form (with optional `?si=` share param) used for live streams and premieres.
-
-When a previously-`ok` video is found `unavailable` (e.g. deleted), the result keeps the last-known-good content fields (title, channel, counts) and overlays the status fields, so prior data is not lost. Combine with `force_refresh=True` and a persistent cache to track a video's lifecycle.
-
-#### `get_video_comments(youtube_url: str, limit: int | None = 100, sort_by: str = 'recent', progress_callback=None, since_date=None, filters: dict | None = None) -> Generator[dict, None, None]`
-Fetches comments for a specific YouTube video.
--   **`youtube_url`**: The full URL of the YouTube video (any of `watch?v=...`, `youtu.be/...`, `/shorts/...`, or a bare 11-char id).
--   **`limit`**: Max comments to fetch. Defaults to `100`. Pass `None` or `-1` for unbounded; `since_date` is then required, to cap the request count on popular videos.
--   **`sort_by`**: `'recent'` (default; chronological, required for the `since_date` short-circuit) or `'top'` (YouTube's ranking).
--   **`since_date`**: A `date`, `datetime`, `'YYYY-MM-DD'` string, or relative string (`'2 weeks ago'`, `'30d'`). The only filter that short-circuits pagination: with `sort_by='recent'`, fetching stops at the first comment older than the cutoff. With `sort_by='top'` it raises `ValueError`.
--   **`filters`**: Comment-level predicates applied after fetch (see the filter table above). They filter the fetched comments in memory and do not reduce request count. Use `since_date` for that.
--   **Returns**: A generator that yields a standardized dictionary for each comment.
-
-#### `get_channel_metadata(channel_url: str) -> dict`
-Fetches metadata for a specific channel. Results are cached when the client has a cache configured; pass `force_refresh=True` to bypass it.
--   **`channel_url`**: The URL of the channel.
--   **Returns**: A dictionary with channel metadata: `title`, `description`, `channel_id`, `vanity_url`, `keywords`, `is_family_safe`.
--   **Raises**: `VideoUnavailableError`, `MetadataParsingError`.
-
-#### `get_channel_streams(channel_url, ..., fetch_full_metadata=False, stop_at_video_id=None, max_videos=-1) -> Generator[dict, None, None]`
-Yields items from a channel's Live (`/streams`) tab: live, upcoming/scheduled, and past live streams. This tab is separate from Videos, so `get_channel_videos` does not include streams. Items use the same shape as `get_channel_videos`; upcoming streams carry `is_upcoming=True` and `scheduled_text` (the listing's "Scheduled for …"). Pass `fetch_full_metadata=True` for the precise `scheduled_start_time` and `status` per stream.
-
-#### `get_video_comments_with_reply_tokens(youtube_url, ..., sort_by='recent', since_date=None, filters=None) -> Generator[dict, None, None]`
-Like `get_video_comments`, but each comment that has replies also carries a `reply_continuation_token` you can pass to `get_comment_replies`.
-
-#### `get_comment_replies(youtube_url, reply_continuation_token, limit=100, *, video_id=None) -> Generator[dict, None, None]`
-Yields the replies for a single comment thread, identified by a `reply_continuation_token` obtained from `get_video_comments_with_reply_tokens`.
-
-#### `get_channel_videos(channel_url: str, ..., stop_at_video_id: str = None, max_videos: int = -1) -> Generator[dict, None, None]`
-Yields metadata for videos from a channel.
--   **`start_date`**: The earliest date for videos to include (e.g., `date(2023, 1, 1)` or `"30d"`).
--   **`end_date`**: The latest date for videos to include.
--   **`fetch_full_metadata`**: If `True`, fetches detailed metadata for every video. Automatically enabled if a "slow filter" is used.
--   **`filters`**: A dictionary of advanced filter conditions (see above).
--   **`stop_at_video_id`**: Stops fetching when this video ID is found.
--   **`max_videos`**: The maximum number of videos to return.
-
-#### `get_playlist_videos(playlist_id: str, ..., stop_at_video_id: str = None, max_videos: int = -1) -> Generator[dict, None, None]`
-Yields metadata for videos from a playlist.
--   **`start_date`**: The earliest date for videos to include (e.g., `date(2023, 1, 1)` or `"30d"`).
--   **`end_date`**: The latest date for videos to include.
--   **`fetch_full_metadata`**: If `True`, fetches detailed metadata for every video.
--   **`filters`**: A dictionary of advanced filter conditions.
--   **`stop_at_video_id`**: Stops fetching when this video ID is found.
--   **`max_videos`**: The maximum number of videos to return.
-
-#### `get_channel_shorts(channel_url, ..., fetch_full_metadata=False, filters=None, max_videos=-1) -> Generator[dict, None, None]`
-Yields items from a channel's **Shorts** tab. The fast path carries `title`/`view_count`; pass `fetch_full_metadata=True` for the rest (including `publish_date`).
-
-#### `get_playlist_metadata(playlist_id) -> dict`
-Fetches a playlist's own metadata (`title`, `author`, `description`, `video_count`, ...), not its videos.
-
-#### `get_video_transcript(video_id, languages=None) -> list[dict]`
-Fetches the transcript as `{text, start, duration}` snippets. Returns `[]` only when the video has no transcript (none in the requested languages, transcripts disabled, or video unavailable). Other failures, such as rate limiting or network errors, raise.
-
-#### `iter_new_videos(channel_url, since_video_id=None, ...) -> Generator[dict, None, None]`
-Incremental sync: everything newer than `since_video_id`, newest first, marker excluded. See [Workflow Helpers](#workflow-helpers).
-
-#### `get_videos_published_between(channel_url, start_date, end_date=None) -> Generator[dict, None, None]`
-Exact date/hour windows with ~2·log₂(n) probe hydrations. See [Workflow Helpers](#workflow-helpers).
-
-#### `get_comment_threads(youtube_url, *, limit=20, replies_per_thread=10, sort_by='recent') -> Generator[tuple[dict, list], None, None]`
-`(comment, replies)` tuples. See [Workflow Helpers](#workflow-helpers).
-
-#### `clear_cache(prefix=None)`
-Clears the configured cache. Pass `prefix` (e.g. `"video_meta:"`) to clear only matching keys, for example to force fresh video metadata while keeping cached channel pages.
-
-#### `close()`
-Releases the HTTP session and (if `cache_path` was used) the SQLite connection. Idempotent; called automatically when using `with YtMeta() as client:`.
-
-## Error Handling
-
-The library uses custom exceptions to signal specific error conditions. All are importable from the top level (`from yt_meta import YtMetaError, VideoUnavailableError, MetadataParsingError`).
-
-### `YtMetaError`
-The base exception for all errors in this library:
+All library errors subclass `YtMetaError` and are importable from `yt_meta`.
 
 ```python
 from yt_meta import YtMeta, YtMetaError
 
 try:
-    meta = YtMeta().get_video_metadata("https://www.youtube.com/watch?v=jNQXAC9IVRw")
-    print(meta["title"], meta["status"])
+    video = YtMeta().get_video_metadata("https://www.youtube.com/watch?v=B68agR-OeJM")
+    print(video["title"], video["status"])
 except YtMetaError as e:
     print(f"yt-meta failed: {e}")
 ```
 
-### `VideoUnavailableError`
-Raised when an HTTP fetch itself fails: a network error, a 404, or a rate-limit response. A video that is fetched but unavailable (deleted, members-only, etc.) is not an exception; it is reported via the `status` field on `get_video_metadata`'s result.
+`VideoUnavailableError` means a request failed: a network error, or an HTTP error status (404, or 429/5xx after retries). A video that is private, deleted or members-only is not an error; `get_video_metadata` returns it with `status="unavailable"`.
 
-The same rule applies to every listing (channel videos, shorts, streams, playlists): if its first page can't be fetched, iterating it raises `VideoUnavailableError`, so a missing channel is never mistaken for an empty one. A later page failing raises mid-iteration; the records already yielded are still valid. During `fetch_full_metadata=True`, a single video whose watch page fails is logged and skipped rather than ending the listing.
+The same rule applies to every listing. If its first page can't be fetched, iterating it raises `VideoUnavailableError`, so a missing channel is not mistaken for an empty one. If a later page fails, the error is raised mid-iteration and the items already yielded are still valid. With `fetch_full_metadata=True`, a single video whose page fails is logged and skipped.
 
-### `MetadataParsingError`
-Raised when a page is fetched successfully but the expected structure (e.g. `ytInitialData` or a channel tab) cannot be extracted. Usually a sign YouTube changed its page structure; see the next section. Comment fetching also raises it when the watch page has no API key (a consent page, or a markup change), or when `since_date` is set but YouTube offers no newest-first ordering.
+`MetadataParsingError` means a page was fetched but its data could not be read, usually because YouTube changed the page (see the next section). Comment fetching also raises it when the page has no API key (a consent page or a layout change), or when `since_date` is set but YouTube offers no newest-first ordering.
 
-### Builtin `ValueError` / `TypeError` for input mistakes
+Mistakes in the call raise builtin `ValueError` or `TypeError` instead, when you call the method and before any request:
 
-Invalid inputs raise builtin exceptions, not `YtMetaError`: a URL on a non-YouTube host, a malformed video id, passing both or neither of `youtube_url` and `video_id`, an unknown filter field or operator, a filter field that doesn't apply to the record kind, a filter value of the wrong type, an unknown `sort_by`, `since_date` with `sort_by='top'`, an unbounded comment fetch (`limit=None`) without `since_date`, `get_videos_published_between` without `start_date`, hour-level date bounds without `fetch_full_metadata=True`, or date kwargs mixed with time-bearing filter bounds. These are bugs in the calling code. They raise when you call the method, before any request, not when you first iterate the result.
+- a URL on a non-YouTube host, a malformed video id, or both or neither of `youtube_url` and `video_id`
+- an unknown filter field or operator, a field that doesn't apply to the record kind, or a value of the wrong type
+- an unknown `sort_by`, `since_date` with `sort_by='top'`, or `limit=None` without `since_date`
+- `get_videos_published_between` without `start_date`
+- `datetime` bounds without `fetch_full_metadata=True`, or `start_date`/`end_date` combined with a `publish_date` filter that has a time of day
 
-## When YouTube Changes Its Page Structure
+Requests that fail with 429 or 5xx are retried with exponential backoff, honoring `Retry-After`.
 
-This library parses YouTube's web pages, and YouTube periodically changes their structure. The most recent change (`videoRenderer` to `lockupViewModel`) broke the channel Videos tab, fixed in 0.6.0, and the playlist page, fixed in 0.7.1.
+## API reference
 
-The symptom: requests succeed (HTTP 200, pagination runs) but a listing yields zero items, or `MetadataParsingError` is raised. Transient failures look different: the built-in retry (exponential backoff on 429/5xx, honoring `Retry-After`) absorbs those, so persistent zero results usually mean a structure change rather than throttling.
+All methods are on `YtMeta`. Methods described as generators check their arguments when called; requests start on first iteration.
 
-What to do:
+### `YtMeta(cache_path=None, cache=None, cache_ttl_seconds=86400, accept_cookies=False)`
 
-1. Upgrade: `pip install -U yt-meta`. Structure changes are usually fixed within a release or two; see the CHANGELOG.
-2. Confirm: run the live suite with `pytest -m contract` (or `make drift`). It asserts the page shapes this library depends on and reports which one moved, and also checks key behaviors (date filters, pagination stops, workflow helpers) against real channels. The offline test suite cannot catch this; it runs against captured fixtures, which stay green while the live site changes.
-3. Report: open an issue with the failing contract-test output.
+- `cache_path`: path of a SQLite file for the built-in persistent cache. The client creates and manages it.
+- `cache`: any `MutableMapping` to use as the cache. Takes precedence over `cache_path`. With neither, nothing is cached.
+- `cache_ttl_seconds`: lifetime of built-in SQLite cache entries, in seconds. Ignored for `cache=`.
+- `accept_cookies`: set YouTube's consent cookie so requests from regions with a cookie-consent page (such as the EU) aren't redirected to `consent.youtube.com`. Off by default because it accepts YouTube's cookies on your behalf. Turn it on if calls fail with a redirect to the consent page.
 
-For maintainers: `docs/reviews/` holds the code-review history behind the `H*/M*/C*/R*` markers in code comments and test names, and `TESTING.md` documents the testing rules (captured fixtures, contract tests) that address this failure mode.
+### `get_video_metadata(youtube_url, *, video_id=None, force_refresh=False)`
+
+Returns a dict with `title`, `channel_name`, `channel_id`, `view_count`, `like_count`, `duration_seconds`, `publish_date` (exact, timezone-aware), `category`, `keywords`, `full_description`, `thumbnails` and more, or `None` if the page had no player data at all.
+
+- `youtube_url` / `video_id`: the video, as any URL form or a bare id. Pass exactly one.
+- `force_refresh`: skip the cache.
+
+Status fields on every result:
+
+| Field | Meaning |
+| --- | --- |
+| `status` | `"ok"`, `"upcoming"` (scheduled premiere or live event not started) or `"unavailable"`. |
+| `status_reason` | YouTube's reason text when not `"ok"`, such as `"Video unavailable"`. |
+| `status_checked_at` | ISO-8601 UTC time of this check. |
+| `status_changed_at` | ISO-8601 UTC time the status last changed. Equal to `status_checked_at` on first sight. |
+| `is_live` | `True` only while the video is streaming live. |
+| `is_upcoming` | `True` for a scheduled premiere or live event that hasn't started. |
+| `scheduled_start_time` | ISO-8601 start time of an upcoming stream, else `None`. |
+
+When a cached video is found `"unavailable"` on a later check, the result keeps the cached title, channel and counts and updates only the status fields. Combine a persistent cache with `force_refresh=True` to track a video over time.
+
+Raises `VideoUnavailableError` if the request fails.
+
+### `get_channel_metadata(channel_url, force_refresh=False)`
+
+Returns `title`, `description`, `channel_id`, `vanity_url`, `keywords` and `is_family_safe`. No subscriber or view counts.
+
+- `channel_url`: the channel's home page or any of its tabs.
+- `force_refresh`: skip the cache.
+
+### `get_channel_videos(channel_url, force_refresh=False, fetch_full_metadata=False, start_date=None, end_date=None, filters=None, stop_at_video_id=None, max_videos=-1)`
+
+Generator of the channel's Videos tab, newest first.
+
+- `force_refresh`: skip the cache for the listing pages.
+- `fetch_full_metadata`: fetch each video's page for the full fields and exact dates, one request per video. Turned on automatically by slow filters.
+- `start_date`, `end_date`: date window; see [Dates](#dates).
+- `filters`: see [Filtering](#filtering).
+- `stop_at_video_id`: stop after this video, whether or not it passes the filters. It is yielded if it does.
+- `max_videos`: stop after this many results; `-1` for no limit.
+
+### `get_channel_shorts(channel_url, force_refresh=False, fetch_full_metadata=False, filters=None, stop_at_video_id=None, max_videos=-1)`
+
+Generator of the channel's Shorts tab. The listing has `title` and `view_count`; everything else needs `fetch_full_metadata=True`. Other parameters as for `get_channel_videos`.
+
+### `get_channel_streams(channel_url, force_refresh=False, fetch_full_metadata=False, filters=None, stop_at_video_id=None, max_videos=-1)`
+
+Generator of the channel's Live tab. Items are shaped like channel videos, plus `is_upcoming` and `scheduled_text`. Other parameters as for `get_channel_videos`.
+
+### `get_playlist_videos(playlist_id, fetch_full_metadata=False, start_date=None, end_date=None, filters=None, stop_at_video_id=None, max_videos=-1)`
+
+Generator of a playlist's videos in playlist order. Parameters as for `get_channel_videos`; date filters scan the whole playlist.
+
+### `get_playlist_metadata(playlist_id)`
+
+Returns the playlist's `title`, `author`, `description`, `video_count` and `playlist_id`.
+
+### `get_videos_published_between(channel_url, start_date, end_date=None, force_refresh=False)`
+
+Generator of the channel's videos published in the window, newest first, each with full metadata and an exact date. `start_date` is required. `end_date=None` means up to the newest video. Bounds may be strings, dates or datetimes.
+
+### `iter_new_videos(channel_url, since_video_id=None, fetch_full_metadata=False, force_refresh=False, max_videos=-1)`
+
+Generator of the channel's videos newer than `since_video_id`, newest first, excluding the marker itself. With `since_video_id=None` it yields from the newest video; bound it with `max_videos`. A marker that no longer exists also yields everything, so set `max_videos` as a safety cap.
+
+### `get_video_comments(youtube_url, limit=100, sort_by="recent", progress_callback=None, since_date=None, filters=None, *, video_id=None)`
+
+Generator of top-level comments.
+
+- `youtube_url` / `video_id`: the video. Pass exactly one.
+- `limit`: maximum comments. `None` or `-1` for no limit, which requires `since_date`.
+- `sort_by`: `"recent"` (newest first) or `"top"` (YouTube's ranking).
+- `progress_callback`: called with the running count after each comment.
+- `since_date`: only comments on or after this date (a `date`, `datetime`, `"YYYY-MM-DD"` or relative string). Requires `sort_by="recent"`. Fetching stops at the first older comment.
+- `filters`: comment filters; see [Filtering](#filtering).
+
+### `get_video_comments_with_reply_tokens(youtube_url, limit=100, sort_by="recent", progress_callback=None, since_date=None, filters=None, *, video_id=None)`
+
+As `get_video_comments`, and each comment with replies also has a `reply_continuation_token` for `get_comment_replies`.
+
+### `get_comment_replies(youtube_url, reply_continuation_token, limit=100, progress_callback=None, *, video_id=None)`
+
+Generator of the replies in one thread, identified by a `reply_continuation_token`.
+
+### `get_comment_threads(youtube_url, *, video_id=None, limit=20, replies_per_thread=10, sort_by="recent", since_date=None, filters=None)`
+
+Generator of `(comment, replies)` pairs. `filters` apply to top-level comments only; `replies_per_thread=0` skips reply requests. Other parameters as for `get_video_comments`.
+
+### `get_video_transcript(video_id, languages=None, *, youtube_url=None)`
+
+Returns a list of `{text, start, duration}` snippets in the first available language from `languages` (default `["en"]`), or `[]` when there is none. Rate limiting and network errors raise.
+
+### `clear_cache(prefix=None)`
+
+Removes all cached entries, or only keys starting with `prefix`. Prefixes in use: `video_meta:`, `video_initial:`, `channel_page:`, `channel_shorts_page:`, `channel_streams_page:` and `continuation:`.
+
+### `close()`
+
+Closes the HTTP session and the built-in SQLite cache. Safe to call twice; called automatically by `with YtMeta() as client:`.
+
+## When YouTube changes its pages
+
+yt-meta reads YouTube's web pages, and YouTube changes them without notice. Recent examples: the channel Videos tab and playlists moved to a new item format (fixed in 0.6.0 and 0.7.1), and in 2026 listings switched to compact text and some pages to a new data layout (fixed in the next release).
+
+The symptom is a listing that yields nothing, or a `MetadataParsingError`, while requests succeed. Rate limiting looks different: the built-in retry absorbs it.
+
+1. Upgrade: `pip install -U yt-meta`. Fixes usually ship within a release or two; see the CHANGELOG.
+2. Confirm: run the live suite with `pytest -m contract` (or `make drift`). It checks the page shapes this library depends on, and key behaviors against real channels, and reports what moved. The offline tests can't catch this, because they use saved pages.
+3. Report: open an issue with the failing output.
+
+## For maintainers
+
+`YtMeta` is a thin facade over fetchers in `yt_meta/fetchers.py` (channel tabs, playlists, single videos), `yt_meta/comment_fetcher.py` and `yt_meta/transcript_fetcher.py`. Everything that knows YouTube's page layout is in `yt_meta/parsing.py`; the fetchers only request pages and follow next-page tokens. The error policy is written at the top of `yt_meta/fetchers.py`.
+
+`TESTING.md` describes the testing rules. `docs/reviews/` holds the code reviews behind the `H*/M*/C*/R*` labels in code comments and test names.
