@@ -1352,3 +1352,30 @@ def test_since_date_old_pinned_comment_does_not_stop_pagination(mocker):
     )
     assert [c["id"] for c in comments] == ["a", "b"]
     assert request.call_count == 2
+
+
+def test_unparseable_comment_date_is_logged_not_silent(
+    comment_continuation_response, caplog
+):
+    """REGRESSION (2026-10 review): ``except Exception: pass`` around the
+    comment date parse hid every failure, so a YouTube wording change
+    would silently leave all comments undated. The record still gets
+    publish_date=None, but the text is logged."""
+    import copy
+    import logging
+
+    from yt_meta.comment_parser import CommentParser
+
+    response = copy.deepcopy(comment_continuation_response)
+    for mutation in response["frameworkUpdates"]["entityBatchUpdate"]["mutations"]:
+        payload = mutation.get("payload", {}).get("commentEntityPayload")
+        if payload:
+            payload["properties"]["publishedTime"] = "sometime last spring"
+            break
+
+    with caplog.at_level(logging.WARNING, logger="yt_meta.comment_parser"):
+        comments = CommentParser().extract_complete_comments(response)
+
+    undated = [c for c in comments if c["publish_date_text"] == "sometime last spring"]
+    assert len(undated) == 1 and undated[0]["publish_date"] is None
+    assert "sometime last spring" in caplog.text

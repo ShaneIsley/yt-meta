@@ -216,8 +216,14 @@ class CommentParser:
                     if published_time:
                         try:
                             publish_date = parse_relative_date_string(published_time)
-                        except Exception:
-                            pass
+                        except ValueError:
+                            # Unrecognized date text: leave publish_date None
+                            # but say so, so a YouTube wording change shows
+                            # up in logs instead of as silently undated
+                            # comments.
+                            logger.warning(
+                                "Could not parse comment date %r", published_time
+                            )
 
                     # Extract other properties
                     reply_level = properties.get("replyLevel", 0)
