@@ -281,3 +281,18 @@ def test_published_between_survives_failed_probe(client, mocker):
 
     assert failed, "the test must exercise at least one failing probe"
     assert [v["video_id"] for v in result] == ["vid0000044", "vid0000045", "vid0000046"]
+
+
+def test_every_comment_method_defaults_to_recent():
+    """get_comment_threads defaulted to 'top' while every other comment
+    method defaulted to 'recent', so switching methods silently changed
+    the order."""
+    import inspect
+
+    for name in (
+        "get_video_comments",
+        "get_video_comments_with_reply_tokens",
+        "get_comment_threads",
+    ):
+        sig = inspect.signature(getattr(YtMeta, name))
+        assert sig.parameters["sort_by"].default == "recent", name

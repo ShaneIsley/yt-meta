@@ -617,7 +617,7 @@ class YtMeta:
         video_id: str | None = None,
         limit: int | None = 20,
         replies_per_thread: int = 10,
-        sort_by: str = "top",
+        sort_by: str = "recent",
         since_date: date | str | None = None,
         filters: dict | None = None,
     ):
@@ -636,7 +636,9 @@ class YtMeta:
                 get_video_comments).
             replies_per_thread: Max replies fetched per thread
                 (0 = don't fetch replies).
-            sort_by: 'top' (default; YouTube's ranking) or 'recent'.
+            sort_by: 'recent' (default, like every comment method) or 'top'
+                (YouTube's ranking, where threads with replies tend to rank
+                higher).
             since_date: Same semantics as get_video_comments.
             filters: Applied to top-level comments only.
 

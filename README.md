@@ -162,6 +162,8 @@ for short in itertools.islice(shorts_generator, 5):
 
 Fetches comments for a given video, sorted by **"Most Recent"** (`sort_by='recent'`, the default) or **"Top comments"** (`sort_by='top'`). Returns a generator yielding standardized comment data.
 
+`'recent'` is the default for every comment method because it is chronological, which `since_date` relies on. It is YouTube's "Newest" view, which YouTube describes as including potential spam; `'top'` is the ranked view the YouTube site shows by default.
+
 **Example:**
 
 ```python
@@ -354,7 +356,7 @@ Bounds may also be `datetime` values for hour-level windows, e.g. `start_date=da
 
 ### Comment Hierarchies: `get_comment_threads`
 
-Yields `(comment, replies)` tuples, wrapping `get_video_comments_with_reply_tokens` and `get_comment_replies`. `replies_per_thread` caps the replies fetched per thread; `0` skips reply fetching.
+Yields `(comment, replies)` tuples, wrapping `get_video_comments_with_reply_tokens` and `get_comment_replies`. `replies_per_thread` caps the replies fetched per thread; `0` skips reply fetching. Threads come newest first by default, like every comment method; pass `sort_by='top'` for YouTube's ranking, where threads with replies tend to come first.
 
 ```python
 from yt_meta import YtMeta
@@ -633,7 +635,7 @@ Incremental sync: everything newer than `since_video_id`, newest first, marker e
 #### `get_videos_published_between(channel_url, start_date, end_date=None) -> Generator[dict, None, None]`
 Exact date/hour windows with ~2·log₂(n) probe hydrations. See [Workflow Helpers](#workflow-helpers).
 
-#### `get_comment_threads(youtube_url, *, limit=20, replies_per_thread=10, sort_by='top') -> Generator[tuple[dict, list], None, None]`
+#### `get_comment_threads(youtube_url, *, limit=20, replies_per_thread=10, sort_by='recent') -> Generator[tuple[dict, list], None, None]`
 `(comment, replies)` tuples. See [Workflow Helpers](#workflow-helpers).
 
 #### `clear_cache(prefix=None)`

@@ -69,6 +69,10 @@ All notable changes to this project are documented in this file.
   string (code in a description) no longer cuts the data short.
 
 ### Changed
+- **`get_comment_threads` defaults to `sort_by='recent'`**, like every
+  other comment method (it was `'top'`). Pass `sort_by='top'` for the
+  previous order. The README now notes that `'recent'` is YouTube's
+  "Newest" view, which includes potential spam.
 - **A channel tab that can't be fetched now raises.** `get_channel_videos`,
   `get_channel_shorts` and `get_channel_streams` used to log the error and
   yield nothing, so a missing or mistyped channel looked like an empty
