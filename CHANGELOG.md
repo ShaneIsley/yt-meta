@@ -24,7 +24,9 @@ All notable changes to this project are documented in this file.
   marker video passed the filters. A filtered-out marker, or one whose
   metadata fetch failed, walked the rest of the channel or playlist.
 - **Trailing slash on channel URLs**: `…/videos/` and `…/streams/`
-  became `…/videos/videos` (a 404, swallowed into an empty result).
+  became `…/videos/videos`. YouTube serves that URL as well, so results
+  were unaffected, but the request and cache key now use the canonical
+  form.
 - **`clear_cache()` with the SQLite backend** now removes every entry.
   The inherited `clear()` stopped at the first expired row and raised
   on a legacy pickle row.

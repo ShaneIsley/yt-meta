@@ -824,8 +824,8 @@ def test_trailing_slash_channel_url_is_not_doubled(
     channel_fetcher, method, raw_gen, expected, suffix
 ):
     """REGRESSION (2026-10 review): ".../@x/videos/" failed the endswith
-    check and became ".../@x/videos/videos" — a 404 that was swallowed,
-    so the caller got an empty result with no error."""
+    check and became ".../@x/videos/videos". YouTube serves that URL
+    too, but the request and cache key should use the canonical form."""
     url = "https://www.youtube.com/@x" + suffix.format(tab=expected)
     with patch.object(channel_fetcher, raw_gen, return_value=iter([])) as gen:
         list(getattr(channel_fetcher, method)(url))

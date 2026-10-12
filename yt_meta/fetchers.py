@@ -730,7 +730,8 @@ class ChannelFetcher(_BaseFetcher):
         """
         validate_filters(filters)
         # Strip first: a trailing slash ("…/videos/") used to defeat the
-        # endswith check and produce "…/videos/videos", a 404.
+        # endswith check and produce "…/videos/videos". YouTube serves that
+        # too, but it splits the cache key from the plain form.
         channel_url = channel_url.rstrip("/")
         if not channel_url.endswith("/videos"):
             channel_url = f"{channel_url}/videos"
@@ -795,7 +796,8 @@ class ChannelFetcher(_BaseFetcher):
         start_day, end_day = day_of(start), day_of(end) if end else None
 
         # Strip first: a trailing slash ("…/videos/") used to defeat the
-        # endswith check and produce "…/videos/videos", a 404.
+        # endswith check and produce "…/videos/videos". YouTube serves that
+        # too, but it splits the cache key from the plain form.
         channel_url = channel_url.rstrip("/")
         if not channel_url.endswith("/videos"):
             channel_url = f"{channel_url}/videos"
@@ -945,7 +947,8 @@ class ChannelFetcher(_BaseFetcher):
         """
         validate_filters(filters)
         # Strip first: a trailing slash ("…/streams/") used to defeat the
-        # endswith check and produce "…/streams/streams", a 404.
+        # endswith check and produce "…/streams/streams". YouTube serves that
+        # too, but it splits the cache key from the plain form.
         channel_url = channel_url.rstrip("/")
         if not channel_url.endswith("/streams"):
             channel_url = f"{channel_url}/streams"
