@@ -12,7 +12,8 @@ def parse_relative_date_string(date_str: str) -> date:
     Handles three formats:
     1. Shorthand notation (e.g., "1d", "2w", "3m", "4y" for days, weeks,
        months, and years).
-    2. Human-readable notation (e.g., "1 day ago", "2 weeks ago").
+    2. Human-readable notation (e.g., "5 minutes ago", "1 day ago",
+       "2 weeks ago"), optionally followed by text such as " (edited)".
     3. Absolute dates parseable by ``dateparser`` (e.g., "2023-01-01",
        "January 1 2023").
 
@@ -29,7 +30,9 @@ def parse_relative_date_string(date_str: str) -> date:
 
     date_str = date_str.lower().strip()
 
-    shorthand_match = re.match(r"(\d+)\s*([dwmy])", date_str)
+    # Anchored: unanchored, "5 minutes ago" matched as 5 *months* and
+    # "1 december 2023" as 1 *day*. Shorthand is the whole string or nothing.
+    shorthand_match = re.fullmatch(r"(\d+)\s*([dwmy])", date_str)
     if shorthand_match:
         value = int(shorthand_match.group(1))
         unit = shorthand_match.group(2)
@@ -43,12 +46,19 @@ def parse_relative_date_string(date_str: str) -> date:
         elif unit == "y":
             return datetime.today().date() - timedelta(days=value * 365)
 
-    human_readable_match = re.match(r"(\d+)\s*(day|week|month|year)s?\s*ago", date_str)
+    # Sub-day units ("5 minutes ago", YouTube's text for fresh comments)
+    # resolve against now so a just-past-midnight comment lands on
+    # yesterday. Trailing text such as " (edited)" is tolerated.
+    human_readable_match = re.match(
+        r"(\d+)\s*(second|minute|hour|day|week|month|year)s?\s+ago\b", date_str
+    )
     if human_readable_match:
         value = int(human_readable_match.group(1))
         unit = human_readable_match.group(2)
 
-        if unit == "day":
+        if unit in ("second", "minute", "hour"):
+            return (datetime.now() - timedelta(**{f"{unit}s": value})).date()
+        elif unit == "day":
             return datetime.today().date() - timedelta(days=value)
         elif unit == "week":
             return datetime.today().date() - timedelta(weeks=value)

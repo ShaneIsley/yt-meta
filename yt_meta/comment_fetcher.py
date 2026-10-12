@@ -141,6 +141,7 @@ class CommentFetcher:
             # EMPTY_PAGE_LIMIT filtered-out pages.
             consecutive_empty_pages = 0
             EMPTY_PAGE_LIMIT = 3
+            reached_since_date = False
 
             # M-d: no inner try/except here. HTTP failures propagate as
             # httpx errors and are wrapped by the outer handler below;
@@ -183,10 +184,16 @@ class CommentFetcher:
                     seen_ids.add(comment["id"])
                     found_new_ids = True
 
-                    # Apply date filtering
+                    # since_date short-circuit: sort_by='recent' is
+                    # newest-first, so the first comment older than the
+                    # cutoff ends the stream. Pinned comments are exempt —
+                    # YouTube pins them to the top regardless of age.
                     if since_date and comment.get("publish_date"):
                         if comment["publish_date"] < since_date:
-                            continue
+                            if comment.get("is_pinned"):
+                                continue
+                            reached_since_date = True
+                            break
 
                     # Apply user-supplied predicate filters
                     if filters and not apply_comment_filters(comment, filters):
@@ -210,6 +217,9 @@ class CommentFetcher:
                 # truncated results on any page that happened to
                 # land all-duplicates (legitimate for 'top' sort)
                 # AND masked H3's wrong-token bug.
+                if reached_since_date:
+                    break
+
                 if found_new_ids:
                     consecutive_empty_pages = 0
                 else:
@@ -315,6 +325,7 @@ class CommentFetcher:
                 continuation_token = self.api_client.extract_continuation_token(
                     api_response
                 )
+
 
         except VideoUnavailableError:
             raise

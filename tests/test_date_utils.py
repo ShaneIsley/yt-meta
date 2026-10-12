@@ -98,3 +98,22 @@ def test_parse_none_returns_today():
     defensive today-fallback. Behavior intentionally retained.
     """
     assert parse_relative_date_string(None) == date.today()
+
+
+def test_regression_shorthand_does_not_match_inside_phrases():
+    """REGRESSION (2026-10 review): the shorthand regex was unanchored, so
+    "5 minutes ago" parsed as 5 *months* ago and "1 December 2023" as
+    1 *day* ago. Fresh comments came back dated months in the past and
+    absolute user dates were silently wrong."""
+    today = date.today()
+    assert parse_relative_date_string("5 minutes ago") >= today - timedelta(days=1)
+    assert parse_relative_date_string("10 seconds ago") >= today - timedelta(days=1)
+    assert parse_relative_date_string("3 hours ago") >= today - timedelta(days=1)
+    assert parse_relative_date_string("1 December 2023") == date(2023, 12, 1)
+    assert parse_relative_date_string("5 May 2023") == date(2023, 5, 5)
+
+
+def test_human_readable_tolerates_edited_suffix():
+    """YouTube appends " (edited)" to an edited comment's publishedTime."""
+    expected = date.today() - timedelta(days=2)
+    assert parse_relative_date_string("2 days ago (edited)") == expected

@@ -4,7 +4,17 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
-- (Add new changes here)
+### Fixed
+- **Relative dates misparsed**: the shorthand pattern (`5d`, `2w`) was
+  unanchored, so `"5 minutes ago"` parsed as 5 *months* ago and
+  `"1 December 2023"` as 1 day ago. Shorthand now must be the whole
+  string; `second`/`minute`/`hour ... ago` are handled explicitly, and a
+  trailing `" (edited)"` is tolerated. Fresh comments now get today's
+  date instead of one months in the past.
+- **`since_date` now stops comment pagination** at the first non-pinned
+  comment older than the cutoff, as documented. Previously it only
+  filtered, so `limit=None, since_date=...` fetched every comment on
+  the video.
 
 ## [0.8.0] - 2026-07-06
 

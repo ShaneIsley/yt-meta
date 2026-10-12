@@ -1325,3 +1325,63 @@ def test_best_comment_fetcher_alias_warns_deprecation():
     assert any(issubclass(w.category, DeprecationWarning) for w in caught), (
         "accessing BestCommentFetcher must emit DeprecationWarning"
     )
+
+
+def _since_date_fetcher(mocker, pages):
+    """A CommentFetcher whose API yields ``pages`` (lists of comment dicts)
+    one per request, bypassing the parser."""
+    fetcher = CommentFetcher()
+    mocker.patch.object(
+        fetcher.api_client, "get_initial_video_data", return_value=({}, {})
+    )
+    mocker.patch.object(
+        fetcher.api_client, "get_sort_endpoints_flexible", return_value={"r": "t"}
+    )
+    mocker.patch.object(fetcher.api_client, "select_sort_endpoint", return_value="t")
+    request = mocker.patch.object(
+        fetcher.api_client,
+        "make_api_request",
+        side_effect=[{"p": i} for i in range(len(pages))],
+    )
+    mocker.patch.object(fetcher.parser, "extract_complete_comments", side_effect=pages)
+    mocker.patch.object(
+        fetcher.api_client, "extract_continuation_token", return_value="next"
+    )
+    return fetcher, request
+
+
+def _c(cid, day, pinned=False):
+    return {"id": cid, "publish_date": date(2026, 1, day), "is_pinned": pinned}
+
+
+def test_since_date_stops_pagination_at_first_older_comment(mocker):
+    """REGRESSION (2026-10 review): since_date only skipped older comments
+    and kept paging, so ``limit=None, since_date=...`` walked the entire
+    comment stream. The README promises fetching stops at the first
+    comment older than the cutoff; page 3 must never be requested."""
+    pages = [
+        [_c("a", 20), _c("b", 18)],
+        [_c("c", 15), _c("d", 5), _c("e", 14)],
+        [_c("f", 3)],
+    ]
+    fetcher, request = _since_date_fetcher(mocker, pages)
+    comments = list(
+        fetcher.get_comments("dQw4w9WgXcQ", limit=None, since_date=date(2026, 1, 10))
+    )
+    assert [c["id"] for c in comments] == ["a", "b", "c"]
+    assert request.call_count == 2
+
+
+def test_since_date_old_pinned_comment_does_not_stop_pagination(mocker):
+    """A pinned comment sits at the top of 'recent' regardless of age; it
+    must be skipped, not treated as the end of the window."""
+    pages = [
+        [_c("pin", 1, pinned=True), _c("a", 20)],
+        [_c("b", 15), _c("old", 2)],
+    ]
+    fetcher, request = _since_date_fetcher(mocker, pages)
+    comments = list(
+        fetcher.get_comments("dQw4w9WgXcQ", limit=None, since_date=date(2026, 1, 10))
+    )
+    assert [c["id"] for c in comments] == ["a", "b"]
+    assert request.call_count == 2
