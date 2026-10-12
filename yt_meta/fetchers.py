@@ -242,7 +242,7 @@ def _run_filtered_pipeline(
             "(parsed from relative text) and carry no meaningful time."
         )
 
-    yield from _process_videos(
+    return _process_videos(
         raw_generator,
         video_fetcher=video_fetcher,
         must_fetch_full_metadata=must_fetch_full_metadata,
@@ -620,6 +620,7 @@ class ChannelFetcher(_BaseFetcher):
             A generator of video dictionaries.
         """
         validate_filters(filters, kind="video")
+        validate_youtube_url(channel_url)
         channel_url = self._tab_url(channel_url, "videos")
         filters, final_start_date, final_end_date = build_date_filter(
             start_date, end_date, filters
@@ -633,7 +634,7 @@ class ChannelFetcher(_BaseFetcher):
         raw_video_generator = self._get_raw_channel_videos_generator(
             channel_url, force_refresh, final_start_date, stop_pad=will_hydrate
         )
-        yield from _run_filtered_pipeline(
+        return _run_filtered_pipeline(
             raw_video_generator,
             filters=filters,
             content_type="videos",
@@ -680,8 +681,18 @@ class ChannelFetcher(_BaseFetcher):
 
         start, end = norm(start_date), norm(end_date)
         start_day, end_day = day_of(start), day_of(end) if end else None
-
+        validate_youtube_url(channel_url)
         channel_url = self._tab_url(channel_url, "videos")
+        # Arguments are checked above, at call time; the requests start
+        # on first iteration.
+        return self._iter_published_between(
+            channel_url, force_refresh, margin, start, end, start_day, end_day
+        )
+
+    def _iter_published_between(
+        self, channel_url, force_refresh, margin, start, end, start_day, end_day
+    ):
+
         raw = list(
             self._get_raw_channel_videos_generator(
                 channel_url, force_refresh, start_day, stop_pad=True
@@ -781,7 +792,8 @@ class ChannelFetcher(_BaseFetcher):
             Generator[dict, None, None]: A generator of short dictionaries.
         """
         validate_filters(filters, kind="video")
-        yield from _run_filtered_pipeline(
+        validate_youtube_url(channel_url)
+        return _run_filtered_pipeline(
             self._get_raw_tab_generator(channel_url, "shorts", force_refresh),
             filters=filters,
             content_type="shorts",
@@ -825,8 +837,9 @@ class ChannelFetcher(_BaseFetcher):
             A generator of stream dictionaries.
         """
         validate_filters(filters, kind="video")
+        validate_youtube_url(channel_url)
         channel_url = self._tab_url(channel_url, "streams")
-        yield from _run_filtered_pipeline(
+        return _run_filtered_pipeline(
             self._get_raw_tab_generator(channel_url, "streams", force_refresh),
             filters=filters,
             content_type="videos",
@@ -920,7 +933,7 @@ class PlaylistFetcher(_BaseFetcher):
         """
         validate_filters(filters, kind="video")
         filters, _, _ = build_date_filter(start_date, end_date, filters)
-        yield from _run_filtered_pipeline(
+        return _run_filtered_pipeline(
             self._get_raw_playlist_videos_generator(playlist_id),
             filters=filters,
             content_type="videos",

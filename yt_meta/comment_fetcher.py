@@ -106,6 +106,28 @@ class CommentFetcher:
             limit = None
 
         video_id = extract_video_id(video_id)
+        # Arguments are checked above, at call time; the requests start
+        # on first iteration.
+        return self._iter_comments(
+            video_id,
+            limit,
+            sort_by,
+            since_date,
+            progress_callback,
+            include_reply_continuation,
+            filters,
+        )
+
+    def _iter_comments(
+        self,
+        video_id,
+        limit,
+        sort_by,
+        since_date,
+        progress_callback,
+        include_reply_continuation,
+        filters,
+    ):
         logger.info(f"Fetching comments for video: {video_id}")
 
         try:
@@ -282,6 +304,11 @@ class CommentFetcher:
         if limit is not None and limit < 0:
             limit = None
         video_id = extract_video_id(video_id)
+        return self._iter_replies(
+            video_id, reply_continuation_token, limit, progress_callback
+        )
+
+    def _iter_replies(self, video_id, reply_continuation_token, limit, progress_callback):
         logger.info(f"Fetching replies for video: {video_id}")
 
         try:

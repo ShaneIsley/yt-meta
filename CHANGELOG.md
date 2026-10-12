@@ -69,6 +69,12 @@ All notable changes to this project are documented in this file.
   string (code in a description) no longer cuts the data short.
 
 ### Changed
+- **Bad arguments raise when a method is called, not on first iteration.**
+  The listing and comment methods (`get_channel_videos`, `_shorts`,
+  `_streams`, `get_playlist_videos`, `get_videos_published_between`,
+  `iter_new_videos`, `get_video_comments`, `..._with_reply_tokens`,
+  `get_comment_replies`, `get_comment_threads`) check their arguments up
+  front and return a generator; requests still start on first iteration.
 - **`get_comment_threads` defaults to `sort_by='recent'`**, like every
   other comment method (it was `'top'`). Pass `sort_by='top'` for the
   previous order. The README now notes that `'recent'` is YouTube's

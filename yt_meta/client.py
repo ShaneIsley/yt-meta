@@ -306,13 +306,18 @@ class YtMeta:
         Yields:
             A dictionary for each video newer than the marker.
         """
-        for video in self._channel_fetcher.get_channel_videos(
+        videos = self._channel_fetcher.get_channel_videos(
             channel_url,
             force_refresh=force_refresh,
             fetch_full_metadata=fetch_full_metadata,
             stop_at_video_id=since_video_id,
             max_videos=max_videos,
-        ):
+        )
+        return self._until_marker(videos, since_video_id)
+
+    @staticmethod
+    def _until_marker(videos, since_video_id):
+        for video in videos:
             if since_video_id is not None and video["video_id"] == since_video_id:
                 return
             yield video
@@ -518,7 +523,7 @@ class YtMeta:
                 "a finite limit."
             )
         resolved_id = extract_video_id(youtube_url)
-        comments_generator = self._comment_fetcher.get_comments(
+        return self._comment_fetcher.get_comments(
             resolved_id,
             limit=limit,
             sort_by=sort_by,
@@ -526,8 +531,6 @@ class YtMeta:
             since_date=resolved_date,
             filters=filters,
         )
-
-        yield from comments_generator
 
     def get_video_comments_with_reply_tokens(
         self,
@@ -564,7 +567,7 @@ class YtMeta:
                 "since_date to be set, to cap the request count."
             )
         resolved_id = extract_video_id(youtube_url)
-        comments_generator = self._comment_fetcher.get_comments(
+        return self._comment_fetcher.get_comments(
             resolved_id,
             limit=limit,
             sort_by=sort_by,
@@ -573,8 +576,6 @@ class YtMeta:
             include_reply_continuation=True,
             filters=filters,
         )
-
-        yield from comments_generator
 
     def get_comment_replies(
         self,
@@ -601,14 +602,12 @@ class YtMeta:
         """
         youtube_url = self._resolve_video_target(youtube_url, video_id)
         resolved_id = extract_video_id(youtube_url)
-        replies_generator = self._comment_fetcher.get_comment_replies(
+        return self._comment_fetcher.get_comment_replies(
             resolved_id,
             reply_continuation_token=reply_continuation_token,
             limit=limit,
             progress_callback=progress_callback,
         )
-
-        yield from replies_generator
 
     def get_comment_threads(
         self,
@@ -647,13 +646,17 @@ class YtMeta:
             without replies yield an empty list.
         """
         target = self._resolve_video_target(youtube_url, video_id)
-        for comment in self.get_video_comments_with_reply_tokens(
+        comments = self.get_video_comments_with_reply_tokens(
             video_id=target,
             limit=limit,
             sort_by=sort_by,
             since_date=since_date,
             filters=filters,
-        ):
+        )
+        return self._iter_threads(target, comments, replies_per_thread)
+
+    def _iter_threads(self, target, comments, replies_per_thread):
+        for comment in comments:
             token = comment.get("reply_continuation_token")
             replies = []
             if token and replies_per_thread:

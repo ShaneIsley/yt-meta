@@ -78,7 +78,7 @@ def test_get_channel_videos_raises_for_bad_initial_data_unit(
     with pytest.raises(
         MetadataParsingError, match="Could not find the videos tab"
     ):
-        list(client.get_channel_videos("test_channel"))
+        list(client.get_channel_videos("https://www.youtube.com/@test"))
 
 
 def test_get_channel_videos_handles_continuation_errors_unit(
@@ -94,7 +94,7 @@ def test_get_channel_videos_handles_continuation_errors_unit(
     mocker.patch(
         "yt_meta.fetchers.ChannelFetcher._get_continuation_data", return_value=None
     )
-    videos = list(client.get_channel_videos("https://any-url.com"))
+    videos = list(client.get_channel_videos("https://www.youtube.com/@test"))
     assert len(videos) == 30
 
 
@@ -150,7 +150,7 @@ def test_get_channel_videos_paginates_correctly_unit(client):
                 }
             ]
         }
-        videos = list(client.get_channel_videos("https://any-url.com"))
+        videos = list(client.get_channel_videos("https://www.youtube.com/@test"))
         assert len(videos) == 2
 
 
@@ -641,3 +641,37 @@ def test_m8_ytmetaerror_base_class_is_exported():
     # And the hierarchy actually works as the README implies
     assert issubclass(MetadataParsingError, YtMetaError)
     assert issubclass(VideoUnavailableError, YtMetaError)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda yt: yt.get_channel_videos("https://example.com/@x"),
+        lambda yt: yt.get_channel_shorts("https://example.com/@x"),
+        lambda yt: yt.get_channel_streams("https://example.com/@x"),
+        lambda yt: yt.get_channel_videos(
+            "https://www.youtube.com/@x", filters={"bogus": {"eq": 1}}
+        ),
+        lambda yt: yt.get_playlist_videos("PLx", filters={"title": {"eq": 5}}),
+        lambda yt: yt.get_videos_published_between("https://www.youtube.com/@x"),
+        lambda yt: yt.iter_new_videos("https://example.com/@x"),
+        lambda yt: yt.get_video_comments("dQw4w9WgXcQ", sort_by="newst"),
+        lambda yt: yt.get_video_comments("dQw4w9WgXcQ", limit=None),
+        lambda yt: yt.get_video_comments_with_reply_tokens(
+            "dQw4w9WgXcQ", sort_by="top", since_date="2024-01-01"
+        ),
+        lambda yt: yt.get_comment_replies("not a video id", reply_continuation_token="t"),
+        lambda yt: yt.get_comment_threads("dQw4w9WgXcQ", filters={"title": {"eq": "x"}}),
+    ],
+)
+def test_bad_arguments_raise_at_call_time_not_on_first_iteration(call):
+    """REGRESSION (2026-10 review): the public listing and comment methods
+    were generators, so argument checks only ran on the first next(): the
+    error surfaced wherever the generator was later consumed. No request
+    is made: the session is a mock that fails if touched."""
+    from unittest.mock import MagicMock
+
+    yt = YtMeta()
+    yt.session.get = MagicMock(side_effect=AssertionError("no request expected"))
+    with pytest.raises((ValueError, TypeError)):
+        call(yt)  # note: not iterated

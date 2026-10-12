@@ -227,7 +227,7 @@ def test_get_channel_videos_raises_for_bad_initial_data(
     with pytest.raises(
         MetadataParsingError, match="Could not find the videos tab"
     ):
-        list(channel_fetcher.get_channel_videos("test_channel"))
+        list(channel_fetcher.get_channel_videos("https://www.youtube.com/@test"))
 
 
 def test_m3_shorts_generator_survives_empty_parse_result(channel_fetcher, mocker):
@@ -309,7 +309,7 @@ def test_get_channel_videos_handles_continuation_errors(
         ),
     )
     mocker.patch.object(channel_fetcher, "_get_continuation_data", return_value=None)
-    videos = list(channel_fetcher.get_channel_videos("https://any-url.com"))
+    videos = list(channel_fetcher.get_channel_videos("https://www.youtube.com/@test"))
     assert len(videos) == 30
 
 
@@ -361,7 +361,7 @@ def test_get_channel_videos_paginates_correctly(channel_fetcher, mocker):
                 }
             ]
         }
-        videos = list(channel_fetcher.get_channel_videos("https://any-url.com"))
+        videos = list(channel_fetcher.get_channel_videos("https://www.youtube.com/@test"))
         assert len(videos) == 2
 
 
