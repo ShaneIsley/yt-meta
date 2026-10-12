@@ -198,8 +198,9 @@ def test_m1_l2_comment_api_client_uses_injected_cache():
 
 def test_m1_l2_get_initial_video_data_caches_under_shared_key(mocker):
     """REGRESSION (M1/L2): get_initial_video_data writes its parse
-    result under ``video_initial:{video_id}`` — same key VideoFetcher
-    can read (or write). First call fetches, second call hits cache.
+    result under ``video_initial:{video_id}``. First call fetches, second
+    call hits cache. (VideoFetcher caches under ``video_meta:`` and does
+    not read this key.)
     """
     from yt_meta.comment_api_client import CommentAPIClient
 

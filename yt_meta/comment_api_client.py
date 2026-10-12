@@ -92,9 +92,12 @@ class CommentAPIClient:
         """Get initial video page data and ytcfg.
 
         Caches the (initial_data, ytcfg) parse under
-        ``video_initial:{video_id}`` — a shared key so that
-        VideoFetcher and CommentFetcher reuse each other's watch-page
-        fetches (M1/L2).
+        ``video_initial:{video_id}``, in the cache shared across the
+        YtMeta facade (M1/L2), so repeated comment and reply fetches for
+        a video reuse one watch-page request. VideoFetcher does NOT read
+        this key: it caches its own parsed record under
+        ``video_meta:{video_id}``, so fetching a video's metadata and its
+        comments still downloads the watch page twice.
         """
         cache_key = f"video_initial:{video_id}"
         if cache_key in self.cache:
