@@ -543,3 +543,15 @@ def test_recent_fallback_to_top_only_without_since_date(caplog):
     fetcher.api_client.get_sort_endpoints_flexible = Mock(return_value={"top": "t"})
     with pytest.raises(MetadataParsingError, match="newest-first"):
         list(fetcher.get_comments("dQw4w9WgXcQ", since_date=date(2026, 1, 1)))
+
+
+def test_comment_api_non_json_raises_metadata_parsing_error():
+    """REGRESSION (2026-10 review): a non-JSON comment API body escaped as
+    a bare JSONDecodeError."""
+    client = CommentAPIClient()
+    html = httpx.Response(200, text="<html>", request=httpx.Request("POST", "https://x"))
+    client.client.post = Mock(return_value=html)
+    with pytest.raises(MetadataParsingError, match="not valid JSON"):
+        client.make_api_request("tok", {"INNERTUBE_API_KEY": "k"})
+    with pytest.raises(MetadataParsingError, match="not valid JSON"):
+        client.make_reply_request("tok", {"INNERTUBE_API_KEY": "k"})

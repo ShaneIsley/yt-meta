@@ -367,7 +367,19 @@ class CommentAPIClient:
         response = request_with_retries(
             lambda: self.client.post(url, json=payload), retries=self.retries
         )
-        return response.json()
+        return self._json(response)
+
+    @staticmethod
+    def _json(response) -> dict:
+        """response.json(), with a non-JSON body (HTML error page, a
+        truncated response) raised as MetadataParsingError instead of a
+        bare JSONDecodeError."""
+        try:
+            return response.json()
+        except ValueError as e:
+            raise MetadataParsingError(
+                f"Comment API response was not valid JSON: {e}"
+            ) from e
 
     def extract_continuation_token(self, api_response: dict) -> str | None:
         """Extract the next-page continuation token from a comment API response.
@@ -470,4 +482,4 @@ class CommentAPIClient:
         response = request_with_retries(
             lambda: self.client.post(url, json=payload), retries=self.retries
         )
-        return response.json()
+        return self._json(response)

@@ -70,6 +70,24 @@ def _apply_status_tracking(parsed: dict, prior: dict | None) -> dict:
     return result
 
 
+def _merge_hydrated(video: dict, full_meta: dict) -> dict:
+    """Merge a watch-page parse into a listing record.
+
+    An unavailable watch page (members-only, private) parses to
+    title=None, view_count=0. It adds status and anything the listing
+    lacks, but never replaces real listing values with those blanks,
+    which made filters like view_count < 100 match. Otherwise the parse
+    wins, and the listing's relative date text is kept (Option A: the
+    watch page has none).
+    """
+    if full_meta.get("status") == "unavailable":
+        return {**full_meta, **{k: v for k, v in video.items() if v is not None}}
+    merged = {**video, **full_meta}
+    if video.get("publish_date_text") and not merged.get("publish_date_text"):
+        merged["publish_date_text"] = video["publish_date_text"]
+    return merged
+
+
 def _process_videos(
     video_generator,
     *,
@@ -119,27 +137,8 @@ def _process_videos(
             try:
                 video_url = f"https://www.youtube.com/watch?v={video['video_id']}"
                 full_meta = video_fetcher.get_video_metadata(video_url)
-                if full_meta and full_meta.get("status") == "unavailable":
-                    # An unavailable watch page (members-only, private)
-                    # parses to title=None, view_count=0. Let it add
-                    # status and anything the listing lacks, but never
-                    # replace real listing values with those blanks,
-                    # which made filters like view_count < 100 match.
-                    merged_video = {
-                        **full_meta,
-                        **{k: v for k, v in video.items() if v is not None},
-                    }
-                elif full_meta:
-                    merged_video = {**video, **full_meta}
-                    # Option A: the watch page has no relative date text,
-                    # so full_meta carries publish_date_text=None — keep
-                    # the listing's raw text alongside the now-exact date.
-                    if video.get("publish_date_text") and not merged_video.get(
-                        "publish_date_text"
-                    ):
-                        merged_video["publish_date_text"] = video[
-                            "publish_date_text"
-                        ]
+                if full_meta:
+                    merged_video = _merge_hydrated(video, full_meta)
                 elif slow_filters:
                     return None
             except (VideoUnavailableError, MetadataParsingError) as e:
@@ -260,17 +259,30 @@ class _BaseFetcher:
         if cache_key in self.cache:
             self.logger.info(f"Cache hit for continuation token: {token[:10]}...")
             return self.cache[cache_key]
-        data = {"context": ytcfg["INNERTUBE_CONTEXT"], "continuation": token}
-        url = (
-            "https://www.youtube.com/youtubei/v1/browse?key="
-            f"{ytcfg['INNERTUBE_API_KEY']}"
-        )
-        # H9: the continuation/browse POST is the tight pagination loop
-        # most likely to be rate-limited; wrap it in retry/backoff.
-        response = request_with_retries(
-            lambda: self.session.post(url, json=data, timeout=10)
-        )
-        result = response.json()
+        # Mid-pagination failures surface as the library's own errors,
+        # not raw KeyError / httpx / JSONDecodeError.
+        try:
+            data = {"context": ytcfg["INNERTUBE_CONTEXT"], "continuation": token}
+            api_key = ytcfg["INNERTUBE_API_KEY"]
+        except KeyError as e:
+            raise MetadataParsingError(
+                f"Page config is missing {e} needed to request the next page"
+            ) from e
+        url = f"https://www.youtube.com/youtubei/v1/browse?key={api_key}"
+        try:
+            # H9: the continuation/browse POST is the tight pagination loop
+            # most likely to be rate-limited; wrap it in retry/backoff.
+            response = request_with_retries(
+                lambda: self.session.post(url, json=data, timeout=10)
+            )
+        except httpx.HTTPError as e:
+            raise VideoUnavailableError(f"Could not fetch the next page: {e}") from e
+        try:
+            result = response.json()
+        except ValueError as e:
+            raise MetadataParsingError(
+                f"Next-page response was not valid JSON: {e}"
+            ) from e
         self.cache[cache_key] = result
         return result
 
@@ -831,18 +843,19 @@ class ChannelFetcher(_BaseFetcher):
             video = raw[i]
             vid = video["video_id"]
             if vid not in hydrated:
-                full = self.video_fetcher.get_video_metadata(
-                    f"https://www.youtube.com/watch?v={vid}"
-                )
-                if full:
-                    merged = {**video, **full}
-                    if video.get("publish_date_text") and not merged.get(
-                        "publish_date_text"
-                    ):
-                        merged["publish_date_text"] = video["publish_date_text"]
-                else:
-                    merged = dict(video)
-                hydrated[vid] = merged
+                # One failed probe used to abort the whole window search.
+                # Fall back to the listing record (approximate date), as
+                # _process_videos does for the same errors.
+                try:
+                    full = self.video_fetcher.get_video_metadata(
+                        f"https://www.youtube.com/watch?v={vid}"
+                    )
+                except (VideoUnavailableError, MetadataParsingError) as e:
+                    self.logger.error(
+                        "Error fetching metadata for video_id %s: %s", vid, e
+                    )
+                    full = None
+                hydrated[vid] = _merge_hydrated(video, full) if full else dict(video)
             return hydrated[vid]
 
         def probe_day(i):

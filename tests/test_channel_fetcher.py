@@ -867,3 +867,45 @@ def test_unavailable_hydration_keeps_listing_values():
     assert video["title"] == "Members video"
     assert video["view_count"] == 50_000
     assert video["status"] == "unavailable"
+
+
+def _continuation_fetcher(post):
+    session = MagicMock()
+    session.post.side_effect = post
+    return ChannelFetcher(session=session, cache={}, video_fetcher=MagicMock())
+
+
+_YTCFG = {"INNERTUBE_API_KEY": "k", "INNERTUBE_CONTEXT": {}}
+
+
+def test_continuation_missing_config_key_raises_library_error():
+    """REGRESSION (2026-10 review): mid-pagination failures escaped as raw
+    KeyError / httpx / JSONDecodeError instead of a YtMetaError."""
+    from yt_meta.exceptions import MetadataParsingError
+
+    fetcher = _continuation_fetcher(AssertionError("must not POST"))
+    with pytest.raises(MetadataParsingError, match="INNERTUBE_API_KEY"):
+        fetcher._get_continuation_data("tok", {"INNERTUBE_CONTEXT": {}})
+
+
+def test_continuation_http_error_raises_video_unavailable():
+    import httpx
+
+    from yt_meta.exceptions import VideoUnavailableError
+
+    not_found = httpx.Response(404, request=httpx.Request("POST", "https://x"))
+    fetcher = _continuation_fetcher(lambda *a, **k: not_found)
+    with pytest.raises(VideoUnavailableError, match="next page"):
+        fetcher._get_continuation_data("tok", _YTCFG)
+
+
+def test_continuation_non_json_raises_metadata_parsing_error():
+    import httpx
+
+    from yt_meta.exceptions import MetadataParsingError
+
+    html = httpx.Response(200, text="<html>", request=httpx.Request("POST", "https://x"))
+    fetcher = _continuation_fetcher(lambda *a, **k: html)
+    with pytest.raises(MetadataParsingError, match="not valid JSON"):
+        fetcher._get_continuation_data("tok", _YTCFG)
+    assert fetcher.cache == {}

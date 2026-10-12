@@ -250,3 +250,34 @@ def test_published_between_hour_bounds(client, mocker):
 def test_published_between_requires_start(client):
     with pytest.raises(ValueError, match="start_date"):
         list(client.get_videos_published_between("https://www.youtube.com/@x", start_date=None))
+
+
+def test_published_between_survives_failed_probe(client, mocker):
+    """REGRESSION (2026-10 review): hydrate() didn't catch
+    VideoUnavailableError, so one probe that failed after retries aborted
+    the whole window search. Failed probes now fall back to the listing
+    record, as _process_videos does."""
+    from yt_meta.exceptions import VideoUnavailableError
+
+    raw = _daily_raw_items(90)
+    fetcher, hydrations = _fetcher_for_bisect(client, mocker, raw)
+    fake_meta = fetcher.video_fetcher.get_video_metadata.side_effect
+    failed = []
+
+    def flaky(url):
+        vid = url.split("v=")[-1]
+        if int(vid[3:]) < 40:  # every probe well outside the window fails
+            failed.append(vid)
+            raise VideoUnavailableError("HTTP 503 after retries", video_id=vid)
+        return fake_meta(url)
+
+    fetcher.video_fetcher.get_video_metadata.side_effect = flaky
+    start, end = raw[46]["_exact"].date(), raw[44]["_exact"].date()
+    result = list(
+        client.get_videos_published_between(
+            "https://www.youtube.com/@x", start_date=start, end_date=end
+        )
+    )
+
+    assert failed, "the test must exercise at least one failing probe"
+    assert [v["video_id"] for v in result] == ["vid0000044", "vid0000045", "vid0000046"]

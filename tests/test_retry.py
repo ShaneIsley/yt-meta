@@ -122,3 +122,24 @@ def test_retry_after_is_capped_at_max_delay():
         rng=lambda: 1.0,
     )
     assert slept == [30.0]
+
+
+@pytest.mark.parametrize("header", ["-5", "-1"])
+def test_negative_retry_after_falls_back_to_backoff(header):
+    """REGRESSION (2026-10 review): a negative Retry-After reached
+    time.sleep(), which raises ValueError: not an httpx error, so it
+    escaped every caller's error handling."""
+    import time
+
+    responses = [_response(429, {"Retry-After": header}), _response(200)]
+    slept = []
+
+    def sleep(seconds):
+        slept.append(seconds)
+        time.sleep(seconds)  # the real sleep raises on negatives
+
+    resp = request_with_retries(
+        lambda: responses.pop(0), retries=3, sleep=sleep, rng=lambda: 0.0
+    )
+    assert resp.status_code == 200
+    assert slept == [0.0]

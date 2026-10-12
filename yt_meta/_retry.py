@@ -37,9 +37,12 @@ def _retry_after_seconds(response: httpx.Response) -> float | None:
     if value is None:
         return None
     try:
-        return float(int(value))
+        seconds = float(int(value))
     except (ValueError, TypeError):
         return None
+    # A negative value made time.sleep() raise ValueError, escaping the
+    # httpx-error handling around every request. Treat it as malformed.
+    return seconds if seconds >= 0 else None
 
 
 def request_with_retries(
