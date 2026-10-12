@@ -147,6 +147,15 @@ class SQLiteCache(MutableMapping):
             self._conn.execute("DELETE FROM cache WHERE key = ?", (key,))
             self._conn.commit()
 
+    def clear(self):
+        """Remove every entry in one statement. The inherited
+        MutableMapping.clear() loops popitem() until KeyError, so the
+        first expired row (which __getitem__ reports as KeyError) ended
+        it early and left the rest of the cache in place."""
+        with self._lock:
+            self._conn.execute("DELETE FROM cache")
+            self._conn.commit()
+
     def __iter__(self):
         with self._lock:
             cursor = self._conn.execute("SELECT key FROM cache")

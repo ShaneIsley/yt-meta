@@ -459,3 +459,41 @@ def test_date_kwargs_clobbering_hour_bounds_raises():
             date(2026, 7, 3),
             {"publish_date": {"gte": datetime(2026, 7, 1, 7, 30)}},
         )
+
+
+def test_build_date_filter_keeps_caller_operators_and_datetimes():
+    """REGRESSION (2026-10 review): build_date_filter rewrote the caller's
+    publish_date condition to {gte, lte} of plain dates, so gt/lt became
+    inclusive and datetime bounds lost their time-of-day. The filter must
+    keep the caller's operators and values; only the returned pagination
+    bounds are day-level."""
+    from datetime import date, datetime
+
+    from yt_meta.filtering import build_date_filter
+
+    cond = {"gt": date(2024, 1, 10), "lt": datetime(2024, 2, 1, 15, 30)}
+    merged, start, end = build_date_filter(None, None, {"publish_date": cond})
+    assert merged["publish_date"] == cond
+    assert start == date(2024, 1, 10)
+    assert end == date(2024, 2, 1)
+
+
+def test_build_date_filter_kwarg_replaces_same_side_bound():
+    """A start_date kwarg replaces a gt bound (kwargs win) rather than
+    leaving both in the condition."""
+    from datetime import date
+
+    from yt_meta.filtering import build_date_filter
+
+    existing = {"publish_date": {"gt": date(2020, 1, 1), "lt": date(2025, 1, 1)}}
+    merged, _, _ = build_date_filter(date(2024, 6, 1), None, existing)
+    assert merged["publish_date"] == {"gte": date(2024, 6, 1), "lt": date(2025, 1, 1)}
+
+
+def test_build_date_filter_normalizes_string_bounds():
+    from datetime import date
+
+    from yt_meta.filtering import build_date_filter
+
+    merged, _, _ = build_date_filter(None, None, {"publish_date": {"gt": "2024-01-10"}})
+    assert merged["publish_date"] == {"gt": date(2024, 1, 10)}

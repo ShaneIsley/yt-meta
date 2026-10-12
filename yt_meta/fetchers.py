@@ -85,15 +85,16 @@ def _process_videos(
     filters on the raw renderer dict, optionally fetches full metadata
     and merges it, applies slow filters on the merged dict, and yields
     survivors until stop_at_video_id or max_videos."""
-    videos_processed = 0
-    for video in video_generator:
+
+    def admit(video):
+        """The merged video if it passes every filter, else None."""
         # Date-funnel coarse cut (see _run_filtered_pipeline): padded
         # pre-hydration screen on the approximate date. Skips the
         # hydration request for videos safely outside the window.
         if coarse_date_cond is not None and not passes_padded_date_window(
             video, coarse_date_cond
         ):
-            continue
+            return None
         # M-e: when full metadata will be fetched anyway, a fast-filter
         # field that is missing/None on the raw item is DEFERRED to the
         # merged dict instead of dropping the video one request too
@@ -110,7 +111,7 @@ def _process_videos(
         else:
             deferred_filters, immediate_filters = {}, fast_filters
         if not apply_filters(video, immediate_filters):
-            continue
+            return None
         merged_video = video
         if must_fetch_full_metadata:
             try:
@@ -128,18 +129,27 @@ def _process_videos(
                             "publish_date_text"
                         ]
                 elif slow_filters:
-                    continue
+                    return None
             except (VideoUnavailableError, MetadataParsingError) as e:
                 log.error(
                     "Error fetching metadata for video_id %s: %s",
                     video["video_id"],
                     e,
                 )
-                continue
+                return None
         if not apply_filters(merged_video, {**slow_filters, **deferred_filters}):
-            continue
-        yield merged_video
-        videos_processed += 1
+            return None
+        return merged_video
+
+    videos_processed = 0
+    for video in video_generator:
+        merged_video = admit(video)
+        if merged_video is not None:
+            yield merged_video
+            videos_processed += 1
+        # The marker ends pagination whether or not it passed the
+        # filters (or its metadata fetch failed) — checking only after
+        # a yield walked the whole channel when the marker was filtered.
         if stop_at_video_id and video["video_id"] == stop_at_video_id:
             return
         if max_videos != -1 and videos_processed >= max_videos:
@@ -719,8 +729,11 @@ class ChannelFetcher(_BaseFetcher):
             A generator of video dictionaries.
         """
         validate_filters(filters)
+        # Strip first: a trailing slash ("…/videos/") used to defeat the
+        # endswith check and produce "…/videos/videos", a 404.
+        channel_url = channel_url.rstrip("/")
         if not channel_url.endswith("/videos"):
-            channel_url = f"{channel_url.rstrip('/')}/videos"
+            channel_url = f"{channel_url}/videos"
         filters, final_start_date, final_end_date = build_date_filter(
             start_date, end_date, filters
         )
@@ -781,8 +794,11 @@ class ChannelFetcher(_BaseFetcher):
         start, end = norm(start_date), norm(end_date)
         start_day, end_day = day_of(start), day_of(end) if end else None
 
+        # Strip first: a trailing slash ("…/videos/") used to defeat the
+        # endswith check and produce "…/videos/videos", a 404.
+        channel_url = channel_url.rstrip("/")
         if not channel_url.endswith("/videos"):
-            channel_url = f"{channel_url.rstrip('/')}/videos"
+            channel_url = f"{channel_url}/videos"
         raw = list(
             self._get_raw_channel_videos_generator(
                 channel_url, force_refresh, start_day, stop_pad=True
@@ -928,8 +944,11 @@ class ChannelFetcher(_BaseFetcher):
             A generator of stream dictionaries.
         """
         validate_filters(filters)
+        # Strip first: a trailing slash ("…/streams/") used to defeat the
+        # endswith check and produce "…/streams/streams", a 404.
+        channel_url = channel_url.rstrip("/")
         if not channel_url.endswith("/streams"):
-            channel_url = f"{channel_url.rstrip('/')}/streams"
+            channel_url = f"{channel_url}/streams"
         raw_streams_generator = self._get_raw_streams_generator(
             channel_url, force_refresh
         )

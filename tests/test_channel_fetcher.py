@@ -723,3 +723,110 @@ def test_padded_early_stop_paginates_past_approximate_boundary():
         "in-window video was never fetched"
     )
     assert got == {"vidpage1xxx", "vidpage2xxx"}
+
+
+def test_gt_publish_date_is_exclusive_through_public_api(channel_fetcher):
+    """REGRESSION (2026-10 review): gt was rewritten to gte, so a video
+    published ON the boundary day leaked into get_channel_videos."""
+    from datetime import date
+
+    raw = [
+        {"video_id": "on", "publish_date": date(2024, 1, 10)},
+        {"video_id": "after", "publish_date": date(2024, 1, 11)},
+    ]
+    with patch.object(
+        channel_fetcher, "_get_raw_channel_videos_generator", return_value=iter(raw)
+    ):
+        videos = list(
+            channel_fetcher.get_channel_videos(
+                "https://www.youtube.com/@x",
+                filters={"publish_date": {"gt": date(2024, 1, 10)}},
+            )
+        )
+    assert [v["video_id"] for v in videos] == ["after"]
+
+
+def test_hour_bounds_without_hydration_raise_through_public_api(channel_fetcher):
+    """REGRESSION (2026-10 review): build_date_filter truncated datetime
+    bounds to dates before the pipeline saw them, so the documented
+    ValueError for hour-level bounds without full metadata never fired."""
+    from datetime import datetime
+
+    with pytest.raises(ValueError, match="fetch_full_metadata"):
+        list(
+            channel_fetcher.get_channel_videos(
+                "https://www.youtube.com/@x",
+                filters={"publish_date": {"gte": datetime(2024, 1, 1, 15)}},
+            )
+        )
+
+
+def test_stop_at_video_id_stops_even_when_marker_is_filtered_out():
+    """REGRESSION (2026-10 review): the stop check ran only after a video
+    was yielded, so a marker that failed the filters (or whose metadata
+    fetch errored) let pagination run through the whole channel."""
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    def raw():
+        yield {"video_id": "a", "view_count": 500}
+        yield {"video_id": "marker", "view_count": 1}
+        raise AssertionError("pagination continued past stop_at_video_id")
+
+    result = list(
+        _run_filtered_pipeline(
+            raw(),
+            filters={"view_count": {"gte": 100}},
+            content_type="videos",
+            fetch_full_metadata=False,
+            video_fetcher=MagicMock(),
+            logger=MagicMock(),
+            stop_at_video_id="marker",
+            max_videos=-1,
+        )
+    )
+    assert [v["video_id"] for v in result] == ["a"]
+
+
+def test_stop_at_video_id_stops_when_marker_metadata_fetch_fails():
+    from yt_meta.exceptions import VideoUnavailableError
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    def raw():
+        yield {"video_id": "marker"}
+        raise AssertionError("pagination continued past stop_at_video_id")
+
+    video_fetcher = MagicMock()
+    video_fetcher.get_video_metadata.side_effect = VideoUnavailableError("gone")
+    result = list(
+        _run_filtered_pipeline(
+            raw(),
+            filters=None,
+            content_type="videos",
+            fetch_full_metadata=True,
+            video_fetcher=video_fetcher,
+            logger=MagicMock(),
+            stop_at_video_id="marker",
+            max_videos=-1,
+        )
+    )
+    assert result == []
+
+
+@pytest.mark.parametrize(
+    ("method", "raw_gen", "expected"),
+    [
+        ("get_channel_videos", "_get_raw_channel_videos_generator", "/videos"),
+        ("get_channel_streams", "_get_raw_streams_generator", "/streams"),
+    ],
+)
+@pytest.mark.parametrize("suffix", ["", "/", "{tab}", "{tab}/"])
+def test_trailing_slash_channel_url_is_not_doubled(
+    channel_fetcher, method, raw_gen, expected, suffix
+):
+    """REGRESSION (2026-10 review): ".../@x/videos/" failed the endswith
+    check and became ".../@x/videos/videos" — a 404 that was swallowed,
+    so the caller got an empty result with no error."""
+    url = "https://www.youtube.com/@x" + suffix.format(tab=expected)
+    with patch.object(channel_fetcher, raw_gen, return_value=iter([])) as gen:
+        list(getattr(channel_fetcher, method)(url))
+    assert gen.call_args.args[0] == "https://www.youtube.com/@x" + expected

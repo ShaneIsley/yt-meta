@@ -373,3 +373,23 @@ def test_ma_sqlite_cache_rejects_unserializable_types_loudly(tmp_path):
     with pytest.raises(TypeError):
         cache["key"] = {"bad": object()}
     cache.close()
+
+
+def test_clear_removes_expired_and_legacy_rows(tmp_path):
+    """REGRESSION (2026-10 review): SQLiteCache inherited
+    MutableMapping.clear(), which loops popitem() until KeyError. An
+    expired row reads as KeyError, so clear() stopped early and left
+    entries behind; a legacy pickle row made it raise ValueError."""
+    cache = SQLiteCache(path=str(tmp_path / "cache.db"), ttl_seconds=60)
+    cache["fresh"] = {"a": 1}
+    cache["stale"] = {"b": 2}
+    cache["fresh2"] = {"c": 3}
+    cache._conn.execute("UPDATE cache SET timestamp = 0 WHERE key = 'stale'")
+    cache._conn.execute(
+        "INSERT INTO cache VALUES ('legacy', ?, ?)", (b"\x80\x04legacy", time.time())
+    )
+    cache._conn.commit()
+
+    cache.clear()
+
+    assert len(cache) == 0

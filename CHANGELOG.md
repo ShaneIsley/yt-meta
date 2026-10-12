@@ -15,6 +15,19 @@ All notable changes to this project are documented in this file.
   comment older than the cutoff, as documented. Previously it only
   filtered, so `limit=None, since_date=...` fetched every comment on
   the video.
+- **`publish_date` filters kept as written**: `build_date_filter`
+  rewrote them to inclusive whole-day bounds, so `gt`/`lt` let
+  boundary-day videos through and `datetime` bounds lost their time of
+  day. The documented `ValueError` for hour-level bounds without
+  `fetch_full_metadata=True` now fires through the public API.
+- **`stop_at_video_id` always stops**: pagination ended only if the
+  marker video passed the filters. A filtered-out marker, or one whose
+  metadata fetch failed, walked the rest of the channel or playlist.
+- **Trailing slash on channel URLs**: `…/videos/` and `…/streams/`
+  became `…/videos/videos` (a 404, swallowed into an empty result).
+- **`clear_cache()` with the SQLite backend** now removes every entry.
+  The inherited `clear()` stopped at the first expired row and raised
+  on a legacy pickle row.
 
 ## [0.8.0] - 2026-07-06
 

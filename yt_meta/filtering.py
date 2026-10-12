@@ -290,10 +290,20 @@ def build_date_filter(
     elif isinstance(final_end, datetime):
         final_end = final_end.date()
 
-    date_conditions = {}
-    if final_start is not None:
+    # The filter keeps the caller's own operators and bound values: gt
+    # stays exclusive and a datetime bound keeps its time-of-day (so the
+    # pipeline can honor it, or refuse it without full metadata).
+    # final_start/final_end above are only the day-level pagination
+    # bounds. Day-granular kwargs replace the bound on their side.
+    date_conditions = {
+        op: parse_relative_date_string(v) if isinstance(v, str) else v
+        for op, v in existing_pd.items()
+    }
+    if start_date is not None:
+        date_conditions.pop("gt", None)
         date_conditions["gte"] = final_start
-    if final_end is not None:
+    if end_date is not None:
+        date_conditions.pop("lt", None)
         date_conditions["lte"] = final_end
     if date_conditions:
         filters["publish_date"] = date_conditions
