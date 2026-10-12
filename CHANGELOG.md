@@ -10,7 +10,7 @@ All notable changes to this project are documented in this file.
   `"1 December 2023"` as 1 day ago. Shorthand now must be the whole
   string; `second`/`minute`/`hour ... ago` are handled explicitly, and a
   trailing `" (edited)"` is tolerated. Fresh comments now get today's
-  date instead of one months in the past.
+  date instead of a date months in the past.
 - **`since_date` now stops comment pagination** at the first non-pinned
   comment older than the cutoff, as documented. Previously it only
   filtered, so `limit=None, since_date=...` fetched every comment on
@@ -38,28 +38,26 @@ All notable changes to this project are documented in this file.
   raise `ValueError` instead of silently returning top comments. If
   YouTube offers no newest-first ordering, `'recent'` falls back with a
   warning, and `since_date` raises because it needs chronological order.
-- **Unavailable videos no longer blank out listing data.** Hydrating a
-  members-only or private video kept the listing's title and view count
-  instead of replacing them with `None` and `0`.
+- **Unavailable videos no longer blank out listing data.** Fetching full
+  metadata for a members-only or private video now keeps the listing's
+  title and view count instead of replacing them with `None` and `0`.
 - **Rescheduled premieres update.** A re-check of an `upcoming` video
   returns the fresh `scheduled_start_time` instead of the cached one.
 - **`get_videos_published_between` survives a failed lookup.** One
   probe that failed after retries no longer aborts the search.
-- **Library errors mid-pagination.** Missing page config, HTTP errors
-  and non-JSON responses while paging raise `MetadataParsingError` or
-  `VideoUnavailableError` instead of raw `KeyError`, httpx or JSON
+- **Paging errors raise library exceptions.** Missing page config, HTTP
+  errors and non-JSON responses while paging raise `MetadataParsingError`
+  or `VideoUnavailableError` instead of raw `KeyError`, httpx or JSON
   errors.
 - **Negative `Retry-After`** no longer crashes the retry loop.
 - **SQLite cache expiry** no longer deletes a value another thread wrote
   between the read and the delete.
-
 - **Channel listings after YouTube's compact-text change (2026-10).**
   Listings now display `1.3M` and `11d ago` / `Streamed 3w ago`, so
   `view_count` came back `None` (view-count filters returned nothing)
   and `2w ago` dates did not parse. The parser now reads each part's
   accessibility label (`1.3 million views`, `11 days ago`);
   `publish_date_text` carries that long form.
-
 - **Pages that embed their data as a JSON script element (2026-10).**
   Some responses now carry `ytInitialData` in
   `<script id="yt-initial-data" type="application/json">` instead of an
@@ -80,9 +78,10 @@ All notable changes to this project are documented in this file.
   alias (use `parse_relative_date_string`). None was exported from the
   package or used by the library.
 - **Bad arguments raise when a method is called, not on first iteration.**
-  The listing and comment methods (`get_channel_videos`, `_shorts`,
-  `_streams`, `get_playlist_videos`, `get_videos_published_between`,
-  `iter_new_videos`, `get_video_comments`, `..._with_reply_tokens`,
+  The listing and comment methods (`get_channel_videos`,
+  `get_channel_shorts`, `get_channel_streams`, `get_playlist_videos`,
+  `get_videos_published_between`, `iter_new_videos`,
+  `get_video_comments`, `get_video_comments_with_reply_tokens`,
   `get_comment_replies`, `get_comment_threads`) check their arguments up
   front and return a generator; requests still start on first iteration.
 - **`get_comment_threads` defaults to `sort_by='recent'`**, like every
@@ -94,17 +93,16 @@ All notable changes to this project are documented in this file.
   yield nothing, so a missing or mistyped channel looked like an empty
   one. They now raise `VideoUnavailableError`, as playlists already did.
   The error policy is written down in the `fetchers` module docstring and
-  the README's Error Handling section.
-- **Internal: one page fetch and one pagination loop for every listing.**
-  Channel videos, shorts, streams and playlists share
-  `_fetch_page` / `_paginate`; response-layout lookups (tabs, grids,
-  continuation items) moved into `parsing`. Cache keys are unchanged.
-- **Internal: comment sort options are read from one known place.** The
-  comment client used to search the whole watch page for anything that
-  looked like a comment token. `parsing.find_comment_sort_tokens` reads
-  the comments panel's "Top" / "Newest" menu directly (by position when
-  the titles are localized), and returns nothing when comments are
-  disabled.
+  the README's Errors section.
+- **Documentation.** The README is reorganized for new users (install,
+  quick start, one section per task, then filtering, caching, errors and
+  a complete API reference), and its claims were checked against the
+  code. `YtMeta` docstrings share one style.
+- Internal restructuring with no change in behavior: every listing
+  shares one page fetch and pagination loop, YouTube page-layout
+  lookups live in `parsing`, and comment sort options are read from the
+  comments panel menu instead of a search of the whole page. Cache keys
+  are unchanged.
 - **Filter validation is stricter.** Values are checked against the
   field's type, so `{"title": {"eq": 5}}` and
   `{"view_count": {"eq": "100"}}` raise `TypeError` instead of crashing
