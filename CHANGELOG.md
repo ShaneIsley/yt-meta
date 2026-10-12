@@ -66,6 +66,15 @@ All notable changes to this project are documented in this file.
   form is decoded with `json.JSONDecoder.raw_decode`, so a `};` inside a
   string (code in a description) no longer cuts the data short.
 
+### Security
+- Lockfile: anyio 4.14.1 → 4.14.2 (PYSEC-2026-4023/4024/4025), urllib3
+  2.7.0 → 2.8.0 (PYSEC-2026-4175/4176/4177: unbounded chunk-size line in
+  streamed responses) and charset-normalizer 3.4.8 → 3.4.9 (3.4.8 was
+  yanked). `diskcache` (the optional `persistent_cache` extra) still has
+  PYSEC-2026-2447, unsafe pickle loading, with no fixed release; yt-meta
+  never imports it, and the README tells users of it to keep its
+  directory private.
+
 ### Changed
 - **Transcripts honor `accept_cookies` and retry on 429/5xx.**
   `youtube_transcript_api` used its own default session, so neither
