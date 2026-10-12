@@ -76,6 +76,16 @@ All notable changes to this project are documented in this file.
   directory private.
 
 ### Changed
+- **Dev tooling lives only in the `dev` dependency group.** The
+  duplicate `yt-meta[dev]` extra is gone, and the group now includes
+  `ruff` and `pytest-cov`. `uv sync` installs the group, so `make lint`
+  uses the locked ruff instead of whatever ruff is on `PATH`. Use
+  `uv sync` in place of `pip install yt-meta[dev]`.
+- **CI tests Python 3.10–3.13**, every version `requires-python` allows,
+  instead of only 3.13. The workflow token is read-only.
+- **The unused `integration` pytest marker is removed.** No test has
+  used it since 0.5.0. The H12 test now checks that `addopts` deselects
+  every registered marker.
 - **Transcripts honor `accept_cookies` and retry on 429/5xx.**
   `youtube_transcript_api` used its own default session, so neither
   applied. It now gets a `requests.Session` with the consent cookie (when

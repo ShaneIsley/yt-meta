@@ -26,7 +26,7 @@ should page us, distinguished from the noise of changing data.
 
 HOW TO RUN
 ----------
-Excluded from the default run AND from ``-m integration``::
+Excluded from the default run::
 
     pytest -m contract          # run it deliberately
     pytest -m contract -v       # see each capability
