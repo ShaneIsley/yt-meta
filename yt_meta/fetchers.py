@@ -383,39 +383,8 @@ class VideoFetcher:
     def get_video_metadata(
         self, youtube_url: str, force_refresh: bool = False
     ) -> dict | None:
-        """
-        Fetches and parses comprehensive metadata for a given YouTube video.
-
-        Args:
-            youtube_url: Any supported form (``watch?v=ID``, ``/shorts/ID``,
-                ``youtu.be/ID``, or a bare 11-char ID).
-            force_refresh: Re-fetch even on a cache hit. Use this to
-                re-check a video's availability and pick up status
-                changes (e.g. a video that became unavailable since it
-                was last cached).
-
-        Returns:
-            A dictionary of metadata, OR ``None`` if the watch page was
-            fetched but no player response could be extracted at all
-            (a genuinely unparseable page). Every returned dict carries
-            video-status lifecycle fields:
-
-              - ``status``: ``"ok"`` or ``"unavailable"``.
-              - ``status_reason``: YouTube's reason text when unavailable
-                (e.g. "Video unavailable"), else ``None``.
-              - ``status_checked_at`` / ``status_changed_at``: ISO-8601
-                UTC timestamps of the last check and the last status
-                change.
-
-            When a previously-``ok`` video is found ``unavailable``, the
-            result PRESERVES the last-known-good content fields and
-            overlays the status fields — so prior data is never lost.
-
-        Raises:
-            VideoUnavailableError: if the HTTP fetch itself failed
-                (network error, 404, rate-limit) — distinct from a
-                parsed-but-unavailable video, which is reported via the
-                ``status`` field rather than an exception.
+        """One video's watch-page metadata with status tracking. Contract: see
+        YtMeta.get_video_metadata.
         """
         logger.info(f"Fetching video page: {youtube_url}")
         video_id = extract_video_id(youtube_url)
@@ -603,22 +572,7 @@ class ChannelFetcher(_BaseFetcher):
         stop_at_video_id=None,
         max_videos=-1,
     ):
-        """
-        Fetches videos from a YouTube channel's videos and shorts tab.
-
-        Args:
-            channel_url: The URL of the channel's videos page.
-            force_refresh: Whether to bypass the cache and fetch fresh data.
-            fetch_full_metadata: Whether to fetch full metadata for each video.
-            start_date: The start date for filtering videos.
-            end_date: The end date for filtering videos.
-            filters: A dictionary of filter conditions.
-            stop_at_video_id: The ID of the video to stop fetching at.
-            max_videos: The maximum number of videos to fetch (-1 for all).
-
-        Returns:
-            A generator of video dictionaries.
-        """
+        """Channel Videos tab, filtered. Parameters: see YtMeta.get_channel_videos."""
         validate_filters(filters, kind="video")
         validate_youtube_url(channel_url)
         channel_url = self._tab_url(channel_url, "videos")
@@ -653,15 +607,13 @@ class ChannelFetcher(_BaseFetcher):
         force_refresh=False,
         margin=3,
     ):
-        """Videos published in an exact window, found by bisecting the
-        chronological listing with probe hydrations (~2·log₂ n) instead
-        of hydrating every video in the padded window. See the facade
-        docstring for the request-cost rationale.
+        """Exact-date window by bisection. Parameters: see
+        YtMeta.get_videos_published_between.
 
         ``margin`` extra items are hydrated on each side of the bisected
-        boundaries — channel listings are only approximately
-        chronological (premieres, pinned items), so the final
-        exact-date membership check runs over a slightly widened slice.
+        boundaries: channel listings are only approximately chronological
+        (premieres, pinned items), so the final exact-date membership check
+        runs over a slightly widened slice.
         """
         if start_date is None:
             raise ValueError(
@@ -777,20 +729,7 @@ class ChannelFetcher(_BaseFetcher):
         stop_at_video_id=None,
         max_videos=-1,
     ):
-        """
-        Fetches shorts from a YouTube channel's shorts tab.
-
-        Args:
-            channel_url (str): The URL of the channel's shorts page.
-            force_refresh (bool): Whether to bypass the cache and fetch fresh data.
-            fetch_full_metadata (bool): Whether to fetch full metadata for each short.
-            filters (Optional[dict]): A dictionary of filter conditions.
-            stop_at_video_id (Optional[str]): The ID of the short to stop fetching at.
-            max_videos (int): The maximum number of shorts to fetch (-1 for all).
-
-        Returns:
-            Generator[dict, None, None]: A generator of short dictionaries.
-        """
+        """Channel Shorts tab, filtered. Parameters: see YtMeta.get_channel_shorts."""
         validate_filters(filters, kind="video")
         validate_youtube_url(channel_url)
         return _run_filtered_pipeline(
@@ -813,29 +752,7 @@ class ChannelFetcher(_BaseFetcher):
         stop_at_video_id=None,
         max_videos=-1,
     ):
-        """
-        Fetches live streams from a channel's Live (``/streams``) tab —
-        the tab that holds live, upcoming/scheduled, and past live
-        content, which the Videos tab does NOT include.
-
-        Items use the same shape as get_channel_videos. Upcoming streams
-        carry ``is_upcoming=True`` and ``scheduled_text`` (the listing's
-        "Scheduled for ..." text); set ``fetch_full_metadata=True`` to
-        also get the precise ``scheduled_start_time`` and ``status`` from
-        each stream's watch page.
-
-        Args:
-            channel_url: The channel URL (the ``/streams`` suffix is added
-                automatically if absent).
-            force_refresh: Bypass the cache and fetch fresh data.
-            fetch_full_metadata: Fetch full per-stream metadata.
-            filters: A dictionary of filter conditions.
-            stop_at_video_id: The ID of the stream to stop fetching at.
-            max_videos: The maximum number of streams to fetch (-1 for all).
-
-        Returns:
-            A generator of stream dictionaries.
-        """
+        """Channel Live (/streams) tab, filtered. Parameters: see YtMeta.get_channel_streams."""
         validate_filters(filters, kind="video")
         validate_youtube_url(channel_url)
         channel_url = self._tab_url(channel_url, "streams")
@@ -908,29 +825,7 @@ class PlaylistFetcher(_BaseFetcher):
         stop_at_video_id=None,
         max_videos=-1,
     ):
-        """
-        Fetches videos from a YouTube playlist.
-
-        Handles pagination and filtering. Date filtering is FAST on
-        playlists: the current lockup listing carries approximate
-        relative dates ("2 years ago"), which is what the filter
-        compares against. Pass ``fetch_full_metadata=True`` when you
-        need precise publish dates; if the listing shape ever lacks a
-        date, the filter is deferred to the per-video metadata rather
-        than dropping the item (M-e).
-
-        Args:
-            playlist_id (str): The ID of the playlist.
-            fetch_full_metadata (bool): Whether to fetch full metadata for each video.
-            start_date (Optional[Union[str, date]]): The start date for filtering.
-            end_date (Optional[Union[str, date]]): The end date for filtering.
-            filters (Optional[dict]): A dictionary of filter conditions.
-            stop_at_video_id (Optional[str]): The ID of the video to stop fetching at.
-            max_videos (int): The maximum number of videos to fetch (-1 for all).
-
-        Returns:
-            Generator[dict, None, None]: A generator of video dictionaries.
-        """
+        """Playlist items, filtered. Parameters: see YtMeta.get_playlist_videos."""
         validate_filters(filters, kind="video")
         filters, _, _ = build_date_filter(start_date, end_date, filters)
         return _run_filtered_pipeline(

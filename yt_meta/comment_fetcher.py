@@ -79,20 +79,11 @@ class CommentFetcher:
         include_reply_continuation: bool = False,
         filters: dict | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """
-        Get comments from a YouTube video with comprehensive data extraction.
+        """Top-level comments for a video. Parameters: see YtMeta.get_video_comments.
 
-        Args:
-            video_id: YouTube video ID or URL
-            limit: Maximum number of comments to fetch
-            sort_by: Sort order ("recent" — default, chronological; or "top" — YouTube's editorial ranking)
-            since_date: Only fetch comments after this date (requires sort_by="recent"). The only filter that short-circuits pagination.
-            progress_callback: Callback function called with comment count
-            include_reply_continuation: Include reply continuation tokens for comments with replies
-            filters: Optional dict of comment-level predicates applied after fetch. Operates on the in-memory comment list — does not reduce request count. See COMMENT_FILTER_KEYS in filtering.py for supported fields.
-
-        Yields:
-            Dict containing complete comment data, optionally including 'reply_continuation_token'
+        ``include_reply_continuation=True`` adds each comment's
+        ``reply_continuation_token`` (what YtMeta.get_video_comments_with_reply_tokens
+        uses).
         """
         if sort_by not in ("recent", "top"):
             raise ValueError(f"sort_by must be 'recent' or 'top', got {sort_by!r}")
@@ -288,18 +279,7 @@ class CommentFetcher:
         limit: int | None = None,
         progress_callback: Callable[[int], None] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """
-        Get replies for a specific comment using its reply continuation token.
-
-        Args:
-            video_id: YouTube video ID or URL
-            reply_continuation_token: Reply continuation token from a comment
-            limit: Maximum number of replies to fetch
-            progress_callback: Callback function called with reply count
-
-        Yields:
-            Dict containing complete reply data
-        """
+        """Replies in one comment thread. Parameters: see YtMeta.get_comment_replies."""
         # C4: same normalization as get_comments — -1 means unbounded.
         if limit is not None and limit < 0:
             limit = None

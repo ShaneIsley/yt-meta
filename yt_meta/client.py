@@ -175,23 +175,34 @@ class YtMeta:
         video_id: str | None = None,
         force_refresh: bool = False,
     ) -> dict | None:
-        """
-        Fetches and parses comprehensive metadata for a given YouTube video.
+        """Fetches and parses comprehensive metadata for a given YouTube video.
 
         Args:
-            youtube_url: The video URL (or a bare 11-char id).
-            video_id: Alias — pass the id (or a URL) by this keyword
-                instead. Exactly one of youtube_url / video_id is
-                required.
-            force_refresh: Re-fetch even on a cache hit, to pick up
-                availability/status changes.
+            youtube_url: Any supported form (``watch?v=ID``, ``/shorts/ID``,
+                ``youtu.be/ID``, ``/live/ID``, or a bare 11-char id).
+            video_id: Alias: pass the id (or a URL) by this keyword instead.
+                Exactly one of youtube_url / video_id is required.
+            force_refresh: Re-fetch even on a cache hit, to re-check
+                availability and pick up status changes.
 
         Returns:
-            A dictionary of metadata (including ``status`` /
-            ``status_reason`` / ``status_checked_at`` /
-            ``status_changed_at`` fields), or ``None`` if the page
-            yielded no player response at all. See get_video_metadata on
-            VideoFetcher for the full status contract.
+            A dictionary of metadata, or ``None`` if the watch page was fetched
+            but had no player response at all. Every dict carries status fields:
+
+              - ``status``: ``"ok"``, ``"upcoming"`` (scheduled premiere or live
+                event not started) or ``"unavailable"``.
+              - ``status_reason``: YouTube's reason text when not ``"ok"``.
+              - ``status_checked_at`` / ``status_changed_at``: ISO-8601 UTC
+                times of the last check and the last status change.
+
+            When a video is found ``"unavailable"`` and an earlier record is
+            cached, the result keeps that record's content fields (title,
+            counts, ...) and updates only the status fields.
+
+        Raises:
+            VideoUnavailableError: the HTTP fetch itself failed (network error,
+                404, rate limit). An unavailable video is reported via
+                ``status``, not an exception.
         """
         target = self._resolve_video_target(youtube_url, video_id)
         return self._video_fetcher.get_video_metadata(
@@ -367,11 +378,15 @@ class YtMeta:
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
-        """
-        Fetches videos from a YouTube playlist.
+        """Fetches videos from a YouTube playlist.
 
-        Handles pagination and filtering. Note that date filtering for playlists
-        is a "slow" operation and will trigger a full metadata fetch for each video.
+        Handles pagination and filtering. Date filters are fast: they compare
+        the listing's approximate dates (parsed from relative text such as
+        "2 years ago"), with no per-video request. Playlists may not be in
+        date order, so the whole playlist is scanned. Pass
+        ``fetch_full_metadata=True`` for exact dates; an item whose listing
+        has no date is checked against its full metadata instead of being
+        dropped.
 
         Args:
             playlist_id: The ID of the playlist.
