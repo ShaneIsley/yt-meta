@@ -12,6 +12,7 @@ import httpx
 from ._retry import request_with_retries
 from .caching import DummyCache
 from .exceptions import MetadataParsingError, VideoUnavailableError
+from .parsing import extract_and_parse_json
 from .utils import _deep_get
 
 logger = logging.getLogger(__name__)
@@ -137,17 +138,9 @@ class CommentAPIClient:
         return {}
 
     def _extract_initial_data(self, html_content: str) -> dict:
-        """Extract ytInitialData from HTML."""
-        initial_data_pattern = r"var\s+ytInitialData\s*=\s*({.+?});"
-        match = re.search(initial_data_pattern, html_content, re.DOTALL)
-
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
-
-        return {}
+        """Extract ytInitialData from HTML (either page format; see
+        parsing.extract_and_parse_json). Returns {} when absent."""
+        return extract_and_parse_json(html_content, "ytInitialData") or {}
 
     def get_sort_endpoints_flexible(
         self, initial_data: dict, ytcfg: dict

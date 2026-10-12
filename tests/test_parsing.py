@@ -320,3 +320,37 @@ def test_extract_videos_from_renderers():
 
 #     assert len(videos) == 1
 #     assert continuation_token == "some_continuation_token"
+
+
+def test_initial_data_from_json_script_element():
+    """REGRESSION (live drift, 2026-10): some channel pages now embed the
+    data in <script id="yt-initial-data" type="application/json"> and read
+    it with JSON.parse, so the assignment regex found nothing and
+    get_channel_videos raised MetadataParsingError intermittently. Shape
+    copied from a captured @ArjanCodes response."""
+    html = (
+        '<script id="yt-initial-data" type="application/json" nonce="x">'
+        '{"contents": {"a": 1}, "header": {}}</script>'
+        "<script>var ytDataEl = document.getElementById('yt-initial-data');"
+        " if (ytDataEl) {try {window['ytInitialData'] ="
+        " JSON.parse(ytDataEl.textContent);} catch (e) {}}</script>"
+    )
+    assert extract_and_parse_json(html, "ytInitialData") == {
+        "contents": {"a": 1},
+        "header": {},
+    }
+
+
+def test_initial_data_survives_brace_semicolon_inside_a_string():
+    """The old non-greedy "({.+?});" regex stopped at the first "};" even
+    inside a JSON string (code in a title or description)."""
+    html = 'var ytInitialData = {"title": "int f() { return 0; };", "n": 2};</script>'
+    assert extract_and_parse_json(html, "ytInitialData") == {
+        "title": "int f() { return 0; };",
+        "n": 2,
+    }
+
+
+def test_initial_data_window_bracket_assignment():
+    html = """<script>window["ytInitialData"] = {"k": [1, 2]};</script>"""
+    assert extract_and_parse_json(html, "ytInitialData") == {"k": [1, 2]}

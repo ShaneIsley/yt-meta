@@ -60,6 +60,14 @@ All notable changes to this project are documented in this file.
   accessibility label (`1.3 million views`, `11 days ago`);
   `publish_date_text` carries that long form.
 
+- **Pages that embed their data as a JSON script element (2026-10).**
+  Some responses now carry `ytInitialData` in
+  `<script id="yt-initial-data" type="application/json">` instead of an
+  assignment, so channel listings intermittently raised
+  `MetadataParsingError`. Both forms are parsed now, and the assignment
+  form is decoded with `json.JSONDecoder.raw_decode`, so a `};` inside a
+  string (code in a description) no longer cuts the data short.
+
 ### Changed
 - **Filter validation is stricter.** Values are checked against the
   field's type, so `{"title": {"eq": 5}}` and

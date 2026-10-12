@@ -31,11 +31,8 @@ def _parse_iso_datetime(value):
     return dateparser.parse(value)
 
 
-# Regex patterns adopted from the parent youtube-comment-downloader library
-# for proven robustness.
+# Regex pattern adopted from the parent youtube-comment-downloader library.
 YT_CFG_RE = r"ytcfg\.set\s*\(\s*({.+?})\s*\)\s*;"
-YT_INITIAL_DATA_RE = r'(?:window\s*\[\s*["\']ytInitialData["\']\s*\]|(?:var\s+)?ytInitialData)\s*=\s*({.+?});'
-YT_INITIAL_PLAYER_RESPONSE_RE = r'(?:window\s*\[\s*["\']ytInitialPlayerResponse["\']\s*\]|(?:var\s+)?ytInitialPlayerResponse)\s*=\s*({.+?});'
 
 
 def _regex_search(text: str, pattern: str, default: str = "", flags: int = 0) -> str:
@@ -62,34 +59,54 @@ def find_ytcfg(html: str) -> dict | None:
     return None
 
 
+# Since 2026-10 YouTube serves some pages with the data in a JSON script
+# element (<script id="yt-initial-data" type="application/json">) that the
+# page then reads with JSON.parse(...), instead of a literal assignment.
+# Seen intermittently on channel pages; both forms are handled.
+_JSON_SCRIPT_IDS = {
+    "ytInitialData": "yt-initial-data",
+    "ytInitialPlayerResponse": "yt-initial-player-response",
+}
+
+
 def extract_and_parse_json(html_content: str, variable_name: str) -> dict | None:
     """
-    Extracts and parses a JSON object assigned to a JavaScript variable in HTML content.
+    Extracts and parses a JSON object that a page assigns to a JavaScript
+    variable, or embeds in a JSON script element (see _JSON_SCRIPT_IDS).
     """
-    # Use the proven, robust regex for the known complex YouTube variables.
-    if variable_name == "ytInitialData":
-        pattern = YT_INITIAL_DATA_RE
-    elif variable_name == "ytInitialPlayerResponse":
-        pattern = YT_INITIAL_PLAYER_RESPONSE_RE
-    else:
-        # Use a simpler, more generic pattern for other variables (e.g., in tests).
-        logger.warning(
-            f"Using generic regex for '{variable_name}'. This is less robust and intended for simple cases."
+    script_id = _JSON_SCRIPT_IDS.get(variable_name)
+    if script_id:
+        match = re.search(
+            rf'<script[^>]*\bid="{script_id}"[^>]*>(.*?)</script>',
+            html_content,
+            re.DOTALL,
         )
-        pattern = rf"var\s+{re.escape(variable_name)}\s*=\s*({{.*?}});"
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse #{script_id} JSON: {e}")
 
-    json_str = _regex_search(html_content, pattern, flags=re.DOTALL)
-    if not json_str:
-        logger.warning(
-            f"Could not find JSON for '{variable_name}' using its designated regex."
-        )
-        return None
+    # Assignment form: find "<name> = {" and decode exactly one JSON value
+    # from the brace. raw_decode respects string boundaries; the old
+    # non-greedy "({.+?});" regex stopped at the first "};" inside a
+    # string (e.g. code in a description) and failed the whole parse.
+    name = re.escape(variable_name)
+    assignment = re.compile(
+        rf"(?:window\s*\[\s*[\"']{name}[\"']\s*\]|(?:var\s+)?\b{name})\s*=\s*(?={{)"
+    )
+    decoder = json.JSONDecoder()
+    for match in assignment.finditer(html_content):
+        try:
+            value, _ = decoder.raw_decode(html_content, match.end())
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON for '{variable_name}': {e}")
+            continue
+        if isinstance(value, dict):
+            return value
 
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON for '{variable_name}': {e}")
-        return None
+    logger.warning(f"Could not find JSON for '{variable_name}' in the page.")
+    return None
 
 
 def parse_duration(duration_label: str) -> int | None:
