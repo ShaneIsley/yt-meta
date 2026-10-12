@@ -1,3 +1,26 @@
+"""Fetchers: get pages, follow next-page tokens, run the filter pipeline.
+
+Page layout knowledge (where items and tokens live) is in ``parsing``.
+Every listing (channel videos / shorts / streams, playlists) goes through
+``_BaseFetcher._fetch_page`` for its first page and ``_paginate`` for the
+rest, so the rules below hold for all of them.
+
+Error policy
+------------
+- The first page of a listing, or a single video/channel/playlist page,
+  can't be fetched: ``VideoUnavailableError``. It can be fetched but not
+  parsed: ``MetadataParsingError``. An empty listing is not an error; it
+  yields nothing.
+- A later page fails: the same exceptions, raised mid-iteration. Records
+  already yielded stay valid.
+- One video's full-metadata fetch fails during a listing: logged, and the
+  video is skipped (``_process_videos``) or kept with its listing data
+  (``get_videos_published_between``, whose bisect needs every index).
+- ``VideoFetcher.get_video_metadata`` returns ``None`` when the watch page
+  has no player response at all; an unavailable video is a record with
+  ``status="unavailable"``, not an error.
+"""
+
 import logging
 from collections.abc import MutableMapping
 from datetime import datetime, timezone
@@ -17,7 +40,7 @@ from .filtering import (
     partition_filters,
     passes_padded_date_window,
 )
-from .utils import _deep_get, extract_video_id, validate_youtube_url
+from .utils import extract_video_id, validate_youtube_url
 from .validators import validate_filters
 
 if TYPE_CHECKING:
@@ -286,6 +309,69 @@ class _BaseFetcher:
         self.cache[cache_key] = result
         return result
 
+    def _fetch_page(
+        self,
+        url: str,
+        *,
+        what: str,
+        cache_key: str | None = None,
+        force_refresh: bool = False,
+        require_ytcfg: bool = True,
+        **context,
+    ) -> tuple[dict, dict | None]:
+        """GET a browse page (channel tab, playlist) and return
+        ``(initial_data, ytcfg)``, cached under ``cache_key`` when given.
+
+        ``what`` names the page in error messages; ``context`` (e.g.
+        ``channel_url=`` or ``playlist_id=``) is attached to the error.
+        Raises per the module's error policy. Raw HTML is never cached
+        (M11): only the two parsed blobs are used downstream.
+        """
+        if cache_key and not force_refresh and cache_key in self.cache:
+            self.logger.info("Using cached %s: %s", what, cache_key)
+            return self.cache[cache_key]
+        try:
+            self.logger.info("Fetching %s: %s", what, url)
+            response = request_with_retries(
+                lambda: self.session.get(url, timeout=10)
+            )
+            html = response.text
+        except httpx.HTTPError as e:
+            raise VideoUnavailableError(
+                f"Could not fetch {what}: {e}", **context
+            ) from e
+        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
+        if not initial_data:
+            raise MetadataParsingError(
+                f"Could not extract ytInitialData from {what}.", **context
+            )
+        ytcfg = parsing.find_ytcfg(html)
+        if require_ytcfg and not ytcfg:
+            raise MetadataParsingError(
+                f"Could not extract ytcfg from {what}.", **context
+            )
+        result = (initial_data, ytcfg)
+        if cache_key:
+            self.cache[cache_key] = result
+        return result
+
+    def _paginate(self, items, ytcfg, parse_page, stop_after=None):
+        """Yield records from a listing, following next-page tokens.
+
+        ``parse_page(items) -> (records, next_token)`` knows the layout
+        (see parsing); this only fetches. ``stop_after(records)`` returning
+        True ends pagination after the current page has been yielded
+        (the date early-stop).
+        """
+        while True:
+            records, token = parse_page(items)
+            yield from records
+            if not token or (stop_after is not None and stop_after(records)):
+                return
+            items = parsing.continuation_items(
+                self._get_continuation_data(token, ytcfg)
+            )
+
 
 class VideoFetcher:
     """Fetches data related to a single YouTube video."""
@@ -396,171 +482,45 @@ class ChannelFetcher(_BaseFetcher):
     ):
         super().__init__(session, cache, video_fetcher)
 
-    def _get_channel_page_cache_key(self, channel_url: str) -> str:
-        key = channel_url.rstrip("/")
-        if not key.endswith("/videos"):
-            key += "/videos"
-        return f"channel_page:{key}"
+    # Channel tab -> cache-key prefix. The prefixes predate the shared
+    # page fetch; kept so existing persistent caches stay valid.
+    _TAB_CACHE_PREFIX = {
+        "videos": "channel_page",
+        "shorts": "channel_shorts_page",
+        "streams": "channel_streams_page",
+    }
 
-    def _get_channel_shorts_page_cache_key(self, channel_url: str) -> str:
-        key = channel_url.rstrip("/")
-        if not key.endswith("/shorts"):
-            key += "/shorts"
-        return f"channel_shorts_page:{key}"
+    @staticmethod
+    def _tab_url(channel_url: str, tab: str) -> str:
+        """The channel's ``tab`` URL. Strip first: a trailing slash
+        ("…/videos/") used to defeat the suffix check and produce
+        "…/videos/videos", which YouTube serves but which split the cache
+        key from the plain form."""
+        url = channel_url.rstrip("/")
+        return url if url.endswith(f"/{tab}") else f"{url}/{tab}"
 
-    def _get_channel_streams_page_cache_key(self, channel_url: str) -> str:
-        key = channel_url.rstrip("/")
-        if not key.endswith("/streams"):
-            key += "/streams"
-        return f"channel_streams_page:{key}"
+    def _tab_cache_key(self, channel_url: str, tab: str) -> str:
+        return f"{self._TAB_CACHE_PREFIX[tab]}:{self._tab_url(channel_url, tab)}"
 
-    def _get_channel_streams_page_data(
-        self, channel_url: str, force_refresh: bool = False
+    def _get_tab_page_data(
+        self, channel_url: str, tab: str, force_refresh: bool = False
     ) -> tuple[dict, dict]:
         validate_youtube_url(channel_url)
-        key = self._get_channel_streams_page_cache_key(channel_url)
-        if not force_refresh and key in self.cache:
-            return self.cache[key]
-        try:
-            response = request_with_retries(
-                lambda: self.session.get(
-                    key.replace("channel_streams_page:", ""), timeout=10
-                )
-            )
-            html = response.text
-        except httpx.HTTPError as e:
-            raise VideoUnavailableError(
-                f"Could not fetch channel streams page: {e}", channel_url=key
-            ) from e
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-        if not initial_data:
-            raise MetadataParsingError(
-                "Could not extract ytInitialData from channel streams page.",
-                channel_url=key,
-            )
-        ytcfg = parsing.find_ytcfg(html)
-        if not ytcfg:
-            raise MetadataParsingError(
-                "Could not extract ytcfg from channel streams page.", channel_url=key
-            )
-        result = (initial_data, ytcfg)
-        self.cache[key] = result
-        return result
-
-    def _get_raw_streams_generator(self, channel_url, force_refresh):
-        """Yields raw stream items from a channel's Live (/streams) tab.
-
-        The Live tab uses the same lockupViewModel grid as the Videos
-        tab, so extraction mirrors _get_raw_channel_videos_generator —
-        the only differences are the page (/streams) and the tab title
-        ("Live"). Date short-circuit doesn't apply (upcoming streams
-        have no publish date), so this is a straight paginated yield.
-        """
-        try:
-            initial_data, ytcfg = self._get_channel_streams_page_data(
-                channel_url, force_refresh=force_refresh
-            )
-        except VideoUnavailableError as e:
-            self.logger.error("Could not fetch initial channel streams page: %s", e)
-            return
-        # The selected tab on a /streams page is the "Live" tab.
-        tab_renderer = self._get_videos_tab_renderer(initial_data)
-        if not tab_renderer:
-            raise MetadataParsingError(
-                "Could not find streams (Live) tab renderer in channel page"
-            )
-        renderers = self._get_video_renderers(tab_renderer)
-        continuation_token = self._get_continuation_token(tab_renderer)
-        while True:
-            for renderer in renderers:
-                if "richItemRenderer" not in renderer:
-                    continue
-                content = renderer["richItemRenderer"]["content"]
-                if "lockupViewModel" in content:
-                    video = parsing.parse_lockup_view_model(content["lockupViewModel"])
-                elif "videoRenderer" in content:
-                    video = parsing.parse_video_renderer(content["videoRenderer"])
-                else:
-                    continue
-                if video:
-                    yield video
-            if not continuation_token:
-                break
-            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            continuation_token = self._get_continuation_token_from_data(
-                continuation_data
-            )
-            renderers = self._get_video_renderers_from_data(continuation_data)
+        url = self._tab_url(channel_url, tab)
+        return self._fetch_page(
+            url,
+            what=f"channel {tab} page",
+            cache_key=self._tab_cache_key(channel_url, tab),
+            force_refresh=force_refresh,
+            channel_url=url,
+        )
 
     def _get_channel_page_data(
         self, channel_url: str, force_refresh: bool = False
     ) -> tuple[dict, dict]:
-        validate_youtube_url(channel_url)
-        key = self._get_channel_page_cache_key(channel_url)
-        if not force_refresh and key in self.cache:
-            self.logger.info(f"Using cached data for channel: {key}")
-            return self.cache[key]
-        try:
-            self.logger.info(f"Fetching channel page: {key}")
-            response = request_with_retries(
-                lambda: self.session.get(key.replace("channel_page:", ""), timeout=10)
-            )
-            html = response.text
-        except httpx.HTTPError as e:
-            self.logger.error(f"Request failed for channel page {key}: {e}")
-            raise VideoUnavailableError(
-                f"Could not fetch channel page: {e}", channel_url=key
-            ) from e
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-        if not initial_data:
-            raise MetadataParsingError(
-                "Could not extract ytInitialData from channel page.", channel_url=key
-            )
-        ytcfg = parsing.find_ytcfg(html)
-        if not ytcfg:
-            raise MetadataParsingError(
-                "Could not extract ytcfg from channel page.", channel_url=key
-            )
-        self.logger.info(f"Caching data for channel: {key}")
-        # html is intentionally not cached — it was unused by all three
-        # callers below (each unpacked with ``_`` on the third slot) and
-        # bloated each cache entry by ~200 KB. See M11.
-        result = (initial_data, ytcfg)
-        self.cache[key] = result
-        return result
-
-    def _get_channel_shorts_page_data(
-        self, channel_url: str, force_refresh: bool = False
-    ) -> tuple[dict, dict]:
-        validate_youtube_url(channel_url)
-        key = self._get_channel_shorts_page_cache_key(channel_url)
-        if not force_refresh and key in self.cache:
-            return self.cache[key]
-        try:
-            response = request_with_retries(
-                lambda: self.session.get(
-                    key.replace("channel_shorts_page:", ""), timeout=10
-                )
-            )
-            html = response.text
-        except httpx.HTTPError as e:
-            raise VideoUnavailableError(
-                f"Could not fetch channel shorts page: {e}", channel_url=key
-            ) from e
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-        if not initial_data:
-            raise MetadataParsingError(
-                "Could not extract ytInitialData from channel shorts page.",
-                channel_url=key,
-            )
-        ytcfg = parsing.find_ytcfg(html)
-        if not ytcfg:
-            raise MetadataParsingError(
-                "Could not extract ytcfg from channel shorts page.", channel_url=key
-            )
-        result = (initial_data, ytcfg)
-        self.cache[key] = result
-        return result
+        """The channel's Videos tab page, which also carries the channel
+        metadata."""
+        return self._get_tab_page_data(channel_url, "videos", force_refresh)
 
     def get_channel_metadata(
         self, channel_url: str, force_refresh: bool = False
@@ -570,160 +530,67 @@ class ChannelFetcher(_BaseFetcher):
         )
         return parsing.parse_channel_metadata(initial_data)
 
-    def _get_videos_tab_renderer(self, initial_data: dict):
-        tabs = _deep_get(
-            initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", []
+    def _get_raw_tab_generator(
+        self, channel_url, tab, force_refresh=False, stop_after=None
+    ):
+        """Yield raw listing records from a channel tab, every page.
+
+        Videos and Live (streams) share the lockup grid; Shorts has its
+        own item shape and is found by title rather than selection.
+        """
+        if tab == "shorts":
+            initial_data, ytcfg = self._get_tab_page_data(
+                channel_url, tab, force_refresh
+            )
+            tab_renderer = parsing.find_channel_tab(initial_data, title="Shorts")
+            parse_page = parsing.extract_shorts_from_renderers
+        else:
+            initial_data, ytcfg = self._get_tab_page_data(
+                channel_url, tab, force_refresh
+            )
+            tab_renderer = parsing.find_channel_tab(initial_data)
+            parse_page = parsing.parse_grid_page
+        if not tab_renderer:
+            raise MetadataParsingError(
+                f"Could not find the {tab} tab on the channel page.",
+                channel_url=self._tab_url(channel_url, tab),
+            )
+        yield from self._paginate(
+            parsing.tab_grid_items(tab_renderer), ytcfg, parse_page, stop_after
         )
-        for tab in tabs:
-            if _deep_get(tab, "tabRenderer.selected"):
-                return _deep_get(tab, "tabRenderer")
-        return None
-
-    def _get_video_renderers(self, tab_renderer: dict):
-        return _deep_get(tab_renderer, "content.richGridRenderer.contents", [])
-
-    def _get_continuation_token(self, tab_renderer: dict):
-        renderers = self._get_video_renderers(tab_renderer)
-        for renderer in renderers:
-            if "continuationItemRenderer" in renderer:
-                return _deep_get(
-                    renderer,
-                    "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
-                )
-        return None
-
-    def _get_video_renderers_from_data(self, continuation_data: dict):
-        return _deep_get(
-            continuation_data,
-            "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
-            [],
-        )
-
-    def _get_continuation_token_from_data(self, continuation_data: dict):
-        continuation_items = self._get_video_renderers_from_data(continuation_data)
-        for item in continuation_items:
-            if "continuationItemRenderer" in item:
-                return _deep_get(
-                    item,
-                    "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
-                )
-        return None
 
     def _get_raw_channel_videos_generator(
         self, channel_url, force_refresh, final_start_date, stop_pad=False
     ):
-        try:
-            initial_data, ytcfg = self._get_channel_page_data(
-                channel_url, force_refresh=force_refresh
-            )
-        except VideoUnavailableError as e:
-            self.logger.error("Could not fetch initial channel page: %s", e)
-            return
-        if not initial_data:
-            raise MetadataParsingError(
-                "Could not find initial data script in channel page"
-            )
-        tab_renderer = self._get_videos_tab_renderer(initial_data)
-        if not tab_renderer:
-            raise MetadataParsingError(
-                "Could not find videos tab renderer in channel page"
-            )
-        continuation_token = self._get_continuation_token(tab_renderer)
-        renderers = self._get_video_renderers(tab_renderer)
-        while True:
-            stop_pagination = False
-            for renderer in renderers:
-                if "richItemRenderer" not in renderer:
-                    continue
-                content = renderer["richItemRenderer"]["content"]
-                # YouTube migrated channel video items from videoRenderer to
-                # lockupViewModel. Handle both: lockup is the current shape;
-                # videoRenderer is kept for older cached pages / fallback.
-                if "lockupViewModel" in content:
-                    video = parsing.parse_lockup_view_model(content["lockupViewModel"])
-                elif "videoRenderer" in content:
-                    video = parsing.parse_video_renderer(content["videoRenderer"])
-                else:
-                    continue
-                if not video:
-                    continue
-                if final_start_date and video.get("publish_date"):
-                    video_publish_date = video["publish_date"]
-                    # The early-stop compares APPROXIMATE dates. When
-                    # the pipeline will hydrate (stop_pad), pad the
-                    # boundary by the date's own rounding error ("3
-                    # years ago" ≈ ±6 months) so near-boundary videos
-                    # on later pages still reach the exact check.
-                    boundary = final_start_date
-                    if stop_pad:
-                        boundary = boundary - approx_date_resolution(
-                            video.get("publish_date_text")
-                        )
-                    if video_publish_date and video_publish_date.date() < boundary:
-                        stop_pagination = True
-                yield video
-            if stop_pagination or not continuation_token:
-                break
-            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            continuation_token = self._get_continuation_token_from_data(
-                continuation_data
-            )
-            renderers = self._get_video_renderers_from_data(continuation_data)
+        """The Videos tab, stopping after the page that reaches a video
+        older than ``final_start_date``.
 
-    def _get_raw_shorts_generator(self, channel_url, force_refresh):
-        try:
-            initial_data, ytcfg = self._get_channel_shorts_page_data(
-                channel_url, force_refresh=force_refresh
-            )
-        except VideoUnavailableError as e:
-            self.logger.error("Could not fetch initial channel shorts page: %s", e)
-            return
-        if not initial_data:
-            raise MetadataParsingError(
-                "Could not find initial data script in channel shorts page"
-            )
+        The early-stop compares APPROXIMATE dates. When the pipeline will
+        hydrate (stop_pad), the boundary is padded by each date's own
+        rounding error ("3 years ago" ≈ ±6 months) so near-boundary videos
+        on later pages still reach the exact check.
+        """
 
-        tabs = _deep_get(
-            initial_data, "contents.twoColumnBrowseResultsRenderer.tabs", []
+        def older_than_start(videos):
+            for video in videos:
+                published = video.get("publish_date")
+                if not published:
+                    continue
+                boundary = final_start_date
+                if stop_pad:
+                    boundary = boundary - approx_date_resolution(
+                        video.get("publish_date_text")
+                    )
+                if published.date() < boundary:
+                    return True
+            return False
+
+        yield from self._get_raw_tab_generator(
+            channel_url,
+            "videos",
+            force_refresh,
+            stop_after=older_than_start if final_start_date else None,
         )
-        shorts_tab_renderer = None
-        for tab in tabs:
-            if _deep_get(tab, "tabRenderer.title") == "Shorts":
-                shorts_tab_renderer = _deep_get(tab, "tabRenderer")
-                break
-        if not shorts_tab_renderer:
-            raise MetadataParsingError(
-                "Could not find 'Shorts' tab renderer on the page.",
-                channel_url=channel_url,
-            )
-
-        renderers = _deep_get(
-            shorts_tab_renderer, "content.richGridRenderer.contents", []
-        )
-        continuation_token = self._get_continuation_token(shorts_tab_renderer)
-
-        while True:
-            for renderer in renderers:
-                if "richItemRenderer" not in renderer:
-                    continue
-                video_data = _deep_get(
-                    renderer, "richItemRenderer.content.shortsLockupViewModel"
-                )
-                if not video_data:
-                    continue
-                shorts, _ = parsing.extract_shorts_from_renderers([renderer])
-                if shorts and shorts[0]:
-                    yield shorts[0]
-
-            if not continuation_token:
-                break
-
-            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-
-            continuation_token = self._get_continuation_token_from_data(
-                continuation_data
-            )
-            renderers = self._get_video_renderers_from_data(continuation_data)
 
     def get_channel_videos(
         self,
@@ -753,12 +620,7 @@ class ChannelFetcher(_BaseFetcher):
             A generator of video dictionaries.
         """
         validate_filters(filters, kind="video")
-        # Strip first: a trailing slash ("…/videos/") used to defeat the
-        # endswith check and produce "…/videos/videos". YouTube serves that
-        # too, but it splits the cache key from the plain form.
-        channel_url = channel_url.rstrip("/")
-        if not channel_url.endswith("/videos"):
-            channel_url = f"{channel_url}/videos"
+        channel_url = self._tab_url(channel_url, "videos")
         filters, final_start_date, final_end_date = build_date_filter(
             start_date, end_date, filters
         )
@@ -819,12 +681,7 @@ class ChannelFetcher(_BaseFetcher):
         start, end = norm(start_date), norm(end_date)
         start_day, end_day = day_of(start), day_of(end) if end else None
 
-        # Strip first: a trailing slash ("…/videos/") used to defeat the
-        # endswith check and produce "…/videos/videos". YouTube serves that
-        # too, but it splits the cache key from the plain form.
-        channel_url = channel_url.rstrip("/")
-        if not channel_url.endswith("/videos"):
-            channel_url = f"{channel_url}/videos"
+        channel_url = self._tab_url(channel_url, "videos")
         raw = list(
             self._get_raw_channel_videos_generator(
                 channel_url, force_refresh, start_day, stop_pad=True
@@ -924,11 +781,8 @@ class ChannelFetcher(_BaseFetcher):
             Generator[dict, None, None]: A generator of short dictionaries.
         """
         validate_filters(filters, kind="video")
-        raw_shorts_generator = self._get_raw_shorts_generator(
-            channel_url, force_refresh
-        )
         yield from _run_filtered_pipeline(
-            raw_shorts_generator,
+            self._get_raw_tab_generator(channel_url, "shorts", force_refresh),
             filters=filters,
             content_type="shorts",
             fetch_full_metadata=fetch_full_metadata,
@@ -971,17 +825,9 @@ class ChannelFetcher(_BaseFetcher):
             A generator of stream dictionaries.
         """
         validate_filters(filters, kind="video")
-        # Strip first: a trailing slash ("…/streams/") used to defeat the
-        # endswith check and produce "…/streams/streams". YouTube serves that
-        # too, but it splits the cache key from the plain form.
-        channel_url = channel_url.rstrip("/")
-        if not channel_url.endswith("/streams"):
-            channel_url = f"{channel_url}/streams"
-        raw_streams_generator = self._get_raw_streams_generator(
-            channel_url, force_refresh
-        )
+        channel_url = self._tab_url(channel_url, "streams")
         yield from _run_filtered_pipeline(
-            raw_streams_generator,
+            self._get_raw_tab_generator(channel_url, "streams", force_refresh),
             filters=filters,
             content_type="videos",
             fetch_full_metadata=fetch_full_metadata,
@@ -1003,50 +849,28 @@ class PlaylistFetcher(_BaseFetcher):
     ):
         super().__init__(session, cache, video_fetcher)
 
+    def _get_playlist_page_data(
+        self, playlist_id: str, require_ytcfg: bool = True
+    ) -> tuple[dict, dict | None]:
+        # Playlist pages are not cached (a playlist's contents change).
+        return self._fetch_page(
+            f"https://www.youtube.com/playlist?list={playlist_id}",
+            what="playlist page",
+            require_ytcfg=require_ytcfg,
+            playlist_id=playlist_id,
+        )
+
     def get_playlist_metadata(self, playlist_id: str) -> dict:
         """Fetch and parse a playlist's own metadata (title, author,
         description, video_count, ...). Wired in 0.8.0 — the parser
         existed with tests but was unreachable from the facade."""
-        playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
-        try:
-            response = request_with_retries(
-                lambda: self.session.get(playlist_url, timeout=10)
-            )
-            html = response.text
-        except httpx.HTTPError as e:
-            raise VideoUnavailableError(
-                f"Could not fetch playlist page: {e}", playlist_id=playlist_id
-            ) from e
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-        if not initial_data:
-            raise MetadataParsingError(
-                "Could not extract ytInitialData from playlist page.",
-                playlist_id=playlist_id,
-            )
+        initial_data, _ = self._get_playlist_page_data(
+            playlist_id, require_ytcfg=False
+        )
         return parsing.parse_playlist_metadata(initial_data)
 
     def _get_raw_playlist_videos_generator(self, playlist_id: str):
-        playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
-        try:
-            response = request_with_retries(
-                lambda: self.session.get(playlist_url, timeout=10)
-            )
-            html = response.text
-        except httpx.HTTPError as e:
-            raise VideoUnavailableError(
-                f"Could not fetch playlist page: {e}", playlist_id=playlist_id
-            ) from e
-        initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
-        if not initial_data:
-            raise MetadataParsingError(
-                "Could not extract ytInitialData from playlist page.",
-                playlist_id=playlist_id,
-            )
-        ytcfg = parsing.find_ytcfg(html)
-        if not ytcfg:
-            raise MetadataParsingError(
-                "Could not extract ytcfg from playlist page.", playlist_id=playlist_id
-            )
+        initial_data, ytcfg = self._get_playlist_page_data(playlist_id)
         # Resolve the item list shape-agnostically: YouTube migrated the
         # playlist listing from playlistVideoListRenderer/playlistVideoRenderer
         # to a bare lockupViewModel list (same migration that broke the
@@ -1057,20 +881,9 @@ class PlaylistFetcher(_BaseFetcher):
                 "No video renderers found on the initial playlist page: %s", playlist_id
             )
             return
-        videos, continuation_token = parsing.extract_videos_from_playlist_items(items)
-        while True:
-            yield from videos
-            if not continuation_token:
-                break
-            continuation_data = self._get_continuation_data(continuation_token, ytcfg)
-            renderers = _deep_get(
-                continuation_data,
-                "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems",
-                [],
-            )
-            videos, continuation_token = parsing.extract_videos_from_playlist_items(
-                renderers
-            )
+        yield from self._paginate(
+            items, ytcfg, parsing.extract_videos_from_playlist_items
+        )
 
     def get_playlist_videos(
         self,

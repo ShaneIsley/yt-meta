@@ -44,7 +44,7 @@ def test_get_channel_streams_parses_lockup_grid(channel_fetcher, mocker):
     }
     mocker.patch.object(
         channel_fetcher,
-        "_get_channel_streams_page_data",
+        "_get_tab_page_data",
         return_value=(initial_data, {"INNERTUBE_API_KEY": "k"}),
     )
 
@@ -218,14 +218,14 @@ def test_get_channel_metadata_unit(
 
 
 @patch(
-    "yt_meta.fetchers.ChannelFetcher._get_channel_page_data",
+    "yt_meta.fetchers.ChannelFetcher._get_tab_page_data",
     return_value=(None, None),
 )
 def test_get_channel_videos_raises_for_bad_initial_data(
     mock_get_page_data, channel_fetcher
 ):
     with pytest.raises(
-        MetadataParsingError, match="Could not find initial data script in channel page"
+        MetadataParsingError, match="Could not find the videos tab"
     ):
         list(channel_fetcher.get_channel_videos("test_channel"))
 
@@ -252,7 +252,7 @@ def test_m3_shorts_generator_survives_empty_parse_result(channel_fetcher, mocker
 
     mocker.patch.object(
         channel_fetcher,
-        "_get_channel_shorts_page_data",
+        "_get_tab_page_data",
         return_value=(
             {
                 "contents": {
@@ -302,7 +302,7 @@ def test_get_channel_videos_handles_continuation_errors(
 ):
     mocker.patch.object(
         channel_fetcher,
-        "_get_channel_page_data",
+        "_get_tab_page_data",
         return_value=(
             youtube_channel_initial_data,
             youtube_channel_ytcfg,
@@ -316,7 +316,7 @@ def test_get_channel_videos_handles_continuation_errors(
 def test_get_channel_videos_paginates_correctly(channel_fetcher, mocker):
     with (
         patch.object(channel_fetcher, "_get_continuation_data") as mock_continuation,
-        patch.object(channel_fetcher, "_get_channel_page_data") as mock_get_page_data,
+        patch.object(channel_fetcher, "_get_tab_page_data") as mock_get_page_data,
     ):
         initial_renderers = [
             {"richItemRenderer": {"content": {"videoRenderer": {"videoId": "video1"}}}},
@@ -816,7 +816,7 @@ def test_stop_at_video_id_stops_when_marker_metadata_fetch_fails():
     ("method", "raw_gen", "expected"),
     [
         ("get_channel_videos", "_get_raw_channel_videos_generator", "/videos"),
-        ("get_channel_streams", "_get_raw_streams_generator", "/streams"),
+        ("get_channel_streams", "_get_raw_tab_generator", "/streams"),
     ],
 )
 @pytest.mark.parametrize("suffix", ["", "/", "{tab}", "{tab}/"])
@@ -909,3 +909,79 @@ def test_continuation_non_json_raises_metadata_parsing_error():
     with pytest.raises(MetadataParsingError, match="not valid JSON"):
         fetcher._get_continuation_data("tok", _YTCFG)
     assert fetcher.cache == {}
+
+
+# --- Shared listing pipeline (2026-10 refactor) ---------------------------
+
+
+def _grid_item(video_id):
+    return {"richItemRenderer": {"content": {"videoRenderer": {"videoId": video_id}}}}
+
+
+def _token_item(token):
+    return {
+        "continuationItemRenderer": {
+            "continuationEndpoint": {"continuationCommand": {"token": token}}
+        }
+    }
+
+
+def _continuation(items):
+    return {
+        "onResponseReceivedActions": [
+            {"appendContinuationItemsAction": {"continuationItems": items}}
+        ]
+    }
+
+
+def test_paginate_follows_tokens_until_none(channel_fetcher):
+    pages = {"t1": _continuation([_grid_item("b"), _token_item("t2")]),
+             "t2": _continuation([_grid_item("c")])}
+    channel_fetcher._get_continuation_data = lambda token, ytcfg: pages[token]
+    from yt_meta import parsing
+
+    records = channel_fetcher._paginate(
+        [_grid_item("a"), _token_item("t1")], {}, parsing.parse_grid_page
+    )
+    assert [r["video_id"] for r in records] == ["a", "b", "c"]
+
+
+def test_paginate_stop_after_ends_on_the_current_page(channel_fetcher):
+    channel_fetcher._get_continuation_data = MagicMock(
+        side_effect=AssertionError("must not fetch the next page")
+    )
+    from yt_meta import parsing
+
+    records = list(
+        channel_fetcher._paginate(
+            [_grid_item("a"), _grid_item("b"), _token_item("t1")],
+            {},
+            parsing.parse_grid_page,
+            stop_after=lambda page: any(r["video_id"] == "a" for r in page),
+        )
+    )
+    assert [r["video_id"] for r in records] == ["a", "b"]
+
+
+@pytest.mark.parametrize(
+    ("tab", "key"),
+    [
+        ("videos", "channel_page:https://www.youtube.com/@x/videos"),
+        ("shorts", "channel_shorts_page:https://www.youtube.com/@x/shorts"),
+        ("streams", "channel_streams_page:https://www.youtube.com/@x/streams"),
+    ],
+)
+def test_tab_cache_keys_are_unchanged(channel_fetcher, tab, key):
+    """Existing persistent caches stay valid across the refactor."""
+    assert channel_fetcher._tab_cache_key("https://www.youtube.com/@x/", tab) == key
+
+
+@pytest.mark.parametrize("method", ["get_channel_videos", "get_channel_shorts", "get_channel_streams"])
+def test_every_channel_tab_raises_when_its_tab_is_missing(channel_fetcher, method):
+    """Same parse-failure behavior for every tab: the page has no matching
+    tab renderer -> MetadataParsingError, not an empty result."""
+    channel_fetcher._get_tab_page_data = MagicMock(
+        return_value=({"contents": {"twoColumnBrowseResultsRenderer": {"tabs": []}}}, {})
+    )
+    with pytest.raises(MetadataParsingError, match="tab"):
+        list(getattr(channel_fetcher, method)("https://www.youtube.com/@x"))

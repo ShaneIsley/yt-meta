@@ -69,6 +69,16 @@ All notable changes to this project are documented in this file.
   string (code in a description) no longer cuts the data short.
 
 ### Changed
+- **A channel tab that can't be fetched now raises.** `get_channel_videos`,
+  `get_channel_shorts` and `get_channel_streams` used to log the error and
+  yield nothing, so a missing or mistyped channel looked like an empty
+  one. They now raise `VideoUnavailableError`, as playlists already did.
+  The error policy is written down in the `fetchers` module docstring and
+  the README's Error Handling section.
+- **Internal: one page fetch and one pagination loop for every listing.**
+  Channel videos, shorts, streams and playlists share
+  `_fetch_page` / `_paginate`; response-layout lookups (tabs, grids,
+  continuation items) moved into `parsing`. Cache keys are unchanged.
 - **Filter validation is stricter.** Values are checked against the
   field's type, so `{"title": {"eq": 5}}` and
   `{"view_count": {"eq": "100"}}` raise `TypeError` instead of crashing

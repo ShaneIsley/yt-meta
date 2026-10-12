@@ -662,6 +662,8 @@ except YtMetaError as e:
 ### `VideoUnavailableError`
 Raised when an HTTP fetch itself fails: a network error, a 404, or a rate-limit response. A video that is fetched but unavailable (deleted, members-only, etc.) is not an exception; it is reported via the `status` field on `get_video_metadata`'s result.
 
+The same rule applies to every listing (channel videos, shorts, streams, playlists): if its first page can't be fetched, iterating it raises `VideoUnavailableError`, so a missing channel is never mistaken for an empty one. A later page failing raises mid-iteration; the records already yielded are still valid. During `fetch_full_metadata=True`, a single video whose watch page fails is logged and skipped rather than ending the listing.
+
 ### `MetadataParsingError`
 Raised when a page is fetched successfully but the expected structure (e.g. `ytInitialData` or a channel tab) cannot be extracted. Usually a sign YouTube changed its page structure; see the next section.
 

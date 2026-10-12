@@ -517,6 +517,70 @@ def extract_videos_from_lockup_renderers(
     return videos, continuation_token
 
 
+# --- Listing page layout ----------------------------------------------
+# Where a listing's items and next-page tokens live in YouTube's browse
+# responses. Fetchers only fetch pages and follow tokens; everything that
+# knows the response layout is here.
+
+_TABS_PATH = "contents.twoColumnBrowseResultsRenderer.tabs"
+_CONTINUATION_ITEMS_PATH = (
+    "onResponseReceivedActions.0.appendContinuationItemsAction.continuationItems"
+)
+_CONTINUATION_TOKEN_PATH = (
+    "continuationItemRenderer.continuationEndpoint.continuationCommand.token"
+)
+
+
+def find_channel_tab(initial_data: dict, title: str | None = None) -> dict | None:
+    """The channel page's tab renderer: the one titled ``title`` when
+    given, else the selected one (the tab the URL asked for)."""
+    for tab in _deep_get(initial_data, _TABS_PATH, []) or []:
+        renderer = tab.get("tabRenderer")
+        if not renderer:
+            continue
+        if title is not None and renderer.get("title") == title:
+            return renderer
+        if title is None and renderer.get("selected"):
+            return renderer
+    return None
+
+
+def tab_grid_items(tab_renderer: dict) -> list:
+    """The item list of a channel tab's grid (videos, shorts or streams)."""
+    return _deep_get(tab_renderer, "content.richGridRenderer.contents", []) or []
+
+
+def continuation_items(continuation_data: dict | None) -> list:
+    """The item list of a next-page (browse continuation) response."""
+    return _deep_get(continuation_data, _CONTINUATION_ITEMS_PATH, []) or []
+
+
+def parse_grid_page(items: list) -> tuple[list, str | None]:
+    """Parse one page of a channel Videos or Live grid into
+    ``(videos, next_page_token)``.
+
+    Items are ``lockupViewModel`` (current) or ``videoRenderer`` (older
+    cached pages) inside a ``richItemRenderer``; the trailing
+    ``continuationItemRenderer`` carries the next-page token.
+    """
+    videos = []
+    token = None
+    for item in items or []:
+        content = _deep_get(item, "richItemRenderer.content")
+        if content:
+            if "lockupViewModel" in content:
+                video = parse_lockup_view_model(content["lockupViewModel"])
+            elif "videoRenderer" in content:
+                video = parse_video_renderer(content["videoRenderer"])
+            else:
+                video = None
+            if video:
+                videos.append(video)
+        elif "continuationItemRenderer" in item:
+            token = _deep_get(item, _CONTINUATION_TOKEN_PATH)
+    return videos, token
+
+
 _PLAYLIST_ITEM_SECTION_PATH = (
     "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content"
     ".sectionListRenderer.contents.0.itemSectionRenderer.contents"

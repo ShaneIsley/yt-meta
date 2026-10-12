@@ -354,3 +354,40 @@ def test_initial_data_survives_brace_semicolon_inside_a_string():
 def test_initial_data_window_bracket_assignment():
     html = """<script>window["ytInitialData"] = {"k": [1, 2]};</script>"""
     assert extract_and_parse_json(html, "ytInitialData") == {"k": [1, 2]}
+
+
+def test_find_channel_tab_by_selection_and_by_title():
+    from yt_meta.parsing import find_channel_tab
+
+    data = {
+        "contents": {
+            "twoColumnBrowseResultsRenderer": {
+                "tabs": [
+                    {"tabRenderer": {"title": "Home"}},
+                    {"tabRenderer": {"title": "Shorts", "selected": True}},
+                    {"expandableTabRenderer": {}},
+                ]
+            }
+        }
+    }
+    assert find_channel_tab(data)["title"] == "Shorts"
+    assert find_channel_tab(data, title="Home")["title"] == "Home"
+    assert find_channel_tab(data, title="Live") is None
+    assert find_channel_tab({}) is None
+
+
+def test_parse_grid_page_reads_items_and_next_token():
+    from yt_meta.parsing import parse_grid_page
+
+    items = [
+        {"richItemRenderer": {"content": {"videoRenderer": {"videoId": "abc"}}}},
+        {"richItemRenderer": {"content": {"adSlotRenderer": {}}}},
+        {
+            "continuationItemRenderer": {
+                "continuationEndpoint": {"continuationCommand": {"token": "next"}}
+            }
+        },
+    ]
+    videos, token = parse_grid_page(items)
+    assert [v["video_id"] for v in videos] == ["abc"]
+    assert token == "next"

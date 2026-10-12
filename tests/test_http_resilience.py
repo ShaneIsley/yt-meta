@@ -102,17 +102,19 @@ def test_c2_playlist_404_raises_video_unavailable():
 
 
 @pytest.mark.parametrize("method", ["get_channel_videos", "get_channel_shorts", "get_channel_streams"])
-def test_c2_channel_tab_404_yields_empty_not_crash(method):
-    """REGRESSION (C2): the channel tab generators document "initial page
-    fetch failure → logged, empty result" (they catch
-    VideoUnavailableError from the page fetch). A 404 bypassed that
-    contract and crashed the generator with HTTPStatusError."""
+def test_c2_channel_tab_404_raises_video_unavailable(method):
+    """REGRESSION (C2): a 404 on a channel tab crashed the generator with a
+    raw HTTPStatusError. Error policy (2026-10 refactor): a listing whose
+    first page can't be fetched raises VideoUnavailableError, the same as
+    playlists. It used to return an empty result, indistinguishable from
+    a channel with no videos."""
     transport = _ScriptedTransport([(404, "")])
     with _session(transport) as session:
         fetcher = ChannelFetcher(
             session=session, cache={}, video_fetcher=VideoFetcher(session, {})
         )
-        assert list(getattr(fetcher, method)("https://www.youtube.com/@x")) == []
+        with pytest.raises(VideoUnavailableError):
+            list(getattr(fetcher, method)("https://www.youtube.com/@x"))
 
 
 # --- C3: transient 429 must be retried at every GET site ---

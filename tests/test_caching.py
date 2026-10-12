@@ -219,7 +219,7 @@ def test_m11_channel_page_cache_does_not_store_raw_html(tmp_path):
     fetcher._get_channel_page_data("https://www.youtube.com/@test/videos")
 
     # Inspect what was stored under the cache key
-    key = fetcher._get_channel_page_cache_key("https://www.youtube.com/@test/videos")
+    key = fetcher._tab_cache_key("https://www.youtube.com/@test/videos", "videos")
     stored = cache[key]
 
     assert len(stored) == 2, (

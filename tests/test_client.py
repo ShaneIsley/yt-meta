@@ -69,14 +69,14 @@ def test_get_channel_page_data_fails_on_request_error_unit(client, mocker):
 
 
 @patch(
-    "yt_meta.fetchers.ChannelFetcher._get_channel_page_data",
+    "yt_meta.fetchers.ChannelFetcher._get_tab_page_data",
     return_value=(None, None),
 )
 def test_get_channel_videos_raises_for_bad_initial_data_unit(
     mock_get_page_data, client
 ):
     with pytest.raises(
-        MetadataParsingError, match="Could not find initial data script in channel page"
+        MetadataParsingError, match="Could not find the videos tab"
     ):
         list(client.get_channel_videos("test_channel"))
 
@@ -85,7 +85,7 @@ def test_get_channel_videos_handles_continuation_errors_unit(
     client, mocker, youtube_channel_initial_data, youtube_channel_ytcfg
 ):
     mocker.patch(
-        "yt_meta.fetchers.ChannelFetcher._get_channel_page_data",
+        "yt_meta.fetchers.ChannelFetcher._get_tab_page_data",
         return_value=(
             youtube_channel_initial_data,
             youtube_channel_ytcfg,
@@ -104,7 +104,7 @@ def test_get_channel_videos_paginates_correctly_unit(client):
             client._channel_fetcher, "_get_continuation_data"
         ) as mock_continuation,
         patch.object(
-            client._channel_fetcher, "_get_channel_page_data"
+            client._channel_fetcher, "_get_tab_page_data"
         ) as mock_get_page_data,
     ):
         initial_renderers = [
