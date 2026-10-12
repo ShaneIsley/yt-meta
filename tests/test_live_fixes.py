@@ -11,9 +11,10 @@ Carries the ``contract`` marker, so it is excluded from the default run::
 
     uv run pytest -m contract tests/test_live_fixes.py -v
 
-Targets reuse the permanent ones from ``test_live_contract.py``.
-Volatile data (which comments exist right now) is handled by skipping,
-not failing, when the precondition is absent.
+Targets are ordinary, not famous (see ``test_live_workflows.py``): a
+mid-size channel that uploads about weekly and its recent videos. Volatile
+data (which comments exist right now) is handled by skipping, not
+failing, when the precondition is absent.
 """
 
 import re
@@ -25,12 +26,18 @@ from yt_meta import YtMeta
 
 pytestmark = pytest.mark.contract
 
-ZOO_ID = "jNQXAC9IVRw"  # "Me at the zoo": ~50 new comments an hour
-JAWED_URL = "https://www.youtube.com/@jawed"  # one upload: Me at the zoo
-VERITASIUM_URL = "https://www.youtube.com/@veritasium"  # hundreds of uploads
-PLAYLIST_ID = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"  # Corey Schafer tutorials
+CHANNEL = "https://www.youtube.com/@ArjanCodes"  # ~weekly uploads, 15-70k views
+VIDEO_ID = "UEqk0njCuQo"  # ordinary upload with a few dozen comments
 
-REQUEST_CAP = 25
+_UNIT_DAYS = {
+    "second": 0,
+    "minute": 0,
+    "hour": 0,
+    "day": 1,
+    "week": 7,
+    "month": 30,
+    "year": 365,
+}
 
 
 @pytest.fixture
@@ -58,25 +65,33 @@ def _count_calls(obj, name, cap):
 # --- Fix 1: relative date parsing -------------------------------------
 
 
-def test_fresh_comments_are_dated_today_not_months_ago(yt):
-    """"5 minutes ago" used to parse as 5 MONTHS ago. Every comment whose
-    text is seconds/minutes/hours old must be dated within the last day."""
-    comments = list(yt.get_video_comments(ZOO_ID, limit=40, sort_by="recent"))
-    assert comments, "no comments returned"
-    fresh = [
-        c
-        for c in comments
-        if re.search(r"\b(second|minute|hour)s?\b", c.get("publish_date_text") or "")
-    ]
-    if not fresh:
-        pytest.skip("no sub-day comments on the first page right now")
-    floor = date.today() - timedelta(days=1)
-    wrong = [
-        (c["publish_date_text"], c["publish_date"])
-        for c in fresh
-        if c["publish_date"] is None or c["publish_date"] < floor
-    ]
-    assert not wrong, f"fresh comments misdated: {wrong}"
+def _recent_uploads(yt, n=3):
+    return [v["video_id"] for v in yt.get_channel_videos(CHANNEL, max_videos=n)]
+
+
+def test_comment_dates_agree_with_their_text(yt):
+    """ "5 minutes ago" used to parse as 5 MONTHS ago. On the channel's
+    newest uploads, every comment's date must match its own relative text
+    ("N <unit> ago"), within a day."""
+    checked = 0
+    for video_id in _recent_uploads(yt):
+        for c in yt.get_video_comments(video_id, limit=40, sort_by="recent"):
+            m = re.match(
+                r"(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago",
+                c["publish_date_text"] or "",
+            )
+            if not m:
+                continue
+            expected = date.today() - timedelta(
+                days=int(m.group(1)) * _UNIT_DAYS[m.group(2)]
+            )
+            assert c["publish_date"] is not None, c["publish_date_text"]
+            assert abs((c["publish_date"] - expected).days) <= 1, (
+                c["publish_date_text"],
+                c["publish_date"],
+            )
+            checked += 1
+    assert checked, "no relative-dated comments on the newest uploads"
 
 
 # --- Fix 2: since_date short-circuits comment pagination ----------------
@@ -85,47 +100,55 @@ def test_fresh_comments_are_dated_today_not_months_ago(yt):
 def test_since_date_stops_comment_pagination(yt):
     """limit=None + since_date used to walk the entire comment stream.
 
-    The cutoff comes from live data: a quiet video (an old tutorial) whose
-    first two pages span more than one day, cut between the newest and
-    oldest dates seen. The fetch must then end within those pages plus one,
-    and leading pinned comments (often years old) must not end it early."""
-    quiet = next(yt.get_playlist_videos(PLAYLIST_ID, max_videos=1))["video_id"]
-    sample = list(yt.get_video_comments(quiet, limit=40, sort_by="recent"))
-    days = sorted(
-        {c["publish_date"] for c in sample if c["publish_date"] and not c["is_pinned"]}
-    )
-    if len(days) < 2:
-        pytest.skip("first two pages of comments fall on a single day")
+    The cutoff comes from live data: the first recent upload whose first
+    two pages of comments span more than one day, cut at the newest day
+    seen. The fetch must then end within those pages plus one, and a
+    leading pinned comment (often older) must not end it early."""
+    for video_id in _recent_uploads(yt):
+        sample = list(yt.get_video_comments(video_id, limit=40, sort_by="recent"))
+        days = sorted(
+            {
+                c["publish_date"]
+                for c in sample
+                if c["publish_date"] and not c["is_pinned"]
+            }
+        )
+        if len(days) >= 2:
+            break
+    else:
+        pytest.skip("recent uploads' first comment pages each fall on one day")
     cutoff = days[-1]  # the newest day: everything older must end the fetch
 
     calls = _count_calls(yt.comment_fetcher.api_client, "make_api_request", 3)
     comments = list(
-        yt.get_video_comments(quiet, limit=None, since_date=cutoff, sort_by="recent")
+        yt.get_video_comments(video_id, limit=None, since_date=cutoff, sort_by="recent")
     )
 
     assert comments, "nothing on or after the newest sampled day"
     assert all(c["publish_date"] >= cutoff for c in comments if not c["is_pinned"])
-    print(f"\n  {len(comments)} comments since {cutoff} in {calls['n']} request(s)")
+    print(f"\n  {len(comments)} comments on {video_id} since {cutoff} in {calls['n']} request(s)")
 
 
 # --- Fix 3: publish_date filters keep their operators -------------------
 
 
 def test_gt_on_exact_publish_day_excludes_that_video(yt):
-    """gt used to be rewritten to gte, so the boundary-day video leaked in."""
-    exact = yt.get_video_metadata(ZOO_ID)["publish_date"]
+    """gt used to be rewritten to gte, so the boundary-day video leaked in.
+    Uses the second-newest upload so only a few videos get hydrated."""
+    target = _recent_uploads(yt, 2)[1]
+    exact = yt.get_video_metadata(target)["publish_date"]
     day = exact.date() if isinstance(exact, datetime) else exact
 
     def ids(cond):
         return [
             v["video_id"]
             for v in yt.get_channel_videos(
-                JAWED_URL, fetch_full_metadata=True, filters={"publish_date": cond}
+                CHANNEL, fetch_full_metadata=True, filters={"publish_date": cond}
             )
         ]
 
-    assert ZOO_ID in ids({"gte": day})
-    assert ZOO_ID not in ids({"gt": day})
+    assert target in ids({"gte": day})
+    assert target not in ids({"gt": day})
 
 
 def test_hour_level_bound_without_full_metadata_raises(yt):
@@ -134,7 +157,7 @@ def test_hour_level_bound_without_full_metadata_raises(yt):
     with pytest.raises(ValueError, match="fetch_full_metadata"):
         list(
             yt.get_channel_videos(
-                JAWED_URL, filters={"publish_date": {"gte": datetime(2005, 4, 23, 12)}}
+                CHANNEL, filters={"publish_date": {"gte": datetime(2026, 1, 1, 12)}}
             )
         )
 
@@ -145,14 +168,14 @@ def test_hour_level_bound_without_full_metadata_raises(yt):
 def test_stop_at_filtered_out_marker_stops_pagination(yt):
     """The stop check used to run only after a yield; a filtered-out
     marker let pagination run through the whole channel."""
-    first = list(yt.get_channel_videos(VERITASIUM_URL, max_videos=3))
+    first = _recent_uploads(yt)
     assert len(first) == 3, "need three uploads to pick a marker"
-    marker = first[2]["video_id"]
+    marker = first[2]
 
     calls = _count_calls(yt._channel_fetcher, "_get_continuation_data", 3)
     result = list(
         yt.get_channel_videos(
-            VERITASIUM_URL,
+            CHANNEL,
             stop_at_video_id=marker,
             filters={"title": {"contains": "zz-no-title-has-this-zz"}},
         )
@@ -167,11 +190,12 @@ def test_stop_at_filtered_out_marker_stops_pagination(yt):
 
 @pytest.mark.parametrize("suffix", ["/videos/", "/videos", "/"])
 def test_trailing_slash_channel_url_returns_videos(yt, suffix):
-    """".../videos/" used to become ".../videos/videos". YouTube happens
+    """ ".../videos/" used to become ".../videos/videos". YouTube happens
     to serve that URL too, so this guards the normalized form rather than
     reproducing a live failure (the old code also passes it)."""
-    videos = list(yt.get_channel_videos(JAWED_URL + suffix, max_videos=1))
-    assert [v["video_id"] for v in videos] == [ZOO_ID]
+    newest = _recent_uploads(yt, 1)
+    videos = list(yt.get_channel_videos(CHANNEL + suffix, max_videos=1))
+    assert [v["video_id"] for v in videos] == newest
 
 
 # --- Fix 6: clear_cache empties the SQLite cache ------------------------
@@ -180,8 +204,8 @@ def test_trailing_slash_channel_url_returns_videos(yt, suffix):
 def test_clear_cache_removes_expired_entries(tmp_path):
     """clear() used to stop at the first expired row."""
     with YtMeta(cache_path=str(tmp_path / "cache.db")) as yt:
-        yt.get_video_metadata(ZOO_ID)
-        list(yt.get_channel_videos(JAWED_URL, max_videos=1))
+        yt.get_video_metadata(VIDEO_ID)
+        list(yt.get_channel_videos(CHANNEL, max_videos=1))
         assert len(yt.cache) >= 2
         yt.cache._conn.execute(
             # Expire the row clear() visits first (keys iterate in key
