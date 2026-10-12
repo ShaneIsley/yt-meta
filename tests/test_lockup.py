@@ -233,3 +233,54 @@ def test_option_a_upcoming_stream_has_no_precision():
     assert video["publish_date"] is None
     assert video["publish_date_precision"] is None
     assert video["publish_date_text"] is None
+
+
+@pytest.mark.parametrize(
+    ("parts", "views", "text", "days"),
+    [
+        (
+            [
+                ("1.3M", "1.3 million views"),
+                ("11d ago", "11 days ago"),
+            ],
+            1_300_000,
+            "11 days ago",
+            11,
+        ),
+        (
+            [("58K", "58 thousand views"), ("Streamed 3w ago", "Streamed 3 weeks ago")],
+            58_000,
+            "Streamed 3 weeks ago",
+            21,
+        ),
+    ],
+)
+def test_compact_metadata_text_parses_via_accessibility_label(parts, views, text, days):
+    """REGRESSION (live drift, 2026-10): listings switched to compact
+    display text ("1.3M", "11d ago", "Streamed 3w ago"). With no "views"
+    in the text, view_count became None (so view_count filters returned
+    nothing), and dateparser can't read "2w ago". Each part's
+    accessibilityLabel keeps the long form; the shape below is copied
+    from a live @veritasium / @AppleDeveloper response."""
+    import copy
+
+    with open(FIXTURES / "channel_streams_lockup_renderers.json") as f:
+        renderers = json.load(f)["contents"]
+    lvm = copy.deepcopy(renderers[0]["richItemRenderer"]["content"]["lockupViewModel"])
+    lvm["metadata"]["lockupMetadataViewModel"]["metadata"]["contentMetadataViewModel"][
+        "metadataRows"
+    ] = [
+        {
+            "metadataParts": [
+                {"text": {"content": c}, "accessibilityLabel": label}
+                for c, label in parts
+            ]
+        }
+    ]
+
+    video = parsing.parse_lockup_view_model(lvm)
+
+    assert video["view_count"] == views
+    assert video["publish_date_text"] == text
+    assert video["publish_date"] is not None
+    assert abs((datetime.now() - video["publish_date"]).days - days) <= 1

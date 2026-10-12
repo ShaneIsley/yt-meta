@@ -374,17 +374,31 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
     # Flatten every text part across every metadata row — collab videos
     # use row 0 for the byline and row 1 for views/date.
     rows = _deep_get(meta, "metadata.contentMetadataViewModel.metadataRows", []) or []
+    # Each part pairs the displayed text with an accessibility label.
+    # Since 2026-10 the display is compact ("1.3M", "11d ago", "2w ago")
+    # while the label keeps the long form ("1.3 million views", "11 days
+    # ago"). Detect and parse dates from the label, which also keeps
+    # "views" for view-count detection; parse the number from the
+    # display text, which keeps the K/M/B suffix parse_view_count reads.
     texts = []
+    parts = []
     for row in rows:
         for part in row.get("metadataParts", []) or []:
             content = _deep_get(part, "text.content")
             if content:
+                label = part.get("accessibilityLabel") or content
                 texts.append(content)
+                parts.append((content, label))
 
     view_count_text = next(
-        (t for t in texts if "view" in t.lower() or "watching" in t.lower()), None
+        (
+            content
+            for content, label in parts
+            if "view" in label.lower() or "watching" in label.lower()
+        ),
+        None,
     )
-    publish_text = next((t for t in texts if "ago" in t.lower()), None)
+    publish_text = next((label for _, label in parts if "ago" in label.lower()), None)
 
     # Upcoming streams / premieres (Live tab) carry a "Scheduled for ..."
     # (or "Premieres ...") part instead of a view count / "X ago". Surface

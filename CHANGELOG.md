@@ -53,6 +53,13 @@ All notable changes to this project are documented in this file.
 - **SQLite cache expiry** no longer deletes a value another thread wrote
   between the read and the delete.
 
+- **Channel listings after YouTube's compact-text change (2026-10).**
+  Listings now display `1.3M` and `11d ago` / `Streamed 3w ago`, so
+  `view_count` came back `None` (view-count filters returned nothing)
+  and `2w ago` dates did not parse. The parser now reads each part's
+  accessibility label (`1.3 million views`, `11 days ago`);
+  `publish_date_text` carries that long form.
+
 ### Changed
 - **Filter validation is stricter.** Values are checked against the
   field's type, so `{"title": {"eq": 5}}` and
