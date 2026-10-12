@@ -52,8 +52,10 @@ def _apply_status_tracking(parsed: dict, prior: dict | None) -> dict:
     status = parsed.get("status", "ok")
     prior_status = prior.get("status") if prior else None
 
-    if status != "ok" and prior:
+    if status == "unavailable" and prior:
         # Unavailable with history — keep the last-known-good content.
+        # Only "unavailable": an "upcoming" parse is complete, and taking
+        # the prior record kept a rescheduled premiere's old start time.
         result = dict(prior)
         result["status"] = status
         result["status_reason"] = parsed.get("status_reason")
@@ -117,7 +119,17 @@ def _process_videos(
             try:
                 video_url = f"https://www.youtube.com/watch?v={video['video_id']}"
                 full_meta = video_fetcher.get_video_metadata(video_url)
-                if full_meta:
+                if full_meta and full_meta.get("status") == "unavailable":
+                    # An unavailable watch page (members-only, private)
+                    # parses to title=None, view_count=0. Let it add
+                    # status and anything the listing lacks, but never
+                    # replace real listing values with those blanks,
+                    # which made filters like view_count < 100 match.
+                    merged_video = {
+                        **full_meta,
+                        **{k: v for k, v in video.items() if v is not None},
+                    }
+                elif full_meta:
                     merged_video = {**video, **full_meta}
                     # Option A: the watch page has no relative date text,
                     # so full_meta carries publish_date_text=None — keep

@@ -379,3 +379,37 @@ def test_option_a_full_metadata_is_exact_precision():
     m = fetcher.get_video_metadata("dQw4w9WgXcQ")
     assert m["publish_date_precision"] == "exact"
     assert m["publish_date_text"] is None
+
+
+def _upcoming_player(start):
+    return {
+        "playabilityStatus": {"status": "LIVE_STREAM_OFFLINE", "reason": "Premieres soon"},
+        "videoDetails": {
+            "videoId": "dQw4w9WgXcQ",
+            "title": "Premiere",
+            "isUpcoming": True,
+            "viewCount": "0",
+        },
+        "microformat": {
+            "playerMicroformatRenderer": {
+                "liveBroadcastDetails": {"startTimestamp": start}
+            }
+        },
+    }
+
+
+def test_rescheduled_premiere_picks_up_new_start_time():
+    """REGRESSION (2026-10 review): any status other than "ok" reused the
+    prior cached record, so re-checking an upcoming stream kept its old
+    scheduled_start_time even with force_refresh=True."""
+    cache = {}
+    first = _video_fetcher_returning(_upcoming_player("2026-11-01T18:00:00+00:00"))
+    first.cache = cache
+    first.get_video_metadata("dQw4w9WgXcQ")
+
+    again = _video_fetcher_returning(_upcoming_player("2026-11-08T18:00:00+00:00"))
+    again.cache = cache
+    m = again.get_video_metadata("dQw4w9WgXcQ", force_refresh=True)
+
+    assert m["status"] == "upcoming"
+    assert m["scheduled_start_time"] == "2026-11-08T18:00:00+00:00"

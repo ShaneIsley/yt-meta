@@ -830,3 +830,40 @@ def test_trailing_slash_channel_url_is_not_doubled(
     with patch.object(channel_fetcher, raw_gen, return_value=iter([])) as gen:
         list(getattr(channel_fetcher, method)(url))
     assert gen.call_args.args[0] == "https://www.youtube.com/@x" + expected
+
+
+def test_unavailable_hydration_keeps_listing_values():
+    """REGRESSION (2026-10 review): hydrating an unavailable video (e.g.
+    members-only, nothing cached) merged title=None and view_count=0 over
+    the listing's real values, so view_count < 100 matched it."""
+    from yt_meta.fetchers import _run_filtered_pipeline
+
+    video_fetcher = MagicMock()
+    video_fetcher.get_video_metadata.return_value = {
+        "status": "unavailable",
+        "status_reason": "Join this channel to get access",
+        "video_id": "m",
+        "title": None,
+        "view_count": 0,
+        "like_count": None,
+    }
+
+    def run(filters):
+        return list(
+            _run_filtered_pipeline(
+                iter([{"video_id": "m", "title": "Members video", "view_count": 50_000}]),
+                filters=filters,
+                content_type="videos",
+                fetch_full_metadata=True,
+                video_fetcher=video_fetcher,
+                logger=MagicMock(),
+                stop_at_video_id=None,
+                max_videos=-1,
+            )
+        )
+
+    assert run({"view_count": {"lt": 100}}) == []
+    [video] = run(None)
+    assert video["title"] == "Members video"
+    assert video["view_count"] == 50_000
+    assert video["status"] == "unavailable"
