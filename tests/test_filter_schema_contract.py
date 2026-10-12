@@ -46,7 +46,7 @@ def real_lockup_videos():
     — the CURRENT channel/playlist item shape."""
     with open(FIXTURES / "channel_videos_lockup_renderers.json") as f:
         renderers = json.load(f)["contents"]
-    videos, _ = parsing.extract_videos_from_lockup_renderers(renderers)
+    videos, _ = parsing.parse_grid_page(renderers)
     assert videos, "fixture must produce videos"
     return videos
 

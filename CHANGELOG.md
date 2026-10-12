@@ -69,6 +69,11 @@ All notable changes to this project are documented in this file.
   string (code in a description) no longer cuts the data short.
 
 ### Changed
+- **Removed unused helpers:** `parsing.extract_videos_from_renderers`,
+  `parsing.extract_videos_from_lockup_renderers` (superseded by
+  `parsing.parse_grid_page`) and the `date_utils.parse_human_readable_date`
+  alias (use `parse_relative_date_string`). None was exported from the
+  package or used by the library.
 - **Bad arguments raise when a method is called, not on first iteration.**
   The listing and comment methods (`get_channel_videos`, `_shorts`,
   `_streams`, `get_playlist_videos`, `get_videos_published_between`,

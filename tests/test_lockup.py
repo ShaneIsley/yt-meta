@@ -28,7 +28,7 @@ def lockup_renderers():
 def test_lockup_parses_all_video_items(lockup_renderers):
     """Every LOCKUP_CONTENT_TYPE_VIDEO item is parsed; the captured page
     has 30 of them (the 31st renderer is the continuation token)."""
-    videos, token = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    videos, token = parsing.parse_grid_page(lockup_renderers)
     assert len(videos) == 30
     assert token  # continuation token extracted from the last renderer
     for v in videos:
@@ -39,7 +39,7 @@ def test_lockup_parses_all_video_items(lockup_renderers):
 def test_lockup_extracts_views_publish_and_duration(lockup_renderers):
     """Standard (non-members) videos carry view_count (int),
     publish_date (datetime via dateparser), and duration_seconds."""
-    videos, _ = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    videos, _ = parsing.parse_grid_page(lockup_renderers)
     standard = [v for v in videos if v.get("view_count")]
     assert standard, "expected at least some videos with a view count"
     v = standard[0]
@@ -53,7 +53,7 @@ def test_lockup_collab_video_finds_views_in_second_row(lockup_renderers):
     views/date in metadataRows[1]; flattening all rows must still find
     them. Asserts that NO standard video silently loses its publish_date
     to the row-0 byline."""
-    videos, _ = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    videos, _ = parsing.parse_grid_page(lockup_renderers)
     # Every parsed video should have a publish_date — even collabs.
     missing_date = [v["video_id"] for v in videos if v.get("publish_date") is None]
     assert not missing_date, f"videos missing publish_date: {missing_date}"
@@ -64,7 +64,7 @@ def test_lockup_members_only_flag(lockup_renderers):
     lockup metadataRows. parse surfaces this as is_members_only=True so
     callers get an explicit signal instead of inferring it from a None
     view_count. The captured @bashbunni page has 4 such videos."""
-    videos, _ = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    videos, _ = parsing.parse_grid_page(lockup_renderers)
     members = [v for v in videos if v.get("is_members_only")]
     assert len(members) == 4
     # Every video carries the flag (explicit bool, not missing).
@@ -78,7 +78,7 @@ def test_lockup_members_only_video_has_none_view_count(lockup_renderers):
     """Members-only videos legitimately have no view count — view_count
     is None (not a crash, not a wrong number). The captured @bashbunni
     page contains members-only items."""
-    videos, _ = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    videos, _ = parsing.parse_grid_page(lockup_renderers)
     members_only = [v for v in videos if v.get("view_count") is None]
     assert members_only, "fixture should contain members-only videos (no view count)"
     # They still have id/title/date — only the view count is absent.
@@ -98,7 +98,7 @@ def test_lockup_upcoming_stream_flag():
         Path(__file__).parent / "fixtures" / "channel_streams_lockup_renderers.json"
     )
     renderers = json.loads(fixture.read_text())["contents"]
-    videos, _ = parsing.extract_videos_from_lockup_renderers(renderers)
+    videos, _ = parsing.parse_grid_page(renderers)
     assert videos
     for v in videos:
         assert v["is_upcoming"] is True
@@ -109,7 +109,7 @@ def test_lockup_upcoming_stream_flag():
 def test_lockup_normal_video_not_upcoming(lockup_renderers):
     """Regular (non-scheduled) videos are is_upcoming=False with no
     scheduled_text."""
-    videos, _ = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    videos, _ = parsing.parse_grid_page(lockup_renderers)
     assert any(not v["is_upcoming"] for v in videos)
     for v in videos:
         assert isinstance(v["is_upcoming"], bool)
@@ -139,7 +139,7 @@ def test_lockup_skips_continuation_and_non_video_content():
             }
         },
     ]
-    videos, token = parsing.extract_videos_from_lockup_renderers(renderers)
+    videos, token = parsing.parse_grid_page(renderers)
     assert videos == []
     assert token == "TOK"
 
@@ -194,7 +194,7 @@ def test_option_a_lockup_emits_precision_and_raw_text(lockup_renderers):
     parsing). Approximate datetimes carry query-time noise and up to
     ~6 months error at year granularity; the marker travels with the
     record so downstream data can be audited."""
-    videos, _ = parsing.extract_videos_from_lockup_renderers(lockup_renderers)
+    videos, _ = parsing.parse_grid_page(lockup_renderers)
     dated = [v for v in videos if v["publish_date"] is not None]
     assert dated, "fixture must contain dated videos"
     for v in dated:

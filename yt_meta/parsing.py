@@ -223,92 +223,6 @@ def find_heatmap(initial_data: dict) -> list | None:
         return None
 
 
-def extract_videos_from_renderers(renderers: list) -> tuple[list, str | None]:
-    """
-    Parses a list of video renderers from a channel's "Videos" tab.
-
-    This function iterates through a list of renderer items, extracts the
-    relevant information for each video, and finds the continuation token for
-    paginating to the next set of results.
-
-    Args:
-        renderers: A list of renderer dictionaries from the channel page's data.
-
-    Returns:
-        A tuple containing:
-        - A list of dictionaries, where each dict is a simplified video object.
-        - A continuation token string for the next page, or None if not found.
-    """
-    videos = []
-    continuation_token = None
-    if not renderers:
-        return videos, continuation_token
-
-    for renderer in renderers:
-        if "richItemRenderer" in renderer:
-            video_data = _deep_get(renderer, "richItemRenderer.content.videoRenderer")
-            if not video_data:
-                continue
-
-            badges = _deep_get(video_data, "badges", [])
-            overlays = _deep_get(video_data, "thumbnailOverlays", [])
-            is_members_only = any(
-                _deep_get(b, "metadataBadgeRenderer.style")
-                == "BADGE_STYLE_TYPE_MEMBERS_ONLY"
-                for b in badges
-            )
-            is_live = any("thumbnailOverlayNowPlayingRenderer" in o for o in overlays)
-            is_premiere = any(
-                _deep_get(o, "thumbnailOverlayTimeStatusRenderer.text.runs.0.text")
-                == "PREMIERE"
-                for o in overlays
-            )
-            is_verified = any(
-                _deep_get(b, "metadataBadgeRenderer.style")
-                == "BADGE_STYLE_TYPE_VERIFIED"
-                for b in _deep_get(video_data, "ownerBadges", [])
-            )
-
-            url_path = "navigationEndpoint.commandMetadata.webCommandMetadata.url"
-            video_url = f"https://www.youtube.com{_deep_get(video_data, url_path)}"
-
-            videos.append(
-                {
-                    "video_id": video_data.get("videoId"),
-                    "title": _deep_get(video_data, "title.runs.0.text"),
-                    "descriptionSnippet": _deep_get(
-                        video_data, "descriptionSnippet.runs.0.text"
-                    ),
-                    "thumbnails": _deep_get(video_data, "thumbnail.thumbnails", []),
-                    "publishedTimeText": _deep_get(
-                        video_data, "publishedTimeText.simpleText"
-                    ),
-                    "lengthSeconds": parse_duration(
-                        _deep_get(
-                            video_data,
-                            "lengthText.accessibility.accessibilityData.label",
-                        )
-                    ),
-                    "viewCount": parse_view_count(
-                        _deep_get(video_data, "viewCountText.simpleText")
-                    ),
-                    "url": video_url,
-                    "isLive": is_live,
-                    "isPremiere": is_premiere,
-                    "isMembersOnly": is_members_only,
-                    "isVerified": is_verified,
-                }
-            )
-
-        if "continuationItemRenderer" in renderer:
-            continuation_token = _deep_get(
-                renderer,
-                "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
-            )
-
-    return videos, continuation_token
-
-
 def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
     """
     Parses a list of short video renderers from a channel's "Shorts" tab.
@@ -489,32 +403,6 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
         "is_upcoming": is_upcoming,
         "scheduled_text": scheduled_text,
     }
-
-
-def extract_videos_from_lockup_renderers(
-    renderers: list,
-) -> tuple[list, str | None]:
-    """Parse a list of channel 'Videos' tab renderers in the
-    ``lockupViewModel`` shape, returning (videos, continuation_token).
-
-    Mirrors extract_shorts_from_renderers / extract_videos_from_renderers
-    so the channel-videos generator can branch on the renderer shape.
-    Non-video lockups and the continuation renderer are skipped.
-    """
-    videos = []
-    continuation_token = None
-    for renderer in renderers or []:
-        lvm = _deep_get(renderer, "richItemRenderer.content.lockupViewModel")
-        if lvm:
-            video = parse_lockup_view_model(lvm)
-            if video:
-                videos.append(video)
-        if "continuationItemRenderer" in renderer:
-            continuation_token = _deep_get(
-                renderer,
-                "continuationItemRenderer.continuationEndpoint.continuationCommand.token",
-            )
-    return videos, continuation_token
 
 
 # --- Listing page layout ----------------------------------------------

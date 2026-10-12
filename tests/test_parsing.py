@@ -214,11 +214,11 @@ def test_find_heatmap():
     assert parsing.find_heatmap({}) is None
 
 
-def test_extract_videos_from_renderers_no_continuation(youtube_channel_video_renderers):
+def test_parse_grid_page_no_continuation(youtube_channel_video_renderers):
     """
     Tests that video data can be extracted from a list of video renderers.
     """
-    videos, continuation_token = parsing.extract_videos_from_renderers(
+    videos, continuation_token = parsing.parse_grid_page(
         youtube_channel_video_renderers
     )
     assert isinstance(videos, list)
@@ -227,14 +227,14 @@ def test_extract_videos_from_renderers_no_continuation(youtube_channel_video_ren
     assert continuation_token is None
 
 
-def test_extract_videos_from_renderers_with_continuation(youtube_channel_initial_data):
+def test_parse_grid_page_with_continuation(youtube_channel_initial_data):
     """
     Tests that video data can be extracted from a list of video renderers.
     """
     renderers = youtube_channel_initial_data["contents"][
         "twoColumnBrowseResultsRenderer"
     ]["tabs"][1]["tabRenderer"]["content"]["richGridRenderer"]["contents"]
-    videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
+    videos, continuation_token = parsing.parse_grid_page(renderers)
     assert isinstance(videos, list)
     assert len(videos) > 0
     assert "video_id" in videos[0]
@@ -306,20 +306,12 @@ def test_extract_shorts_from_renderers():
     assert continuation_token is not None
 
 
-def test_extract_videos_from_renderers():
+def test_parse_grid_page():
     renderers = json.loads(get_fixture("aimakerspace_channel_video_renderers.json"))
-    videos, continuation = parsing.extract_videos_from_renderers(renderers)
+    videos, continuation = parsing.parse_grid_page(renderers)
 
     assert len(videos) == 30
     assert continuation is None
-
-
-# def test_extract_videos_from_renderers_with_continuation():
-#     renderers = json.loads(get_fixture("continuation_fixture.json"))
-#     videos, continuation_token = parsing.extract_videos_from_renderers(renderers)
-
-#     assert len(videos) == 1
-#     assert continuation_token == "some_continuation_token"
 
 
 def test_initial_data_from_json_script_element():

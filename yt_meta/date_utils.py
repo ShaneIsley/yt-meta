@@ -74,8 +74,6 @@ def parse_relative_date_string(date_str: str) -> date:
     raise ValueError(f"Could not parse date string: {date_str!r}")
 
 
-parse_human_readable_date = parse_relative_date_string
-
 
 def approx_date_resolution(text: str | None) -> timedelta:
     """The rounding error bound of an APPROXIMATE publish date, derived
