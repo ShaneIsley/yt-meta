@@ -120,7 +120,15 @@ class SQLiteCache(MutableMapping):
             raise KeyError(key)
         value, timestamp = result
         if timestamp < time.time() - self.ttl_seconds:
-            self.__delitem__(key)
+            # Delete only the row we read. Another thread may have written
+            # a fresh value since the SELECT; a plain delete-by-key would
+            # throw that away.
+            with self._lock:
+                self._conn.execute(
+                    "DELETE FROM cache WHERE key = ? AND timestamp = ?",
+                    (key, timestamp),
+                )
+                self._conn.commit()
             raise KeyError(key)
         if value[:1] == _LEGACY_PICKLE_MARKER:
             raise ValueError(

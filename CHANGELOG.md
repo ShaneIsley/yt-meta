@@ -30,6 +30,36 @@ All notable changes to this project are documented in this file.
 - **`clear_cache()` with the SQLite backend** now removes every entry.
   The inherited `clear()` stopped at the first expired row and raised
   on a legacy pickle row.
+- **Comments: unusable watch pages are no longer cached.** A consent
+  page or a markup change was cached for the full TTL, and every comment
+  fetch for that video returned nothing, with no error. A missing API key
+  now raises `MetadataParsingError`.
+- **`sort_by` is validated.** Values other than `'recent'` and `'top'`
+  raise `ValueError` instead of silently returning top comments. If
+  YouTube offers no newest-first ordering, `'recent'` falls back with a
+  warning, and `since_date` raises because it needs chronological order.
+- **Unavailable videos no longer blank out listing data.** Hydrating a
+  members-only or private video kept the listing's title and view count
+  instead of replacing them with `None` and `0`.
+- **Rescheduled premieres update.** A re-check of an `upcoming` video
+  returns the fresh `scheduled_start_time` instead of the cached one.
+- **`get_videos_published_between` survives a failed lookup.** One
+  probe that failed after retries no longer aborts the search.
+- **Library errors mid-pagination.** Missing page config, HTTP errors
+  and non-JSON responses while paging raise `MetadataParsingError` or
+  `VideoUnavailableError` instead of raw `KeyError`, httpx or JSON
+  errors.
+- **Negative `Retry-After`** no longer crashes the retry loop.
+- **SQLite cache expiry** no longer deletes a value another thread wrote
+  between the read and the delete.
+
+### Changed
+- **Filter validation is stricter.** Values are checked against the
+  field's type, so `{"title": {"eq": 5}}` and
+  `{"view_count": {"eq": "100"}}` raise `TypeError` instead of crashing
+  later or matching nothing. Comment-only fields on video filters, and
+  video-only fields on comment filters, raise `ValueError`.
+  `validate_filters` takes an optional `kind="video"|"comment"`.
 
 ## [0.8.0] - 2026-07-06
 

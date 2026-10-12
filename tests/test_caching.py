@@ -393,3 +393,43 @@ def test_clear_removes_expired_and_legacy_rows(tmp_path):
     cache.clear()
 
     assert len(cache) == 0
+
+
+def test_expiry_does_not_delete_a_concurrently_refreshed_value(tmp_path):
+    """REGRESSION (2026-10 review): __getitem__ read an expired row, then
+    deleted the key outside the lock. A fresh value written by another
+    thread in between was deleted too. Simulated by refreshing the row
+    between the SELECT and the delete."""
+    cache = SQLiteCache(path=str(tmp_path / "cache.db"), ttl_seconds=60)
+    cache["k"] = {"v": "old"}
+    cache._conn.execute("UPDATE cache SET timestamp = 0 WHERE key = 'k'")
+    cache._conn.commit()
+
+    real_conn = cache._conn
+
+    class RefreshAfterSelect:
+        """Proxy that lets another 'thread' write right after the SELECT."""
+
+        def __init__(self):
+            self.done = False
+
+        def execute(self, sql, params=()):
+            cur = real_conn.execute(sql, params)
+            if sql.startswith("SELECT value") and not self.done:
+                self.done = True
+                real_conn.execute(
+                    "UPDATE cache SET value = ?, timestamp = ? WHERE key = 'k'",
+                    (json.dumps({"v": "new"}).encode(), time.time()),
+                )
+                real_conn.commit()
+            return cur
+
+        def __getattr__(self, name):
+            return getattr(real_conn, name)
+
+    cache._conn = RefreshAfterSelect()
+    with pytest.raises(KeyError):
+        cache["k"]  # the row it read was expired
+    cache._conn = real_conn
+
+    assert cache["k"] == {"v": "new"}
