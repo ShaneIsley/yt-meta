@@ -268,7 +268,7 @@ class CommentFetcher:
 
         except VideoUnavailableError:
             raise
-        except (httpx.HTTPError, httpx.RequestError) as e:
+        except httpx.HTTPError as e:  # includes RequestError (a subclass)
             # M23: narrowed from `except Exception`. Programmer bugs
             # (KeyError from a code change in the parser, TypeError
             # from a wrong assumption) used to get wrapped as
