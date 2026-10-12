@@ -17,9 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 class YtMeta:
-    """
-    A client for fetching metadata for YouTube videos, channels, playlists, and comments.
-    This class acts as a Facade, delegating calls to specialized fetcher classes.
+    """Client for YouTube video, channel, playlist, comment and transcript metadata.
+
+    Use it as a context manager, or call close() when done. Listing and
+    comment methods return generators: arguments are checked when the
+    method is called, and requests start on first iteration.
     """
 
     def __init__(
@@ -29,29 +31,19 @@ class YtMeta:
         cache_ttl_seconds: int = 86400,
         accept_cookies: bool = False,
     ):
-        """
-        Initializes the yt-meta client.
+        """Create a client.
 
         Args:
-            cache_path: If provided, the path to a SQLite file for persistent,
-                        on-disk caching.
-            cache: Any MutableMapping (e.g. a plain ``dict`` for an
-                   in-memory cache, or ``diskcache.Cache`` for a persistent
-                   one). Takes precedence over ``cache_path``. If both are
-                   ``None`` (the default), caching is disabled.
-            cache_ttl_seconds: TTL applied to entries in the built-in
-                   SQLiteCache (used when ``cache_path`` is given). Default
-                   is 86400 (1 day). Ignored when ``cache`` is supplied —
-                   inject a cache with the TTL semantics you want.
-            accept_cookies: Opt in to bypassing YouTube's EU cookie-consent
-                   wall. When ``True``, a ``SOCS`` consent cookie is set on
-                   the session so YouTube serves content directly instead of
-                   a 302 redirect to consent.youtube.com. Default ``False``
-                   — no consent cookie is set, behavior is unchanged. Set
-                   this to ``True`` if you see a ``302`` redirect to
-                   ``consent.youtube.com`` (region-gated, e.g. the EU). This
-                   is a conscious choice to accept YouTube's cookies on your
-                   behalf, hence the explicit opt-in.
+            cache_path: Path of a SQLite file for the built-in persistent cache.
+            cache: Any MutableMapping to use as the cache, such as a dict or a
+                diskcache.Cache. Takes precedence over cache_path. With neither,
+                nothing is cached.
+            cache_ttl_seconds: Lifetime of built-in SQLite cache entries, in
+                seconds. Ignored when cache is given.
+            accept_cookies: Set YouTube's consent cookie so requests from regions
+                with a cookie-consent page (such as the EU) aren't redirected to
+                consent.youtube.com. Off by default because it accepts YouTube's
+                cookies on your behalf.
         """
         self.session = Client(headers={"Accept-Language": "en-US,en;q=0.5"})
         if accept_cookies:
@@ -90,22 +82,14 @@ class YtMeta:
 
     @property
     def comment_fetcher(self) -> CommentFetcher:
+        """The underlying CommentFetcher, for lower-level comment access."""
         return self._comment_fetcher
 
     def close(self) -> None:
-        """Release all resources owned by this client — the main
-        httpx.Client and the SQLite cache connection (when
-        ``cache_path`` was given).
+        """Close the HTTP session and the built-in SQLite cache.
 
-        Idempotent. Safe to call multiple times. Prefer the context
-        manager pattern (``with YtMeta() as client:``) which calls this
-        automatically on exit; explicit ``close()`` works for code that
-        doesn't structure around context managers.
-
-        Since M1/L2 the comment subsystem shares this client's session
-        and cache, so there's nothing extra to close on that side. The
-        comment_fetcher.close() call is kept as a no-op safety net
-        (the CommentAPIClient knows not to close an injected session).
+        Safe to call more than once. Called automatically on leaving a
+        ``with YtMeta() as client:`` block.
         """
         if hasattr(self, "session"):
             self.session.close()
@@ -123,11 +107,11 @@ class YtMeta:
         self.close()
 
     def clear_cache(self, prefix: str | None = None):
-        """
-        Clears the cache.
+        """Remove cached entries.
 
         Args:
-            prefix: If provided, only keys starting with this prefix will be removed.
+            prefix: Remove only keys starting with this prefix, such as
+                "video_meta:". None removes everything.
         """
         if prefix:
             keys_to_remove = [k for k in self.cache if k.startswith(prefix)]
@@ -139,15 +123,19 @@ class YtMeta:
     def get_channel_metadata(
         self, channel_url: str, force_refresh: bool = False
     ) -> dict:
-        """
-        Fetches metadata for a YouTube channel.
+        """Fetch a channel's metadata.
 
         Args:
-            channel_url: The URL of the channel page.
-            force_refresh: If True, bypasses the cache to fetch fresh data.
+            channel_url: The channel's home page or any of its tabs.
+            force_refresh: Skip the cache.
 
         Returns:
-            A dictionary containing the channel's metadata.
+            title, description, channel_id, vanity_url, keywords and
+            is_family_safe. No subscriber or view counts.
+
+        Raises:
+            VideoUnavailableError: The request failed.
+            MetadataParsingError: The page could not be read.
         """
         return self._channel_fetcher.get_channel_metadata(channel_url, force_refresh)
 
@@ -175,34 +163,31 @@ class YtMeta:
         video_id: str | None = None,
         force_refresh: bool = False,
     ) -> dict | None:
-        """Fetches and parses comprehensive metadata for a given YouTube video.
+        """Fetch a video's metadata and availability status.
 
         Args:
-            youtube_url: Any supported form (``watch?v=ID``, ``/shorts/ID``,
-                ``youtu.be/ID``, ``/live/ID``, or a bare 11-char id).
-            video_id: Alias: pass the id (or a URL) by this keyword instead.
-                Exactly one of youtube_url / video_id is required.
-            force_refresh: Re-fetch even on a cache hit, to re-check
-                availability and pick up status changes.
+            youtube_url: The video, as any URL form (watch?v=, youtu.be/,
+                /shorts/, /live/) or a bare 11-character id.
+            video_id: Alias for youtube_url. Pass exactly one.
+            force_refresh: Skip the cache, to re-check availability.
 
         Returns:
-            A dictionary of metadata, or ``None`` if the watch page was fetched
-            but had no player response at all. Every dict carries status fields:
+            A dict with title, channel, counts, an exact timezone-aware
+            publish_date and more, or None if the page had no player data at
+            all. Every dict has status fields:
 
-              - ``status``: ``"ok"``, ``"upcoming"`` (scheduled premiere or live
-                event not started) or ``"unavailable"``.
-              - ``status_reason``: YouTube's reason text when not ``"ok"``.
-              - ``status_checked_at`` / ``status_changed_at``: ISO-8601 UTC
-                times of the last check and the last status change.
+            - status: "ok", "upcoming" (premiere or live event not started) or
+              "unavailable".
+            - status_reason: YouTube's reason text when status is not "ok".
+            - status_checked_at, status_changed_at: ISO-8601 UTC times of this
+              check and of the last status change.
 
-            When a video is found ``"unavailable"`` and an earlier record is
-            cached, the result keeps that record's content fields (title,
-            counts, ...) and updates only the status fields.
+            When a cached video is found unavailable on a later check, the
+            cached title and counts are kept and only the status fields change.
 
         Raises:
-            VideoUnavailableError: the HTTP fetch itself failed (network error,
-                404, rate limit). An unavailable video is reported via
-                ``status``, not an exception.
+            VideoUnavailableError: The request failed. An unavailable video is
+                reported through status, not raised.
         """
         target = self._resolve_video_target(youtube_url, video_id)
         return self._video_fetcher.get_video_metadata(
@@ -216,19 +201,20 @@ class YtMeta:
         *,
         youtube_url: str | None = None,
     ) -> list[dict]:
-        """
-        Fetches the transcript for a given video.
+        """Fetch a video's transcript.
 
         Args:
-            video_id: The video id (or a full URL — M9 routes it through
-                extract_video_id, so URLs and youtu.be links work too).
-            languages: A list of language codes to prioritize (e.g.,
-                ['en', 'de']). If None, defaults to English.
-            youtube_url: Alias for ``video_id``. Exactly one of the two
-                is required.
+            video_id: The video, as a bare id or any URL form.
+            languages: Language codes in order of preference. Defaults to ["en"].
+            youtube_url: Alias for video_id. Pass exactly one.
 
         Returns:
-            A list of transcript snippets, or an empty list if not found.
+            {text, start, duration} snippets in the first available language,
+            or [] if the video has no transcript in those languages.
+
+        Raises:
+            Errors from youtube_transcript_api other than "no transcript", such
+            as rate limiting or network failures.
         """
         target = self._resolve_video_target(youtube_url, video_id)
         return self._transcript_fetcher.get_transcript(
@@ -246,29 +232,33 @@ class YtMeta:
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
-        """
-        Fetches videos from a YouTube channel's "Videos" tab.
+        """Yield the channel's Videos tab, newest first.
 
-        This method handles pagination automatically and provides extensive filtering
-        options. It intelligently combines date parameters (`start_date`, `end_date`)
-        with any date conditions specified in the `filters` dictionary.
+        start_date and end_date are combined with any publish_date condition in
+        filters; on its side, each replaces that condition's bound. Pagination
+        stops once the listing passes start_date.
 
         Args:
-            channel_url: The URL of the channel.
-            force_refresh: If True, bypasses the cache for the initial page load.
-            fetch_full_metadata: If True, performs an additional request for each
-                video to get its complete metadata (e.g., likes, category). This is
-                required for "slow filters".
-            start_date: The earliest publish date for videos to include.
-                Can be a `date` object or a string (e.g., "2023-01-01", "3 weeks ago").
-            end_date: The latest publish date for videos to include.
-            filters: A dictionary of filter conditions to apply.
-            stop_at_video_id: If provided, pagination will stop once this video ID
-                is found.
-            max_videos: The maximum number of videos to return (-1 for all).
+            channel_url: The channel's home page or any of its tabs.
+            force_refresh: Skip the cache for the listing pages.
+            fetch_full_metadata: Fetch each item's own page for the full fields
+                and an exact date, one request per item. Turned on automatically
+                by slow filters.
+            filters: Field conditions; see the README's Filtering section.
+            stop_at_video_id: Stop after this video, whether or not it passes
+                the filters. It is yielded if it does.
+            max_videos: Stop after this many results; -1 for no limit.
+            start_date: Earliest publish date: a date, "YYYY-MM-DD" or a relative
+                string such as "3 weeks ago".
+            end_date: Latest publish date, in the same forms.
 
         Yields:
-            A dictionary for each video that matches the criteria.
+            A dict for each matching video.
+
+        Raises:
+            ValueError, TypeError: On call, for a non-YouTube URL or bad filters.
+            VideoUnavailableError: During iteration, if a page request fails.
+            MetadataParsingError: During iteration, if a page can't be read.
         """
         return self._channel_fetcher.get_channel_videos(
             channel_url,
@@ -289,29 +279,23 @@ class YtMeta:
         force_refresh: bool = False,
         max_videos: int = -1,
     ):
-        """
-        Incremental sync: yield a channel's videos newest-first, stopping
-        before ``since_video_id``, so only videos published since the
-        last run are returned. The first yielded video's id is the new
-        high-water mark.
+        """Yield the channel's videos newer than since_video_id, newest first.
 
-        Unlike ``get_channel_videos(stop_at_video_id=...)``, the marker
-        video itself is not yielded. Pagination still stops at the
-        marker, so request cost is proportional to the number of new
-        videos.
+        The marker itself is not yielded, and pagination stops at it, so the
+        cost is proportional to the number of new videos. Save the first
+        yielded id for the next run.
 
         Args:
             channel_url: The channel URL.
-            since_video_id: The last video id seen on a previous run.
-                ``None`` yields from the newest video onward — bound it
-                with ``max_videos`` (a deleted/never-found marker also
-                falls back to streaming the whole channel).
-            fetch_full_metadata: Fetch full metadata for each new video.
-            force_refresh: Bypass the cache for the listing pages.
-            max_videos: Safety cap on yielded videos (-1 for no cap).
+            since_video_id: Newest video id seen on the previous run. None yields
+                from the newest video; bound it with max_videos. A marker that no
+                longer exists also yields everything.
+            fetch_full_metadata: Fetch each new video's full metadata.
+            force_refresh: Skip the cache for the listing pages.
+            max_videos: Cap on yielded videos; -1 for no cap.
 
         Yields:
-            A dictionary for each video newer than the marker.
+            A dict for each video newer than the marker.
         """
         videos = self._channel_fetcher.get_channel_videos(
             channel_url,
@@ -336,30 +320,26 @@ class YtMeta:
         end_date: "str | date | datetime | None" = None,
         force_refresh: bool = False,
     ):
-        """
-        Videos published in an exact window, found with O(log n)
-        full-metadata fetches.
+        """Yield the channel's videos published in a window, with exact dates.
 
-        Listing dates are approximate (rounded relative text), so a
-        plain date filter must fetch full metadata for every video in
-        the padded window — several hundred requests for a year-old
-        target on a daily channel. This helper binary-searches the
-        chronological listing for the window's boundaries with probe
-        fetches (about 2·log2(n)), then fetches only the videos inside.
-
-        Bounds may be ``datetime`` for hour-level windows; membership
-        is decided on exact dates, with naive bounds matching
-        wall-clock time. Every yielded video carries full metadata with
-        ``publish_date_precision == "exact"``.
+        A plain date filter with fetch_full_metadata=True fetches every video
+        near the window. This binary-searches the listing instead, at about
+        2*log2(n) full-metadata requests, and fetches only the videos inside.
 
         Args:
             channel_url: The channel URL.
-            start_date: Window start (required) — str/date/datetime.
-            end_date: Window end (None = up to the newest video).
-            force_refresh: Bypass the cache for the listing pages.
+            start_date: Window start, required: a string, date or datetime.
+                datetime bounds give an hour-level window; a bound without a
+                timezone is compared with the video's local wall-clock time.
+            end_date: Window end; None means up to the newest video.
+            force_refresh: Skip the cache for the listing pages.
 
         Yields:
-            Full-metadata video dictionaries, newest first.
+            Full-metadata dicts with publish_date_precision "exact", newest
+            first.
+
+        Raises:
+            ValueError: On call, if start_date is missing or the URL is invalid.
         """
         return self._channel_fetcher.get_videos_published_between(
             channel_url,
@@ -378,29 +358,28 @@ class YtMeta:
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
-        """Fetches videos from a YouTube playlist.
+        """Yield a playlist's videos in playlist order.
 
-        Handles pagination and filtering. Date filters are fast: they compare
-        the listing's approximate dates (parsed from relative text such as
-        "2 years ago"), with no per-video request. Playlists may not be in
-        date order, so the whole playlist is scanned. Pass
-        ``fetch_full_metadata=True`` for exact dates; an item whose listing
-        has no date is checked against its full metadata instead of being
-        dropped.
+        Date filters compare the listing's approximate dates, so they cost no
+        extra requests, but scan the whole playlist (it may not be in date
+        order). An item with no listing date is dropped unless
+        fetch_full_metadata=True, in which case its exact date is checked.
 
         Args:
-            playlist_id: The ID of the playlist.
-            fetch_full_metadata: If True, performs an additional request for each
-                video to get its complete metadata. Required for "slow filters".
-            start_date: The earliest publish date for videos to include.
-            end_date: The latest publish date for videos to include.
-            filters: A dictionary of filter conditions to apply.
-            stop_at_video_id: If provided, pagination will stop once this video ID
-                is found.
-            max_videos: The maximum number of videos to return (-1 for all).
+            playlist_id: The playlist id (the list= URL parameter).
+            fetch_full_metadata: Fetch each video's own page for the full fields
+                and an exact date, one request per video. Turned on
+                automatically by slow filters.
+            start_date: Earliest publish date: a date, "YYYY-MM-DD" or relative
+                string.
+            end_date: Latest publish date, in the same forms.
+            filters: Field conditions; see the README's Filtering section.
+            stop_at_video_id: Stop after this video, whether or not it passes
+                the filters. It is yielded if it does.
+            max_videos: Stop after this many results; -1 for no limit.
 
         Yields:
-            A dictionary for each video that matches the criteria.
+            A dict for each matching video.
         """
         return self._playlist_fetcher.get_playlist_videos(
             playlist_id,
@@ -413,16 +392,13 @@ class YtMeta:
         )
 
     def get_playlist_metadata(self, playlist_id: str) -> dict:
-        """
-        Fetches a playlist's own metadata (not its videos).
+        """Fetch a playlist's own metadata, not its videos.
 
         Args:
-            playlist_id: The playlist ID (the ``list=`` URL parameter).
+            playlist_id: The playlist id (the list= URL parameter).
 
         Returns:
-            A dictionary with the playlist's ``title``, ``author``,
-            ``description``, ``video_count``, ``playlist_id`` and
-            related fields.
+            title, author, description, video_count and playlist_id.
         """
         return self._playlist_fetcher.get_playlist_metadata(playlist_id)
 
@@ -435,19 +411,24 @@ class YtMeta:
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
-        """
-        Fetches shorts from a YouTube channel's shorts tab.
+        """Yield the channel's Shorts tab.
+
+        The listing has only title and view_count; everything else, including
+        publish_date, needs fetch_full_metadata=True.
 
         Args:
-            channel_url: The URL of the channel's shorts page.
-            force_refresh: Whether to bypass the cache and fetch fresh data.
-            fetch_full_metadata: Whether to fetch full metadata for each short.
-            filters: A dictionary of filter conditions.
-            stop_at_video_id: The ID of the short to stop fetching at.
-            max_videos: The maximum number of shorts to fetch (-1 for all).
+            channel_url: The channel's home page or any of its tabs.
+            force_refresh: Skip the cache for the listing pages.
+            fetch_full_metadata: Fetch each item's own page for the full fields
+                and an exact date, one request per item. Turned on automatically
+                by slow filters.
+            filters: Field conditions; see the README's Filtering section.
+            stop_at_video_id: Stop after this video, whether or not it passes
+                the filters. It is yielded if it does.
+            max_videos: Stop after this many results; -1 for no limit.
 
-        Returns:
-            A generator of short dictionaries.
+        Yields:
+            A dict for each matching Short.
         """
         return self._channel_fetcher.get_channel_shorts(
             channel_url,
@@ -467,26 +448,26 @@ class YtMeta:
         stop_at_video_id: str | None = None,
         max_videos: int = -1,
     ) -> Generator[dict, None, None]:
-        """
-        Fetches live streams from a channel's Live (``/streams``) tab —
-        live, upcoming/scheduled, and past live content that the Videos
-        tab does not include.
+        """Yield the channel's Live tab: live, upcoming and past streams.
 
-        Items use the same shape as ``get_channel_videos``. Upcoming
-        streams carry ``is_upcoming=True`` and ``scheduled_text``; pass
-        ``fetch_full_metadata=True`` for the precise
-        ``scheduled_start_time`` and ``status`` per stream.
+        The Videos tab does not include these. Items are shaped like channel
+        videos, plus is_upcoming and scheduled_text (the listing's "Scheduled
+        for ..." text). fetch_full_metadata=True adds the exact
+        scheduled_start_time and status.
 
         Args:
-            channel_url: The channel URL (``/streams`` is appended if absent).
-            force_refresh: Whether to bypass the cache and fetch fresh data.
-            fetch_full_metadata: Whether to fetch full metadata per stream.
-            filters: A dictionary of filter conditions.
-            stop_at_video_id: The ID of the stream to stop fetching at.
-            max_videos: The maximum number of streams to fetch (-1 for all).
+            channel_url: The channel's home page or any of its tabs.
+            force_refresh: Skip the cache for the listing pages.
+            fetch_full_metadata: Fetch each item's own page for the full fields
+                and an exact date, one request per item. Turned on automatically
+                by slow filters.
+            filters: Field conditions; see the README's Filtering section.
+            stop_at_video_id: Stop after this video, whether or not it passes
+                the filters. It is yielded if it does.
+            max_videos: Stop after this many results; -1 for no limit.
 
-        Returns:
-            A generator of stream dictionaries.
+        Yields:
+            A dict for each matching stream.
         """
         return self._channel_fetcher.get_channel_streams(
             channel_url,
@@ -508,21 +489,30 @@ class YtMeta:
         *,
         video_id: str | None = None,
     ):
-        """
-        Get comments for a specific YouTube video.
+        """Yield a video's top-level comments.
 
         Args:
-            youtube_url (str): The full URL of the YouTube video.
-            limit (int | None, optional): The maximum number of comments to fetch. Defaults to 100. Pass None or -1 for unbounded — but you must also pass `since_date` (safety guard against runaway pagination on popular videos).
-            sort_by (str, optional): The order to sort comments by. Can be 'recent' (default — chronological, required for `since_date` short-circuit) or 'top' (YouTube's editorial ranking).
-            progress_callback (Callable[[int], None], optional): A function to be called
-                with the number of comments fetched so far. Defaults to None.
-            since_date (date | str | None, optional): The date from which to fetch comments.
-                Can be a date object, a string in the format "YYYY-MM-DD", or None for no filter. The only filter that short-circuits pagination.
-            filters (dict | None, optional): Comment-level predicates applied after fetch. Supported keys: text, author, author_channel_id, like_count, reply_count, publish_date, is_reply, is_hearted, is_creator, is_pinned. These do NOT reduce request count — they operate on the in-memory comment list. Use `since_date` for request reduction.
+            youtube_url: The video, as any URL form or a bare id.
+            limit: Maximum comments. None or -1 for no limit, which requires
+                since_date.
+            sort_by: "recent" (newest first) or "top" (YouTube's ranking).
+            progress_callback: Called with the running count after each comment.
+            since_date: Only comments on or after this date (date, datetime,
+                "YYYY-MM-DD" or a relative string such as "2 weeks ago").
+                Requires sort_by="recent"; fetching stops at the first older
+                comment.
+            filters: Comment field conditions, applied to fetched comments.
+            video_id: Alias for youtube_url. Pass exactly one.
 
         Yields:
-            dict: A dictionary representing a single comment.
+            A dict for each comment. Comment dates are always approximate.
+
+        Raises:
+            ValueError: On call, for an unknown sort_by, since_date with
+                sort_by="top", limit=None without since_date, or bad filters.
+            VideoUnavailableError: During iteration, if a request fails.
+            MetadataParsingError: During iteration, if the page has no API key,
+                or since_date is set and YouTube offers no newest-first order.
         """
         youtube_url = self._resolve_video_target(youtube_url, video_id)
         resolved_date = self._resolve_date(since_date)
@@ -554,21 +544,33 @@ class YtMeta:
         *,
         video_id: str | None = None,
     ):
-        """
-        Get comments for a specific YouTube video, including reply continuation tokens.
+        """Yield top-level comments with reply tokens.
+
+        As get_video_comments, and each comment that has replies also carries a
+        reply_continuation_token to pass to get_comment_replies.
 
         Args:
-            youtube_url (str): The full URL of the YouTube video.
-            limit (int | None, optional): The maximum number of comments to fetch. Defaults to 100. Pass None or -1 for unbounded — but you must also pass `since_date`.
-            sort_by (str, optional): The order to sort comments by. Can be 'recent' (default — chronological) or 'top' (YouTube's editorial ranking).
-            progress_callback (Callable[[int], None], optional): A function to be called
-                with the number of comments fetched so far. Defaults to None.
-            since_date (date | str | None, optional): The date from which to fetch comments. Same semantics as get_video_comments.
-            filters (dict | None, optional): Same semantics as get_video_comments.
+            youtube_url: The video, as any URL form or a bare id.
+            limit: Maximum comments. None or -1 for no limit, which requires
+                since_date.
+            sort_by: "recent" (newest first) or "top" (YouTube's ranking).
+            progress_callback: Called with the running count after each comment.
+            since_date: Only comments on or after this date (date, datetime,
+                "YYYY-MM-DD" or a relative string such as "2 weeks ago").
+                Requires sort_by="recent"; fetching stops at the first older
+                comment.
+            filters: Comment field conditions, applied to fetched comments.
+            video_id: Alias for youtube_url. Pass exactly one.
 
         Yields:
-            dict: A dictionary representing a single comment, including 'reply_continuation_token'
-                  field for comments that have replies.
+            A dict for each comment.
+
+        Raises:
+            ValueError: On call, for an unknown sort_by, since_date with
+                sort_by="top", limit=None without since_date, or bad filters.
+            VideoUnavailableError: During iteration, if a request fails.
+            MetadataParsingError: During iteration, if the page has no API key,
+                or since_date is set and YouTube offers no newest-first order.
         """
         youtube_url = self._resolve_video_target(youtube_url, video_id)
         resolved_date = self._resolve_date(since_date)
@@ -597,19 +599,18 @@ class YtMeta:
         *,
         video_id: str | None = None,
     ):
-        """
-        Get replies for a specific comment.
+        """Yield the replies in one comment thread.
 
         Args:
-            youtube_url (str): The video URL (or a bare id). Alias:
-                ``video_id=``. Exactly one is required.
-            reply_continuation_token (str): The continuation token for the specific reply thread.
-            limit (int, optional): The maximum number of replies to fetch. Defaults to 100.
-            progress_callback (Callable[[int], None], optional): A function to be called
-                with the number of replies fetched so far. Defaults to None.
+            youtube_url: The video, as any URL form or a bare id.
+            reply_continuation_token: The thread's token, from
+                get_video_comments_with_reply_tokens.
+            limit: Maximum replies; None or -1 for no limit.
+            progress_callback: Called with the running count after each reply.
+            video_id: Alias for youtube_url. Pass exactly one.
 
         Yields:
-            dict: A dictionary representing a single reply comment.
+            A dict for each reply.
         """
         youtube_url = self._resolve_video_target(youtube_url, video_id)
         resolved_id = extract_video_id(youtube_url)
@@ -631,30 +632,27 @@ class YtMeta:
         since_date: date | str | None = None,
         filters: dict | None = None,
     ):
-        """
-        Yield ``(comment, replies)`` tuples: the comment hierarchy in
-        one call, wrapping ``get_video_comments_with_reply_tokens`` and
-        ``get_comment_replies``.
+        """Yield (comment, replies) pairs for a video.
 
-        Request cost: one request per ~20 top-level comments, plus one
-        request per ~10 replies for each comment that has replies. Set
-        ``replies_per_thread=0`` to skip reply fetching entirely.
+        Costs one request per page of about 20 top-level comments, plus one per
+        page of about 10 replies for each comment that has replies. YouTube's
+        reply_count can exceed the replies it serves (held or removed replies),
+        so treat it as an upper bound.
 
         Args:
-            youtube_url: The video URL. Alias: ``video_id=``.
-            limit: Maximum top-level comments (same semantics as
-                get_video_comments).
-            replies_per_thread: Max replies fetched per thread
-                (0 = don't fetch replies).
-            sort_by: 'recent' (default, like every comment method) or 'top'
-                (YouTube's ranking, where threads with replies tend to rank
-                higher).
-            since_date: Same semantics as get_video_comments.
-            filters: Applied to top-level comments only.
+            youtube_url: The video, as any URL form or a bare id.
+            video_id: Alias for youtube_url. Pass exactly one.
+            limit: Maximum top-level comments; as for get_video_comments.
+            replies_per_thread: Maximum replies per thread; 0 skips reply
+                requests.
+            sort_by: "recent" (newest first, the default for every comment
+                method) or "top" (YouTube's ranking, where threads with replies
+                tend to come first).
+            since_date: As for get_video_comments.
+            filters: Comment field conditions, applied to top-level comments.
 
         Yields:
-            Tuples of (comment_dict, list_of_reply_dicts). Comments
-            without replies yield an empty list.
+            (comment, replies) tuples; replies is [] for a comment without any.
         """
         target = self._resolve_video_target(youtube_url, video_id)
         comments = self.get_video_comments_with_reply_tokens(
