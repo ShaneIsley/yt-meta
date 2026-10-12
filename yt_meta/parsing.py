@@ -581,6 +581,60 @@ def parse_grid_page(items: list) -> tuple[list, str | None]:
     return videos, token
 
 
+# --- Comment sort options ----------------------------------------------
+
+_COMMENTS_PANEL_ID = "engagement-panel-comments-section"
+_SORT_MENU_PATH = (
+    "header.engagementPanelTitleHeaderRenderer.menu"
+    ".sortFilterSubMenuRenderer.subMenuItems"
+)
+_SORT_TITLES = {"top": "top", "top comments": "top", "newest": "recent",
+                "newest first": "recent"}
+
+
+def find_comment_sort_tokens(initial_data: dict) -> dict[str, str]:
+    """The comment continuation tokens on a watch page, keyed by sort:
+    ``{"top": ..., "recent": ...}``. Empty when the video has no comments
+    section (comments disabled).
+
+    The tokens live in the comments engagement panel's header menu, as
+    "Top" then "Newest". Titles are localized, so an unrecognized title
+    falls back to the menu position (Top first, Newest second). Without
+    a menu, the panel's own continuation (YouTube's default order, top)
+    is returned as "top".
+
+    Replaces a whole-response search for anything token-shaped, which
+    could pick up unrelated panels' tokens (the transcript panel also has
+    a header menu).
+    """
+    for panel in initial_data.get("engagementPanels") or []:
+        renderer = panel.get("engagementPanelSectionListRenderer") or {}
+        if renderer.get("panelIdentifier") != _COMMENTS_PANEL_ID:
+            continue
+        tokens: dict[str, str] = {}
+        for position, item in enumerate(_deep_get(renderer, _SORT_MENU_PATH, []) or []):
+            token = _deep_get(item, "serviceEndpoint.continuationCommand.token")
+            if not token:
+                continue
+            kind = _SORT_TITLES.get((item.get("title") or "").strip().lower())
+            if kind is None and position < 2:
+                kind = ("top", "recent")[position]
+            if kind and kind not in tokens:
+                tokens[kind] = token
+        if not tokens:
+            for item in _deep_get(
+                renderer,
+                "content.sectionListRenderer.contents.0.itemSectionRenderer.contents",
+                [],
+            ) or []:
+                token = _deep_get(item, _CONTINUATION_TOKEN_PATH)
+                if token:
+                    tokens["top"] = token
+                    break
+        return tokens
+    return {}
+
+
 _PLAYLIST_ITEM_SECTION_PATH = (
     "contents.twoColumnBrowseResultsRenderer.tabs.0.tabRenderer.content"
     ".sectionListRenderer.contents.0.itemSectionRenderer.contents"

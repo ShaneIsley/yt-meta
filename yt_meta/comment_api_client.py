@@ -12,7 +12,7 @@ import httpx
 from ._retry import request_with_retries
 from .caching import DummyCache
 from .exceptions import MetadataParsingError, VideoUnavailableError
-from .parsing import extract_and_parse_json
+from .parsing import extract_and_parse_json, find_comment_sort_tokens
 from .utils import _deep_get
 
 logger = logging.getLogger(__name__)
@@ -143,137 +143,14 @@ class CommentAPIClient:
         return extract_and_parse_json(html_content, "ytInitialData") or {}
 
     def get_sort_endpoints_flexible(
-        self, initial_data: dict, ytcfg: dict
+        self, initial_data: dict, ytcfg: dict | None = None
     ) -> dict[str, str]:
-        """
-        Flexibly detect comment sort endpoints from various locations in the YouTube response.
-        This method searches multiple places for comment sorting options to be resilient
-        to YouTube's changing structure.
-        """
-        endpoints = {}
-
-        def find_sort_filter_menus(obj, path=""):
-            """Recursively search for sortFilterSubMenuRenderer anywhere in the data."""
-            if isinstance(obj, dict):
-                if "sortFilterSubMenuRenderer" in obj:
-                    submenu = obj["sortFilterSubMenuRenderer"]
-                    if "subMenuItems" in submenu:
-                        logger.debug(f"Found sortFilterSubMenuRenderer at path: {path}")
-                        for item in submenu["subMenuItems"]:
-                            title = item.get("title", "").lower()
-                            endpoint = (
-                                item.get("serviceEndpoint", {})
-                                .get("continuationCommand", {})
-                                .get("token")
-                            )
-                            if endpoint:
-                                endpoints[title] = endpoint
-                                logger.debug(
-                                    f"Added endpoint: {title} -> {endpoint[:50]}..."
-                                )
-
-                for key, value in obj.items():
-                    find_sort_filter_menus(value, f"{path}.{key}" if path else key)
-            elif isinstance(obj, list):
-                for i, item in enumerate(obj):
-                    find_sort_filter_menus(item, f"{path}[{i}]" if path else f"[{i}]")
-
-        def find_engagement_panels(obj):
-            """Look for engagement panels that might contain comment endpoints."""
-            if isinstance(obj, dict):
-                if "engagementPanels" in obj:
-                    panels = obj["engagementPanels"]
-                    for panel in panels:
-                        if self._is_comment_panel(panel):
-                            self._extract_endpoints_from_panel(panel, endpoints)
-
-                for value in obj.values():
-                    find_engagement_panels(value)
-            elif isinstance(obj, list):
-                for item in obj:
-                    find_engagement_panels(item)
-
-        def find_continuation_tokens(obj):
-            """Look for continuation tokens that might be comment-related."""
-            if isinstance(obj, dict):
-                for key, value in obj.items():
-                    if "token" in key.lower() and isinstance(value, str):
-                        if self._is_comment_token(value):
-                            # Try to determine if this is top or recent based on context
-                            context_key = key.lower()
-                            if "top" in context_key or "best" in context_key:
-                                endpoints["top comments"] = value
-                            elif "new" in context_key or "recent" in context_key:
-                                endpoints["newest first"] = value
-                            else:
-                                endpoints[f"comments_{len(endpoints)}"] = value
-
-                for value in obj.values():
-                    find_continuation_tokens(value)
-            elif isinstance(obj, list):
-                for item in obj:
-                    find_continuation_tokens(item)
-
-        # Search strategies in order of preference
-        find_sort_filter_menus(initial_data)
-
-        if not endpoints:
-            find_engagement_panels(initial_data)
-
-        if not endpoints:
-            find_continuation_tokens(initial_data)
-
-        logger.info(
-            f"Found {len(endpoints)} comment endpoints: {list(endpoints.keys())}"
-        )
+        """Comment sort tokens on the watch page, keyed "top" / "recent"
+        (see parsing.find_comment_sort_tokens). ``ytcfg`` is unused and
+        kept for call compatibility."""
+        endpoints = find_comment_sort_tokens(initial_data or {})
+        logger.info(f"Found comment sort options: {list(endpoints)}")
         return endpoints
-
-    def _is_comment_panel(self, panel: dict) -> bool:
-        """Determine if an engagement panel is related to comments."""
-        panel_str = json.dumps(panel).lower()
-        return any(
-            keyword in panel_str for keyword in ["comment", "discussion", "engagement"]
-        )
-
-    def _extract_endpoints_from_panel(self, panel: dict, endpoints: dict):
-        """Extract continuation tokens from an engagement panel."""
-
-        def extract_tokens(obj):
-            if isinstance(obj, dict):
-                # Look for continuation commands
-                if "continuationCommand" in obj:
-                    token = obj["continuationCommand"].get("token")
-                    if token and self._is_comment_token(token):
-                        # Try to determine sort type from context
-                        context = json.dumps(obj).lower()
-                        if "top" in context or "best" in context:
-                            endpoints["top comments"] = token
-                        elif "new" in context or "recent" in context:
-                            endpoints["newest first"] = token
-                        else:
-                            endpoints[f"comments_{len(endpoints)}"] = token
-
-                for value in obj.values():
-                    extract_tokens(value)
-            elif isinstance(obj, list):
-                for item in obj:
-                    extract_tokens(item)
-
-        extract_tokens(panel)
-
-    def _is_comment_token(self, token: str) -> bool:
-        """
-        Determine if a continuation token is likely for comments.
-        Comment tokens typically have certain patterns.
-        """
-        if not isinstance(token, str) or len(token) < 10:
-            return False
-
-        # Comment tokens often contain these patterns
-        comment_indicators = ["comments", "discussion", "4qmFsgI", "replies"]
-        token_lower = token.lower()
-
-        return any(indicator in token_lower for indicator in comment_indicators)
 
     def select_sort_endpoint(
         self, endpoints: dict[str, str], sort_by: str, allow_fallback: bool = True

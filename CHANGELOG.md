@@ -79,6 +79,12 @@ All notable changes to this project are documented in this file.
   Channel videos, shorts, streams and playlists share
   `_fetch_page` / `_paginate`; response-layout lookups (tabs, grids,
   continuation items) moved into `parsing`. Cache keys are unchanged.
+- **Internal: comment sort options are read from one known place.** The
+  comment client used to search the whole watch page for anything that
+  looked like a comment token. `parsing.find_comment_sort_tokens` reads
+  the comments panel's "Top" / "Newest" menu directly (by position when
+  the titles are localized), and returns nothing when comments are
+  disabled.
 - **Filter validation is stricter.** Values are checked against the
   field's type, so `{"title": {"eq": 5}}` and
   `{"view_count": {"eq": "100"}}` raise `TypeError` instead of crashing

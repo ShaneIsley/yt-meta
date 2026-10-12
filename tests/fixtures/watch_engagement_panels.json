@@ -1,0 +1,285 @@
+{
+ "_source": "Live watch page for UEqk0njCuQo (@ArjanCodes), 2026-10-12: engagementPanels trimmed to the comments panel and the transcript panel (which also has a header menu).",
+ "engagementPanels": [
+  {
+   "engagementPanelSectionListRenderer": {
+    "panelIdentifier": "engagement-panel-comments-section",
+    "header": {
+     "engagementPanelTitleHeaderRenderer": {
+      "title": {
+       "runs": [
+        {
+         "text": "Comments"
+        }
+       ]
+      },
+      "contextualInfo": {
+       "runs": [
+        {
+         "text": "40"
+        }
+       ]
+      },
+      "menu": {
+       "sortFilterSubMenuRenderer": {
+        "subMenuItems": [
+         {
+          "title": "Top",
+          "selected": true,
+          "serviceEndpoint": {
+           "clickTrackingParams": "CHMQ48AHGAAiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+           "commandMetadata": {
+            "webCommandMetadata": {
+             "sendPost": true,
+             "apiUrl": "/youtubei/v1/next"
+            }
+           },
+           "continuationCommand": {
+            "token": "Eg0SC1VFcWswbmpDdVFvGAYyOCIRIgtVRXFrMG5qQ3VRbzAAeAIwAUIhZW5nYWdlbWVudC1wYW5lbC1jb21tZW50cy1zZWN0aW9u",
+            "request": "CONTINUATION_REQUEST_TYPE_WATCH_NEXT",
+            "command": {
+             "clickTrackingParams": "CHMQ48AHGAAiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+             "showReloadUiCommand": {
+              "targetId": "engagement-panel-comments-section"
+             }
+            }
+           }
+          },
+          "accessibility": {
+           "accessibilityData": {
+            "label": "Top. Show featured comments"
+           }
+          },
+          "subtitle": "Show featured comments",
+          "trackingParams": "CHMQ48AHGAAiEwjAxejm47OXAxVbxkwCHQjRFBY="
+         },
+         {
+          "title": "Newest",
+          "selected": false,
+          "serviceEndpoint": {
+           "clickTrackingParams": "CHIQ48AHGAEiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+           "commandMetadata": {
+            "webCommandMetadata": {
+             "sendPost": true,
+             "apiUrl": "/youtubei/v1/next"
+            }
+           },
+           "continuationCommand": {
+            "token": "Eg0SC1VFcWswbmpDdVFvGAYyOCIRIgtVRXFrMG5qQ3VRbzABeAIwAUIhZW5nYWdlbWVudC1wYW5lbC1jb21tZW50cy1zZWN0aW9u",
+            "request": "CONTINUATION_REQUEST_TYPE_WATCH_NEXT",
+            "command": {
+             "clickTrackingParams": "CHIQ48AHGAEiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+             "showReloadUiCommand": {
+              "targetId": "engagement-panel-comments-section"
+             }
+            }
+           }
+          },
+          "accessibility": {
+           "accessibilityData": {
+            "label": "Newest. Show recent comments, including potential spam"
+           }
+          },
+          "subtitle": "Show recent comments, including potential spam",
+          "trackingParams": "CHIQ48AHGAEiEwjAxejm47OXAxVbxkwCHQjRFBY="
+         }
+        ],
+        "icon": {
+         "iconType": "SORT"
+        },
+        "accessibility": {
+         "accessibilityData": {
+          "label": "Sort comments"
+         }
+        },
+        "trackingParams": "CHEQgdoEIhMIwMXo5uOzlwMVW8ZMAh0I0RQW"
+       }
+      },
+      "visibilityButton": {
+       "buttonRenderer": {
+        "style": "STYLE_DEFAULT",
+        "size": "SIZE_DEFAULT",
+        "icon": {
+         "iconType": "CLOSE"
+        },
+        "trackingParams": "CHAQ8FsiEwjAxejm47OXAxVbxkwCHQjRFBY=",
+        "accessibilityData": {
+         "accessibilityData": {
+          "label": "Close"
+         }
+        },
+        "command": {
+         "clickTrackingParams": "CHAQ8FsiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+         "hideEngagementPanelEndpoint": {
+          "panelIdentifier": "engagement-panel-comments-section"
+         }
+        }
+       }
+      },
+      "trackingParams": "CG0Q040EGAIiEwjAxejm47OXAxVbxkwCHQjRFBY="
+     }
+    },
+    "content": {
+     "sectionListRenderer": {
+      "contents": [
+       {
+        "itemSectionRenderer": {
+         "contents": [
+          {
+           "continuationItemRenderer": {
+            "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+            "continuationEndpoint": {
+             "clickTrackingParams": "CG8Quy8YACITCMDF6Objs5cDFVvGTAIdCNEUFsoBBGwvT9I=",
+             "commandMetadata": {
+              "webCommandMetadata": {
+               "sendPost": true,
+               "apiUrl": "/youtubei/v1/next"
+              }
+             },
+             "continuationCommand": {
+              "token": "Eg0SC1VFcWswbmpDdVFvGAYyOCIRIgtVRXFrMG5qQ3VRbzAAeAIwAUIhZW5nYWdlbWVudC1wYW5lbC1jb21tZW50cy1zZWN0aW9u",
+              "request": "CONTINUATION_REQUEST_TYPE_WATCH_NEXT"
+             }
+            }
+           }
+          }
+         ],
+         "trackingParams": "CG8Quy8YACITCMDF6Objs5cDFVvGTAIdCNEUFg==",
+         "sectionIdentifier": "comment-item-section",
+         "targetId": "engagement-panel-comments-section"
+        }
+       }
+      ],
+      "trackingParams": "CG4Qui8iEwjAxejm47OXAxVbxkwCHQjRFBY="
+     }
+    },
+    "veType": 76278,
+    "targetId": "engagement-panel-comments-section",
+    "visibility": "ENGAGEMENT_PANEL_VISIBILITY_HIDDEN",
+    "loggingDirectives": {
+     "trackingParams": "CG0Q040EGAIiEwjAxejm47OXAxVbxkwCHQjRFBY=",
+     "visibility": {
+      "types": "12"
+     }
+    }
+   }
+  },
+  {
+   "engagementPanelSectionListRenderer": {
+    "panelIdentifier": "engagement-panel-searchable-transcript",
+    "header": {
+     "engagementPanelTitleHeaderRenderer": {
+      "title": {
+       "runs": [
+        {
+         "text": "Transcript"
+        }
+       ]
+      },
+      "menu": {
+       "menuRenderer": {
+        "items": [
+         {
+          "menuServiceItemRenderer": {
+           "text": {
+            "runs": [
+             {
+              "text": "Toggle timestamps"
+             }
+            ]
+           },
+           "serviceEndpoint": {
+            "clickTrackingParams": "CBQQ040EGAgiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+            "commandMetadata": {
+             "webCommandMetadata": {
+              "sendPost": true
+             }
+            },
+            "signalServiceEndpoint": {
+             "signal": "CLIENT_SIGNAL",
+             "actions": [
+              {
+               "clickTrackingParams": "CBQQ040EGAgiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+               "signalAction": {
+                "signal": "TOGGLE_TRANSCRIPT_TIMESTAMPS"
+               }
+              }
+             ]
+            }
+           },
+           "trackingParams": "CBQQ040EGAgiEwjAxejm47OXAxVbxkwCHQjRFBY="
+          }
+         }
+        ],
+        "trackingParams": "CBQQ040EGAgiEwjAxejm47OXAxVbxkwCHQjRFBY=",
+        "accessibility": {
+         "accessibilityData": {
+          "label": "More actions"
+         }
+        }
+       }
+      },
+      "visibilityButton": {
+       "buttonRenderer": {
+        "icon": {
+         "iconType": "CLOSE"
+        },
+        "accessibility": {
+         "label": "Close transcript"
+        },
+        "trackingParams": "CBUQ8FsiEwjAxejm47OXAxVbxkwCHQjRFBY=",
+        "accessibilityData": {
+         "accessibilityData": {
+          "label": "Close transcript"
+         }
+        },
+        "command": {
+         "clickTrackingParams": "CBUQ8FsiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+         "changeEngagementPanelVisibilityAction": {
+          "targetId": "engagement-panel-searchable-transcript",
+          "visibility": "ENGAGEMENT_PANEL_VISIBILITY_HIDDEN"
+         }
+        }
+       }
+      },
+      "trackingParams": "CBQQ040EGAgiEwjAxejm47OXAxVbxkwCHQjRFBY="
+     }
+    },
+    "content": {
+     "continuationItemRenderer": {
+      "trigger": "CONTINUATION_TRIGGER_ON_ITEM_SHOWN",
+      "continuationEndpoint": {
+       "clickTrackingParams": "CBQQ040EGAgiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+       "commandMetadata": {
+        "webCommandMetadata": {
+         "sendPost": true,
+         "apiUrl": "/youtubei/v1/get_transcript"
+        }
+       },
+       "getTranscriptEndpoint": {
+        "params": "CgtVRXFrMG5qQ3VRbxISQ2dOaGMzSVNBbVZ1R2dBJTNEGAEqM2VuZ2FnZW1lbnQtcGFuZWwtc2VhcmNoYWJsZS10cmFuc2NyaXB0LXNlYXJjaC1wYW5lbDAAOAFAAQ%3D%3D"
+       }
+      }
+     }
+    },
+    "veType": 126250,
+    "targetId": "engagement-panel-searchable-transcript",
+    "visibility": "ENGAGEMENT_PANEL_VISIBILITY_HIDDEN",
+    "onShowCommands": [
+     {
+      "clickTrackingParams": "CBQQ040EGAgiEwjAxejm47OXAxVbxkwCHQjRFBbKAQRsL0_S",
+      "scrollToEngagementPanelCommand": {
+       "targetId": "engagement-panel-searchable-transcript"
+      }
+     }
+    ],
+    "loggingDirectives": {
+     "trackingParams": "CBQQ040EGAgiEwjAxejm47OXAxVbxkwCHQjRFBY=",
+     "visibility": {
+      "types": "12"
+     }
+    }
+   }
+  }
+ ]
+}

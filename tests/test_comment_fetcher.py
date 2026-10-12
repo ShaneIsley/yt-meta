@@ -641,40 +641,6 @@ class TestCommentFetcherBehavior:
         assert fetcher.parser._parse_engagement_count(None) == 0
         assert fetcher.parser._parse_engagement_count("invalid") == 0
 
-    def test_flexible_endpoint_detection(self):
-        """Test that endpoint detection works with different YouTube structures"""
-        fetcher = CommentFetcher()
-
-        # Test with sortFilterSubMenuRenderer present
-        data_with_sort = {
-            "nested": {
-                "sortFilterSubMenuRenderer": {
-                    "subMenuItems": [
-                        {
-                            "title": "Top comments",
-                            "serviceEndpoint": {
-                                "continuationCommand": {"token": "top_token"}
-                            },
-                        },
-                        {
-                            "title": "Newest first",
-                            "serviceEndpoint": {
-                                "continuationCommand": {"token": "recent_token"}
-                            },
-                        },
-                    ]
-                }
-            }
-        }
-
-        endpoints = fetcher.api_client.get_sort_endpoints_flexible(
-            data_with_sort, {"INNERTUBE_API_KEY": "test", "INNERTUBE_CONTEXT": {}}
-        )
-        assert "top comments" in endpoints
-        assert "newest first" in endpoints
-        assert endpoints["top comments"] == "top_token"
-        assert endpoints["newest first"] == "recent_token"
-
     def test_progress_callback_called(self):
         """Test that progress callback is called during comment fetching"""
         callback_calls = []

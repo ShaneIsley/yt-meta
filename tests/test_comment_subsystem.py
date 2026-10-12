@@ -144,32 +144,6 @@ def test_extract_continuation_token_non_dict(bad):
 
 
 @pytest.mark.parametrize(
-    "token, expected",
-    [
-        ("xxxxxxcommentsxxxxxx", True),  # contains 'comments'
-        ("token_with_replies_in_it", True),  # contains 'replies'
-        ("a_discussion_token_here", True),  # contains 'discussion'
-        ("short", False),  # too short (< 10 chars)
-        (12345, False),  # not a string
-        ("randomtokenwithoutindicators", False),
-    ],
-)
-def test_is_comment_token(token, expected):
-    assert CommentAPIClient()._is_comment_token(token) is expected
-
-
-def test_is_comment_token_prefix_indicator_is_case_sensitive():
-    """KNOWN QUIRK: ``_is_comment_token`` lowercases the token before
-    matching, but the ``"4qmFsgI"`` indicator is mixed-case, so a bare
-    canonical-prefix token is NOT recognized by that indicator alone.
-    Documented here so a future "fix" to the indicator doesn't silently
-    change fallback endpoint detection without a failing test. (Real
-    comment tokens still match via the 'comments'/'replies' substrings.)
-    """
-    assert CommentAPIClient()._is_comment_token("4qmFsgIabc1234567890") is False
-
-
-@pytest.mark.parametrize(
     "sort_by, expected",
     [
         ("top", "TOP_TOKEN"),
@@ -189,45 +163,61 @@ def test_select_sort_endpoint_fallback_and_empty():
     assert client.select_sort_endpoint({}, "top") is None
 
 
-def test_get_sort_endpoints_flexible_from_submenu():
-    initial_data = {
-        "sortFilterSubMenuRenderer": {
-            "subMenuItems": [
-                {
-                    "title": "Top comments",
-                    "serviceEndpoint": {"continuationCommand": {"token": "TOPTOK"}},
-                },
-                {
-                    "title": "Newest first",
-                    "serviceEndpoint": {"continuationCommand": {"token": "NEWTOK"}},
-                },
-            ]
-        }
-    }
-    endpoints = CommentAPIClient().get_sort_endpoints_flexible(initial_data, {})
-    assert endpoints == {"top comments": "TOPTOK", "newest first": "NEWTOK"}
+def _watch_panels():
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).parent / "fixtures" / "watch_engagement_panels.json"
+    return json.loads(path.read_text())
 
 
-def test_get_sort_endpoints_flexible_engagement_panel_fallback():
-    """When no sortFilterSubMenuRenderer exists, fall back to scanning
-    engagement panels for comment continuation tokens."""
-    initial_data = {
-        "engagementPanels": [
-            {
-                "engagementPanelSectionListRenderer": {
-                    "panelIdentifier": "comment-item-section",
-                    "header": {"title": "Comments"},
-                    "continuationItemRenderer": {
-                        "continuationEndpoint": {
-                            "continuationCommand": {"token": "4qmFsgItopcomments"}
-                        }
-                    },
-                }
-            }
-        ]
-    }
-    endpoints = CommentAPIClient().get_sort_endpoints_flexible(initial_data, {})
-    assert "4qmFsgItopcomments" in endpoints.values()
+def test_sort_tokens_from_live_comments_panel():
+    """The comments panel's header menu ("Top", "Newest") on a live watch
+    page. The fixture also holds the transcript panel, whose header menu
+    must not be mistaken for comment sort options."""
+    from yt_meta.parsing import find_comment_sort_tokens
+
+    tokens = find_comment_sort_tokens(_watch_panels())
+    assert set(tokens) == {"top", "recent"}
+    assert tokens["top"] != tokens["recent"]
+    assert CommentAPIClient().get_sort_endpoints_flexible(_watch_panels()) == tokens
+
+
+def test_sort_tokens_use_menu_position_for_localized_titles():
+    from yt_meta.parsing import find_comment_sort_tokens
+
+    data = _watch_panels()
+    menu = data["engagementPanels"][0]["engagementPanelSectionListRenderer"][
+        "header"
+    ]["engagementPanelTitleHeaderRenderer"]["menu"]["sortFilterSubMenuRenderer"][
+        "subMenuItems"
+    ]
+    expected = find_comment_sort_tokens(data)
+    menu[0]["title"], menu[1]["title"] = "Plus pertinents", "Plus récents"
+    assert find_comment_sort_tokens(data) == expected
+
+
+def test_sort_tokens_without_menu_fall_back_to_default_order():
+    from yt_meta.parsing import find_comment_sort_tokens
+
+    data = _watch_panels()
+    header = data["engagementPanels"][0]["engagementPanelSectionListRenderer"][
+        "header"
+    ]["engagementPanelTitleHeaderRenderer"]
+    del header["menu"]
+    tokens = find_comment_sort_tokens(data)
+    assert list(tokens) == ["top"]
+
+
+def test_sort_tokens_empty_without_comments_panel():
+    """Comments disabled: no comments panel, no tokens, even though other
+    panels carry continuation tokens."""
+    from yt_meta.parsing import find_comment_sort_tokens
+
+    data = _watch_panels()
+    data["engagementPanels"] = data["engagementPanels"][1:]
+    assert find_comment_sort_tokens(data) == {}
+    assert find_comment_sort_tokens({}) == {}
 
 
 # ---------------------------------------------------------------------------
