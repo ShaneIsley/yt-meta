@@ -6,10 +6,13 @@
 # WHY: yt-meta parses YouTube's undocumented internal JSON, whose shape
 # changes without notice (e.g. the videoRenderer -> lockupViewModel
 # migration that silently zeroed out get_channel_videos / get_playlist_videos).
-# The contract suite hits LIVE YouTube and asserts only the *structure* our
-# parsers rely on — types, key presence, that documented capabilities still
-# return data — never volatile values. A failure here means "investigate the
-# parser", not "flaky network".
+# The contract marker covers three live files. test_live_contract.py asserts
+# only the *structure* our parsers rely on (types, key presence, that
+# documented capabilities still return data), never volatile values.
+# test_live_fixes.py and test_live_workflows.py check behaviors (date
+# filters, pagination stops, workflow helpers) against ordinary channels,
+# skipping when today's data lacks a precondition. A failure here means
+# "investigate the parser", not "flaky network".
 #
 # This CANNOT run in GitHub Actions — YouTube blocks GHA runners — so run it
 # locally before a release, or on a schedule from a machine with normal

@@ -42,10 +42,12 @@ class MetadataParsingError(YtMetaError):
 
 class VideoUnavailableError(YtMetaError):
     """
-    Raised when a video or channel page cannot be fetched.
+    Raised when a page or API request fails: a network error, or an HTTP
+    error status (404, or 429/5xx after retries).
 
-    This can be due to a network error, an invalid URL, or if the video
-    is private, deleted, or otherwise inaccessible.
+    An invalid URL raises ValueError instead. A video that is private,
+    deleted or members-only is not an error: get_video_metadata returns
+    it with ``status="unavailable"``.
     """
 
     pass

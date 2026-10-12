@@ -1,28 +1,29 @@
+"""
+Example: filter channel videos with a publish_date condition.
+
+publish_date is a fast filter for channel videos. It compares the
+listing's approximate date, parsed from relative text such as
+"3 weeks ago", so no extra request per video is needed, and pagination
+stops once videos are older than the start of the window.
+
+Pass fetch_full_metadata=True when you need exact upload dates; the
+approximate date is then only a coarse pre-filter.
+"""
+
 import itertools
 
-from yt_meta import YtMeta
-from yt_meta.date_utils import parse_relative_date_string
+from yt_meta import YtMeta, parse_relative_date_string
 
-# Example: Find videos by filtering on their publish date.
-# `publish_date` is a special filter. It can be "fast" for rough checks
-# to stop pagination, but becomes a "slow" filter for precise, per-video
-# checks, which requires fetching full metadata.
+client = YtMeta()
+channel_url = "https://www.youtube.com/@ArjanCodes"
 
-# Find videos published in 2012
-# This uses the `gte` (greater than or equal to) and `lte` (less than or equal to) operators
-# to create a date range.
-if __name__ == "__main__":
-    client = YtMeta()
-    channel_url = "https://www.youtube.com/@samwitteveenai/videos"
-    six_months_ago = parse_relative_date_string("6 months ago")
-    filters = {"publish_date": {"gte": six_months_ago}}
+six_months_ago = parse_relative_date_string("6 months ago")
+filters = {"publish_date": {"gte": six_months_ago}}
 
-    # The client will automatically set `fetch_full_metadata=True` to ensure
-    # the date comparison is precise.
-    print(f"Finding videos on {channel_url} published in the last 6 months...")
-    videos = client.get_channel_videos(channel_url, filters=filters, max_videos=10)
-
-    for video in itertools.islice(videos, 5):
-        title = video.get("title", "N/A")
-        p_date = video.get("publish_date", "N/A")
-        print(f"- '{title}' (Published: {p_date})")
+print(f"Videos on {channel_url} published in the last 6 months:")
+videos = client.get_channel_videos(channel_url, filters=filters)
+for video in itertools.islice(videos, 5):
+    print(
+        f"- {video['title']} "
+        f"({video['publish_date_text']}, ~{video['publish_date']:%Y-%m-%d})"
+    )

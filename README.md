@@ -376,10 +376,10 @@ for comment, replies in client.get_comment_threads(
 
 ### Filtering Videos, Shorts, and Comments
 
-The `filters` argument on `get_channel_videos`, `get_channel_shorts`, and `get_video_comments` selects items matching specific criteria.
+The `filters` argument selects items matching specific criteria. Video filters work on `get_channel_videos`, `get_channel_shorts`, `get_channel_streams` and `get_playlist_videos`; comment filters work on `get_video_comments`, `get_video_comments_with_reply_tokens` and `get_comment_threads`.
 
 #### Filter Validation
-`yt-meta` validates your `filters` dictionary *before* making any network requests. If you provide a nonexistent field, an invalid operator, or an incorrect value type, the library raises a `ValueError` or `TypeError`.
+`yt-meta` validates your `filters` dictionary when you call the method, before any network request. An unknown field, an invalid operator, or a field that doesn't exist on that kind of record (for example `is_reply` on `get_channel_videos`) raises `ValueError`; a value of the wrong type for its field (for example `{"view_count": {"eq": "100"}}`) raises `TypeError`.
 
 Typos fail immediately instead of after a slow query. See `examples/features/23_filter_validation.py` for a demonstration.
 
@@ -400,7 +400,7 @@ The client automatically detects when a slow filter is used and sets `fetch_full
 Every dated record carries two provenance fields alongside `publish_date`:
 
 - `publish_date_precision`: `"exact"` (the watch page's `microformat.publishDate`; a timezone-aware upload timestamp) or `"approximate"` (parsed from the listing's relative text, i.e. query time minus "2 years ago").
-- `publish_date_text`: the raw string YouTube displayed (`"3 years ago"`, `"Streamed 2 days ago"`; comments keep `"(edited)"` markers). Kept after `fetch_full_metadata=True` replaces the date with the exact one.
+- `publish_date_text`: the relative text the date was parsed from. For listings this is the long form from YouTube's accessibility label (`"11 days ago"`, `"Streamed 3 weeks ago"`), not the compact text the page shows (`"11d ago"`). Comments keep YouTube's text, including `"(edited)"` markers. Kept after `fetch_full_metadata=True` replaces the date with the exact one.
 
 The time-of-day on an approximate date is meaningless, and its rounding error grows with age, up to about six months at year granularity. Approximate datetimes are also timezone-naive, so do not subtract one from an exact (timezone-aware) date. Comment dates are always approximate; relative text is all YouTube serves for them.
 
@@ -422,8 +422,8 @@ The following table lists supported fields and their valid operators. Validation
 | :-------------------- | :------------------------------- | :---------------------------------------------------------- | :----------- |
 | `title`               | `contains`, `re`, `eq`           | Video, Short                                                | Fast         |
 | `view_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
-| `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast         |
-| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | Fast (Video, Playlist), **Slow** (Short) |
+| `duration_seconds`    | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short                                                | Fast (Video), **Slow** (Short) |
+| `publish_date`        | `gt`, `gte`, `lt`, `lte`, `eq`, `after`, `before` | Video, Short, Comment                        | Fast (Video, Playlist), **Slow** (Short) |
 | `like_count`          | `gt`, `gte`, `lt`, `lte`, `eq`   | Video, Short, Comment                                       | **Slow**     |
 | `category`            | `contains`, `re`, `eq`           | Video, Short                                                | **Slow**     |
 | `keywords`            | `contains_any`, `contains_all` | Video, Short                                                | **Slow**     |
@@ -524,7 +524,7 @@ for video in itertools.islice(recent_videos, 5):
 ```
 
 > **Important Note on Playlist Filtering:**
-> Playlists may not be chronological, so date filters scan the whole playlist; there is no early-stop as with channel videos. The date comes from the listing's relative text, with no per-video fetch unless you pass `fetch_full_metadata=True`. If a listing item lacks a date, the filter defers to that video's full metadata automatically.
+> Playlists may not be chronological, so date filters scan the whole playlist; there is no early-stop as with channel videos. The date comes from the listing's relative text, with no per-video fetch unless you pass `fetch_full_metadata=True`. If a listing item lacks a date, it is dropped, unless you pass `fetch_full_metadata=True`, in which case its full-metadata date is checked instead.
 
 > **Important Note on Shorts Filtering:**
 > The Shorts feed provides no publish date on its fast path, so any date filter on `get_channel_shorts` triggers the full metadata fetch for each short.
@@ -583,12 +583,12 @@ Fetches comments for a specific YouTube video.
 -   **`youtube_url`**: The full URL of the YouTube video (any of `watch?v=...`, `youtu.be/...`, `/shorts/...`, or a bare 11-char id).
 -   **`limit`**: Max comments to fetch. Defaults to `100`. Pass `None` or `-1` for unbounded; `since_date` is then required, to cap the request count on popular videos.
 -   **`sort_by`**: `'recent'` (default; chronological, required for the `since_date` short-circuit) or `'top'` (YouTube's ranking).
--   **`since_date`**: A `date`, `datetime`, or `'YYYY-MM-DD'` string. The only filter that short-circuits pagination: with `sort_by='recent'`, fetching stops at the first comment older than the cutoff.
+-   **`since_date`**: A `date`, `datetime`, `'YYYY-MM-DD'` string, or relative string (`'2 weeks ago'`, `'30d'`). The only filter that short-circuits pagination: with `sort_by='recent'`, fetching stops at the first comment older than the cutoff. With `sort_by='top'` it raises `ValueError`.
 -   **`filters`**: Comment-level predicates applied after fetch (see the filter table above). They filter the fetched comments in memory and do not reduce request count. Use `since_date` for that.
 -   **Returns**: A generator that yields a standardized dictionary for each comment.
 
 #### `get_channel_metadata(channel_url: str) -> dict`
-Fetches metadata for a specific channel. The client caches results.
+Fetches metadata for a specific channel. Results are cached when the client has a cache configured; pass `force_refresh=True` to bypass it.
 -   **`channel_url`**: The URL of the channel.
 -   **Returns**: A dictionary with channel metadata: `title`, `description`, `channel_id`, `vanity_url`, `keywords`, `is_family_safe`.
 -   **Raises**: `VideoUnavailableError`, `MetadataParsingError`.
@@ -667,11 +667,11 @@ Raised when an HTTP fetch itself fails: a network error, a 404, or a rate-limit 
 The same rule applies to every listing (channel videos, shorts, streams, playlists): if its first page can't be fetched, iterating it raises `VideoUnavailableError`, so a missing channel is never mistaken for an empty one. A later page failing raises mid-iteration; the records already yielded are still valid. During `fetch_full_metadata=True`, a single video whose watch page fails is logged and skipped rather than ending the listing.
 
 ### `MetadataParsingError`
-Raised when a page is fetched successfully but the expected structure (e.g. `ytInitialData` or a channel tab) cannot be extracted. Usually a sign YouTube changed its page structure; see the next section.
+Raised when a page is fetched successfully but the expected structure (e.g. `ytInitialData` or a channel tab) cannot be extracted. Usually a sign YouTube changed its page structure; see the next section. Comment fetching also raises it when the watch page has no API key (a consent page, or a markup change), or when `since_date` is set but YouTube offers no newest-first ordering.
 
 ### Builtin `ValueError` / `TypeError` for input mistakes
 
-Invalid inputs raise builtin exceptions, not `YtMetaError`: a URL on a non-YouTube host, a malformed video id, an unknown filter key or operator, hour-level date bounds without `fetch_full_metadata=True`, or date kwargs mixed with time-bearing filter bounds. These are bugs in the calling code and surface immediately, unwrapped.
+Invalid inputs raise builtin exceptions, not `YtMetaError`: a URL on a non-YouTube host, a malformed video id, passing both or neither of `youtube_url` and `video_id`, an unknown filter field or operator, a filter field that doesn't apply to the record kind, a filter value of the wrong type, an unknown `sort_by`, `since_date` with `sort_by='top'`, an unbounded comment fetch (`limit=None`) without `since_date`, `get_videos_published_between` without `start_date`, hour-level date bounds without `fetch_full_metadata=True`, or date kwargs mixed with time-bearing filter bounds. These are bugs in the calling code. They raise when you call the method, before any request, not when you first iterate the result.
 
 ## When YouTube Changes Its Page Structure
 
@@ -682,7 +682,7 @@ The symptom: requests succeed (HTTP 200, pagination runs) but a listing yields z
 What to do:
 
 1. Upgrade: `pip install -U yt-meta`. Structure changes are usually fixed within a release or two; see the CHANGELOG.
-2. Confirm: run the live contract suite with `pytest -m contract` (or `make drift`). It asserts the page shapes this library depends on and reports which one moved. The offline test suite cannot catch this; it runs against captured fixtures, which stay green while the live site changes.
+2. Confirm: run the live suite with `pytest -m contract` (or `make drift`). It asserts the page shapes this library depends on and reports which one moved, and also checks key behaviors (date filters, pagination stops, workflow helpers) against real channels. The offline test suite cannot catch this; it runs against captured fixtures, which stay green while the live site changes.
 3. Report: open an issue with the failing contract-test output.
 
 For maintainers: `docs/reviews/` holds the code-review history behind the `H*/M*/C*/R*` markers in code comments and test names, and `TESTING.md` documents the testing rules (captured fixtures, contract tests) that address this failure mode.

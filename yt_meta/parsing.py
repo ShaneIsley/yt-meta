@@ -276,10 +276,11 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
     """Parse a single ``lockupViewModel`` (the channel 'Videos' tab item
     shape YouTube migrated to, replacing ``videoRenderer``).
 
-    Returns a video dict with the same keys the renderer parser produced
-    (video_id, title, view_count, publish_date, duration_seconds, url),
-    or ``None`` if the lockup is not a video (playlist/other content
-    types) or has no usable id.
+    Returns a video dict (video_id, title, view_count, publish_date,
+    publish_date_precision, publish_date_text, duration_seconds, url,
+    is_members_only, is_upcoming, scheduled_text), or ``None`` if the
+    lockup is not a video (playlist/other content types) or has no
+    usable id.
 
     Field locations were established by probing live pages:
       - video_id      : contentId
