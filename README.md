@@ -491,7 +491,7 @@ Closes the HTTP session and the built-in SQLite cache. Safe to call twice; calle
 
 ## When YouTube changes its pages
 
-yt-meta reads YouTube's web pages, and YouTube changes them without notice. Recent examples: the channel Videos tab and playlists moved to a new item format (fixed in 0.6.0 and 0.7.1), and in 2026 listings switched to compact text and some pages to a new data layout (fixed in the next release).
+yt-meta reads YouTube's web pages, and YouTube changes them without notice. Recent examples: the channel Videos tab and playlists moved to a new item format (fixed in 0.6.0 and 0.7.1), and in 2026 listings switched to compact text and some pages to a new data layout (fixed in 0.9.0).
 
 The symptom is a listing that yields nothing, or a `MetadataParsingError`, while requests succeed. Rate limiting looks different: the built-in retry absorbs it.
 
