@@ -1,30 +1,28 @@
-# (like 'like_count'), the client needs to fetch the full metadata for each
-# video that passes the initial "fast" filters. This is more powerful but
-# significantly slower.
+"""
+Example: Filter channel videos by like count
 
-# In this case, we are ONLY using a slow filter, so it will fetch full
-# metadata for every video until it finds 5 that match.
+like_count is a slow filter: the listing doesn't show likes, so the client
+fetches each video's page, one extra request per video. With only a slow
+filter and no date bound, it fetches every video until 5 match.
+"""
 
 import itertools
 import logging
 
 from yt_meta import YtMeta
 
-# To see the client's activity, including fetching full metadata for each video,
-# enable INFO-level logging. You will see a "Fetching video page" message for
-# every video until 5 matches are found.
+# INFO logging shows a "Fetching video page" line for each video checked.
 logging.basicConfig(level=logging.INFO)
 
 if __name__ == "__main__":
     client = YtMeta()
     channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
-    # --- Example: Filtering a channel by like count > 100 ---
-    print(f"--- Example: Filtering {channel_url} by like count > 500 ---")
+    print(f"Filtering {channel_url} by like count > 500")
     filters = {"like_count": {"gt": 500}}
 
-    # We only take the first 5 results for this example, and we'll check
-    # at most 20 videos to keep the example fast.
+    # max_videos caps the number of results, not the videos scanned; islice
+    # below takes the first 5 anyway. Use start_date to bound the scan.
     videos = list(
         itertools.islice(
             client.get_channel_videos(channel_url, filters=filters, max_videos=20), 5
@@ -36,6 +34,3 @@ if __name__ == "__main__":
         print(f"- Title: {video.get('title')}")
         print(f"  Likes: {video.get('like_count'):,}")
         print(f"  URL: {video.get('url')}")
-
-    print("\nThis demonstrates how to apply a 'slow' filter, which automatically")
-    print("triggers fetching full metadata for videos.")

@@ -1,6 +1,4 @@
-"""
-This module contains pure functions for parsing data from YouTube's HTML and JSON structures.
-"""
+"""Pure functions that pull data out of YouTube's HTML pages and JSON responses."""
 
 import json
 import logging
@@ -18,7 +16,7 @@ def _parse_iso_datetime(value):
     """Parse an ISO-formatted datetime string (e.g. YouTube's
     microformat.publishDate ``"2023-06-19T11:00:10-07:00"``) into a
     ``datetime``. Returns ``None`` for missing / unparseable values
-    instead of raising — parsing.py's job is to extract data, not
+    instead of raising: parsing.py's job is to extract data, not
     enforce input invariants.
 
     See M4: parse_video_metadata used to return this field as the raw
@@ -36,17 +34,17 @@ YT_CFG_RE = r"ytcfg\.set\s*\(\s*({.+?})\s*\)\s*;"
 
 
 def _regex_search(text: str, pattern: str, default: str = "", flags: int = 0) -> str:
-    """Helper to run a regex search and return the first group or a default."""
+    """Return the first group of a regex search, or ``default`` when there is no match."""
     match = re.search(pattern, text, flags)
     return match.group(1) if match else default
 
 
 def find_ytcfg(html: str) -> dict | None:
     """
-    Finds and parses the `ytcfg` data from a page's HTML source.
+    Find and parse the `ytcfg` data in a page's HTML source.
 
-    This data contains important context for making subsequent API requests,
-    such as the INNERTUBE_API_KEY and client version.
+    It holds the context later API requests need, such as the
+    INNERTUBE_API_KEY and client version.
     """
     match = re.search(YT_CFG_RE, html, re.DOTALL)
     if match:
@@ -71,7 +69,7 @@ _JSON_SCRIPT_IDS = {
 
 def extract_and_parse_json(html_content: str, variable_name: str) -> dict | None:
     """
-    Extracts and parses a JSON object that a page assigns to a JavaScript
+    Extract and parse a JSON object that a page assigns to a JavaScript
     variable, or embeds in a JSON script element (see _JSON_SCRIPT_IDS).
     """
     script_id = _JSON_SCRIPT_IDS.get(variable_name)
@@ -111,7 +109,7 @@ def extract_and_parse_json(html_content: str, variable_name: str) -> dict | None
 
 def parse_duration(duration_label: str) -> int | None:
     """
-    Parses a human-readable duration label into a total number of seconds.
+    Parse a human-readable duration label into a total number of seconds.
 
     Example:
         "11 minutes, 6 seconds" -> 666
@@ -134,25 +132,22 @@ def parse_duration(duration_label: str) -> int | None:
 
 def parse_view_count(view_count_text: str) -> int | None:
     """
-    Parses a view count string (e.g., '2,905,010 views', '7.3K views', '1.2M views') into an integer.
+    Parse a view count string (e.g., '2,905,010 views', '7.3K views', '1.2M views') into an integer.
     """
     if not view_count_text:
         return None
     try:
-        # Extract the numeric part (first word before "views")
+        # The number is the first word ("7.3K views" -> "7.3K").
         count_str = view_count_text.split(" ")[0].replace(",", "")
 
-        # Handle K/M/B suffixes (common in shorts)
+        # K/M/B suffixes are common on shorts.
         multipliers = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}
 
-        # Check if it ends with a multiplier
         for suffix, multiplier in multipliers.items():
             if count_str.upper().endswith(suffix):
-                # Remove the suffix and convert to float, then multiply
                 base_number = float(count_str[:-1])
                 return int(base_number * multiplier)
 
-        # No suffix, just parse as integer
         return int(count_str)
     except (ValueError, TypeError, IndexError):
         return None
@@ -160,7 +155,7 @@ def parse_view_count(view_count_text: str) -> int | None:
 
 def find_like_count(player_response_data: dict) -> int | None:
     """
-    Extracts the like count from the `ytInitialPlayerResponse` data structure.
+    Extract the like count from the `ytInitialPlayerResponse` data structure.
     """
     try:
         renderer = _deep_get(
@@ -181,9 +176,9 @@ def find_like_count(player_response_data: dict) -> int | None:
 
 def find_heatmap(initial_data: dict) -> list | None:
     """
-    Finds the video's "Most replayed" heatmap data from the `ytInitialData`.
+    Find the video's "Most replayed" heatmap data in `ytInitialData`.
 
-    This data is located within the `frameworkUpdates` part of the initial data.
+    It lives under `frameworkUpdates`. Returns None when there is no heatmap.
     """
     try:
         mutations = _deep_get(
@@ -225,7 +220,7 @@ def find_heatmap(initial_data: dict) -> list | None:
 
 def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
     """
-    Parses a list of short video renderers from a channel's "Shorts" tab.
+    Parse a list of short video renderers from a channel's "Shorts" tab.
     """
     shorts = []
     continuation_token = None
@@ -259,8 +254,8 @@ def extract_shorts_from_renderers(renderers: list) -> tuple[list, str | None]:
                     "title": title,
                     "view_count": parse_view_count(view_count_text),
                     "url": video_url,
-                    # Note: duration_seconds is not available in basic shorts renderer
-                    # For duration filtering, fetch_full_metadata=True is required
+                    # The shorts renderer has no duration; filtering on
+                    # duration_seconds needs fetch_full_metadata=True.
                 }
             )
 
@@ -303,7 +298,7 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
     meta = _deep_get(lvm, "metadata.lockupMetadataViewModel", {}) or {}
     title = _deep_get(meta, "title.content")
 
-    # Flatten every text part across every metadata row — collab videos
+    # Flatten every text part across every metadata row: collab videos
     # use row 0 for the byline and row 1 for views/date.
     rows = _deep_get(meta, "metadata.contentMetadataViewModel.metadataRows", []) or []
     # Each part pairs the displayed text with an accessibility label.
@@ -389,13 +384,13 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
         "view_count": parse_view_count(view_count_text) if view_count_text else None,
         "publish_date": publish_date,
         # Option A (0.8.0): provenance travels with the record. Listing
-        # dates are parsed from relative text ("2 years ago") — i.e.
-        # query-time minus the stated interval — so they carry a
+        # dates are parsed from relative text ("2 years ago"), i.e.
+        # query-time minus the stated interval, so they carry a
         # meaningless time-of-day and up to ~6 months error at year
         # granularity. The marker + raw text make that auditable after
         # the dict leaves the library.
         "publish_date_precision": "approximate" if publish_date else None,
-        # Raw text is kept even when parsing fails — that's exactly when
+        # Raw text is kept even when parsing fails; that's exactly when
         # provenance matters most.
         "publish_date_text": publish_text,
         "duration_seconds": parse_duration(duration_label) if duration_label else None,
@@ -406,8 +401,7 @@ def parse_lockup_view_model(lvm: dict) -> dict | None:
     }
 
 
-# --- Listing page layout ----------------------------------------------
-# Where a listing's items and next-page tokens live in YouTube's browse
+# Listing page layout: where a listing's items and next-page tokens live in YouTube's browse
 # responses. Fetchers only fetch pages and follow tokens; everything that
 # knows the response layout is here.
 
@@ -421,7 +415,7 @@ _CONTINUATION_TOKEN_PATH = (
 
 
 def find_channel_tab(initial_data: dict, title: str | None = None) -> dict | None:
-    """The channel page's tab renderer: the one titled ``title`` when
+    """Return the channel page's tab renderer: the one titled ``title`` when
     given, else the selected one (the tab the URL asked for)."""
     for tab in _deep_get(initial_data, _TABS_PATH, []) or []:
         renderer = tab.get("tabRenderer")
@@ -435,12 +429,12 @@ def find_channel_tab(initial_data: dict, title: str | None = None) -> dict | Non
 
 
 def tab_grid_items(tab_renderer: dict) -> list:
-    """The item list of a channel tab's grid (videos, shorts or streams)."""
+    """Return the item list of a channel tab's grid (videos, shorts or streams)."""
     return _deep_get(tab_renderer, "content.richGridRenderer.contents", []) or []
 
 
 def continuation_items(continuation_data: dict | None) -> list:
-    """The item list of a next-page (browse continuation) response."""
+    """Return the item list of a next-page (browse continuation) response."""
     return _deep_get(continuation_data, _CONTINUATION_ITEMS_PATH, []) or []
 
 
@@ -470,7 +464,7 @@ def parse_grid_page(items: list) -> tuple[list, str | None]:
     return videos, token
 
 
-# --- Comment sort options ----------------------------------------------
+# Comment sort options.
 
 _COMMENTS_PANEL_ID = "engagement-panel-comments-section"
 _SORT_MENU_PATH = (
@@ -482,7 +476,7 @@ _SORT_TITLES = {"top": "top", "top comments": "top", "newest": "recent",
 
 
 def find_comment_sort_tokens(initial_data: dict) -> dict[str, str]:
-    """The comment continuation tokens on a watch page, keyed by sort:
+    """Return the comment continuation tokens on a watch page, keyed by sort:
     ``{"top": ..., "recent": ...}``. Empty when the video has no comments
     section (comments disabled).
 
@@ -536,7 +530,7 @@ def get_playlist_item_list(initial_data: dict) -> list:
     YouTube migrated the playlist "Videos" listing from a
     ``playlistVideoListRenderer`` wrapper (whose ``.contents`` were
     ``playlistVideoRenderer`` items) to a bare ``lockupViewModel`` item
-    list sitting directly under ``itemSectionRenderer.contents`` — the
+    list sitting directly under ``itemSectionRenderer.contents``. It is the
     same ``lockupViewModel`` migration that broke the channel Videos tab
     in 0.6.0. This returns the right list for either shape.
 
@@ -555,7 +549,7 @@ def get_playlist_item_list(initial_data: dict) -> list:
     legacy = _deep_get(section, "0.playlistVideoListRenderer.contents")
     if legacy:
         return legacy
-    # Current shape: itemSectionRenderer.contents IS the item list.
+    # Current shape: itemSectionRenderer.contents is the item list itself.
     return section
 
 
@@ -595,7 +589,7 @@ def extract_videos_from_playlist_items(items: list) -> tuple[list, str | None]:
                 continuation_token = _deep_get(
                     continuation_endpoint, "continuationCommand.token"
                 )
-            # Fallback for the case where it's nested deeper
+            # Older pages nest the token inside a commandExecutorCommand.
             elif (
                 continuation_endpoint
                 and "commandExecutorCommand" in continuation_endpoint
@@ -614,7 +608,7 @@ def extract_videos_from_playlist_items(items: list) -> tuple[list, str | None]:
 
 def parse_video_renderer(renderer: dict) -> dict:
     """
-    Parses a `videoRenderer` object into a simplified, flat dictionary.
+    Parse a `videoRenderer` object into a flat dictionary, or None when it has no video id.
     """
     if not renderer or not isinstance(renderer, dict):
         return None
@@ -634,7 +628,7 @@ def parse_video_renderer(renderer: dict) -> dict:
 
     view_count_text = _deep_get(renderer, "viewCountText.simpleText")
     if not view_count_text:
-        # Sometimes it's in a different format
+        # Some renderers use runs instead of simpleText.
         view_count_text = _deep_get(renderer, "viewCountText.runs.0.text")
 
     channel_url_path = "longBylineText.runs.0.navigationEndpoint.commandMetadata.webCommandMetadata.url"
@@ -658,7 +652,7 @@ def parse_video_renderer(renderer: dict) -> dict:
         "view_count": parse_view_count(view_count_text),
         "publish_date": publish_date,
         "published_time_text": published_time_text,
-        # Option A — same provenance fields as the lockup parser;
+        # Option A: same provenance fields as the lockup parser;
         # published_time_text is kept as a legacy alias.
         "publish_date_precision": "approximate" if publish_date else None,
         "publish_date_text": published_time_text,
@@ -670,7 +664,7 @@ def parse_video_renderer(renderer: dict) -> dict:
 
 def parse_channel_metadata(initial_data: dict) -> dict:
     """
-    Parses the main metadata for a channel from the initial page data.
+    Parse the main metadata for a channel from the initial page data.
     """
     metadata_renderer = _deep_get(initial_data, "metadata.channelMetadataRenderer")
     if not metadata_renderer:
@@ -706,7 +700,7 @@ def parse_channel_metadata(initial_data: dict) -> dict:
 
 def parse_playlist_metadata(initial_data: dict) -> dict:
     """
-    Parses the main metadata for a playlist from the `ytInitialData` object.
+    Parse the main metadata for a playlist from the `ytInitialData` object.
     """
     header = _deep_get(initial_data, "header.playlistHeaderRenderer")
     microformat = _deep_get(initial_data, "microformat.microformatDataRenderer")
@@ -745,8 +739,8 @@ def parse_playlist_metadata(initial_data: dict) -> dict:
 
 def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict:
     """
-    Parses comprehensive video metadata from the `ytInitialPlayerResponse`
-    and `ytInitialData` objects from a video's watch page.
+    Parse video metadata from the `ytInitialPlayerResponse` and
+    `ytInitialData` objects on a video's watch page.
     """
     if not player_response_data and not initial_data:
         logger.error("Could not extract playerResponse or initialData from page.")
@@ -761,7 +755,8 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
 
     # Video availability status, derived from playabilityStatus + a few
     # videoDetails / liveBroadcastDetails flags:
-    #   OK                      -> "ok"
+    #   OK (or no status but    -> "ok"
+    #     videoDetails present)
     #   isUpcoming /            -> "upcoming"  (scheduled premiere or
     #     LIVE_STREAM_OFFLINE                   live event not started)
     #   ERROR / UNPLAYABLE /    -> "unavailable"
@@ -802,8 +797,8 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
         "view_count": int(video_details.get("viewCount", 0)),
         "publish_date": _parse_iso_datetime(microformat.get("publishDate")),
         # Option A: microformat.publishDate is the actual upload moment
-        # (tz-aware) — precision "exact". The watch page shows no
-        # relative text; the merge in _process_videos preserves the
+        # (tz-aware), so precision is "exact". The watch page shows no
+        # relative text; _merge_hydrated (fetchers.py) preserves the
         # listing's text so hydrated records keep both.
         "publish_date_precision": (
             "exact" if microformat.get("publishDate") else None
@@ -816,7 +811,7 @@ def parse_video_metadata(player_response_data: dict, initial_data: dict) -> dict
         "thumbnails": _deep_get(video_details, "thumbnail.thumbnails", []),
         # is_live now means "currently streaming" (liveBroadcastDetails.
         # isLiveNow). It used to be videoDetails.isLiveContent, which is
-        # also True for upcoming and for ended live VODs — misleading.
+        # also True for upcoming and for ended live VODs, which misled.
         # is_upcoming + scheduled_start_time cover the not-yet-started case.
         "is_live": is_live_now,
         "is_upcoming": is_upcoming,

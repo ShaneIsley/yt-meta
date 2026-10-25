@@ -1,5 +1,5 @@
 """
-Example: channel metadata.
+Example: Channel metadata
 
 get_channel_metadata returns the channel's title, description, channel
 id, vanity URL, keywords and family-safe flag. It does not include

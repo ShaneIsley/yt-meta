@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
 """
-Example: Fetching Comments Since a Specific Date
+Example: Comments since a date
 
-This example demonstrates how to efficiently fetch comments that have been
-posted since a specific date.
-
-The library optimizes this by requiring comments to be sorted by 'recent'.
-It then stops fetching new pages of comments as soon as it finds a comment
-older than the specified date, minimizing API calls and processing time.
+Fetches comments posted in the last 30 days. since_date requires
+sort_by="recent" (the default): comments then arrive newest first, and fetching
+stops at the first comment older than the date, so the request count tracks
+the number of recent comments rather than `limit`.
 """
 
 from datetime import date, timedelta
 
 try:
     from tqdm import tqdm
-except ImportError:  # tqdm is optional — plain-text progress fallback
+except ImportError:  # tqdm is optional; fall back to a plain-text counter
     class tqdm:  # noqa: N801 - stand-in for the optional dependency
         def __init__(self, total=None, desc="Progress", unit="", **kwargs):
             self.desc, self.n = desc, 0
@@ -41,23 +39,18 @@ from yt_meta import YtMeta
 def main():
     client = YtMeta()
 
-    # A video with a long comment history is ideal for this demonstration.
-    video_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"  # A classic
+    # A video that still gets comments every day.
+    video_url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
-    # Calculate a date 30 days ago
     since_date = date.today() - timedelta(days=30)
 
-    print("=" * 60)
-    print(" Fetching Comments Since a Specific Date")
-    print("=" * 60)
+    print("Fetching comments since a date")
     print(f"Video URL: {video_url}")
     print(f"Fetching comments posted on or after: {since_date.isoformat()}")
-    print("Sorting by: 'recent' (required for this feature)\n")
+    print("Sorting by: 'recent' (required with since_date)\n")
 
-    # --- Test Case 1: Correct Usage ---
-    print("--- Correct Usage: sort_by='recent' ---")
+    print("With sort_by='recent'")
     try:
-        # Use a progress bar to see how many comments are fetched
         pbar = tqdm(desc="Fetching recent comments", unit=" comments")
 
         def progress_callback(count):
@@ -68,17 +61,17 @@ def main():
                 video_url,
                 sort_by="recent",
                 since_date=since_date,
-                limit=500,  # Set a high limit to show that the date filter stops it
+                limit=500,  # high on purpose: the date, not the limit, should stop the fetch
                 progress_callback=progress_callback,
             )
         )
         pbar.close()
 
         print(
-            f"\nSuccessfully fetched {len(comments_since)} comments posted since {since_date.isoformat()}.\n"
+            f"\nFetched {len(comments_since)} comments posted since {since_date.isoformat()}.\n"
         )
         if comments_since:
-            print("Most recent comment found:")
+            print("Newest comment:")
             if comments_since[0].get("publish_date"):
                 print(f"  Date: {comments_since[0]['publish_date'].isoformat()}")
             print(f"  Author: {comments_since[0]['author']}")
@@ -91,22 +84,19 @@ def main():
             print(f"  Text: '{comments_since[-1]['text'][:80]}...'")
 
     except Exception as e:
-        print(f"An unexpected error occurred: {e}")
+        print(f"Unexpected error: {e}")
 
-    # --- Test Case 2: Incorrect Usage ---
-    print("\n\n--- Incorrect Usage: sort_by='top' ---")
+    print("\n\nWith sort_by='top'")
     try:
-        print("Attempting to fetch with sort_by='top' and a since_date...")
+        print("Calling with sort_by='top' and a since_date...")
         list(client.get_video_comments(video_url, sort_by="top", since_date=since_date))
     except ValueError as e:
-        print(f"Successfully caught expected error: {e}")
-        print("This confirms the library prevents inefficient filtering.")
+        print(f"Caught expected error: {e}")
+        print("since_date can't stop early on the top order, so the library refuses it.")
 
-    print("\n" + "=" * 60)
-    print("This example shows how the library stops fetching comments once")
-    print("the date limit is reached, even if the 'limit' is much higher.")
-    print("This saves significant time and network resources.")
-    print("=" * 60)
+    print()
+    print("Fetching stopped once comments got older than since_date,")
+    print("even though limit was set higher.")
 
 
 if __name__ == "__main__":

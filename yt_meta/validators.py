@@ -98,7 +98,7 @@ COMMENT_FILTER_FIELDS = frozenset(
 )
 _FIELDS_BY_KIND = {"video": VIDEO_FILTER_FIELDS, "comment": COMMENT_FILTER_FIELDS}
 
-# Accepted value types per schema_type. Checked by FIELD, not operator:
+# Accepted value types per schema_type. Checked by field, not operator:
 # "eq" is shared by text, numeric and bool, so an operator-based check let
 # {"title": {"eq": 5}} through (AttributeError later) and
 # {"view_count": {"eq": "100"}} through (silently matched nothing).
@@ -112,7 +112,7 @@ _VALUE_TYPES = {
 
 
 # Tombstones for keys that existed before 0.8.0. A key with history must
-# not fail like a typo — the error carries the migration, so users don't
+# not fail like a typo: the error carries the migration, so users don't
 # need the CHANGELOG to fix their call.
 _RETIRED_FILTERS = {
     "description_snippet": (
@@ -129,7 +129,7 @@ _RETIRED_FILTERS = {
 
 def validate_filters(filters: dict, kind: str | None = None):
     """
-    Validates a filter dictionary against the defined FILTER_SCHEMA.
+    Validate a filter dictionary against FILTER_SCHEMA.
 
     Args:
         filters: The filter dictionary.

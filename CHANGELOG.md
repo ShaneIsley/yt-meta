@@ -4,6 +4,42 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-25
+
+Correctness release driven by the 2026-10 review, plus fixes for
+YouTube's October 2026 listing changes (compact view counts and dates,
+`ytInitialData` as a JSON script element).
+
+### BREAKING
+- **`get_comment_threads` defaults to `sort_by='recent'`**, like every
+  other comment method (it was `'top'`). Pass `sort_by='top'` for the
+  previous order. The README now notes that `'recent'` is YouTube's
+  "Newest" view, which includes potential spam.
+- **A channel tab that can't be fetched now raises.** `get_channel_videos`,
+  `get_channel_shorts` and `get_channel_streams` used to log the error and
+  yield nothing, so a missing or mistyped channel looked like an empty
+  one. They now raise `VideoUnavailableError`, as playlists already did.
+  The error policy is written down in the `fetchers` module docstring and
+  the README's Errors section.
+- **Filter validation is stricter.** Values are checked against the
+  field's type, so `{"title": {"eq": 5}}` and
+  `{"view_count": {"eq": "100"}}` raise `TypeError` instead of crashing
+  later or matching nothing. Comment-only fields on video filters, and
+  video-only fields on comment filters, raise `ValueError`.
+  `validate_filters` takes an optional `kind="video"|"comment"`.
+- **`BestCommentFetcher` removal moved to 1.0.** The 0.8.0 notes
+  scheduled it for 0.9.0; the alias still works and still warns.
+- **Removed unused helpers:** `parsing.extract_videos_from_renderers`,
+  `parsing.extract_videos_from_lockup_renderers` (superseded by
+  `parsing.parse_grid_page`) and the `date_utils.parse_human_readable_date`
+  alias (use `parse_relative_date_string`). None was exported from the
+  package or used by the library.
+- **Dev tooling lives only in the `dev` dependency group.** The
+  duplicate `yt-meta[dev]` extra is gone, and the group now includes
+  `ruff` and `pytest-cov`. `uv sync` installs the group, so `make lint`
+  uses the locked ruff instead of whatever ruff is on `PATH`. Use
+  `uv sync` in place of `pip install yt-meta[dev]`.
+
 ### Fixed
 - **Relative dates misparsed**: the shorthand pattern (`5d`, `2w`) was
   unanchored, so `"5 minutes ago"` parsed as 5 *months* ago and
@@ -76,11 +112,6 @@ All notable changes to this project are documented in this file.
   directory private.
 
 ### Changed
-- **Dev tooling lives only in the `dev` dependency group.** The
-  duplicate `yt-meta[dev]` extra is gone, and the group now includes
-  `ruff` and `pytest-cov`. `uv sync` installs the group, so `make lint`
-  uses the locked ruff instead of whatever ruff is on `PATH`. Use
-  `uv sync` in place of `pip install yt-meta[dev]`.
 - **CI tests Python 3.10–3.13**, every version `requires-python` allows,
   instead of only 3.13. The workflow token is read-only.
 - **The unused `integration` pytest marker is removed.** No test has
@@ -91,11 +122,6 @@ All notable changes to this project are documented in this file.
   applied. It now gets a `requests.Session` with the consent cookie (when
   enabled) and retry with backoff that honors `Retry-After`. `requests`
   is now a declared dependency (it was already installed transitively).
-- **Removed unused helpers:** `parsing.extract_videos_from_renderers`,
-  `parsing.extract_videos_from_lockup_renderers` (superseded by
-  `parsing.parse_grid_page`) and the `date_utils.parse_human_readable_date`
-  alias (use `parse_relative_date_string`). None was exported from the
-  package or used by the library.
 - **Bad arguments raise when a method is called, not on first iteration.**
   The listing and comment methods (`get_channel_videos`,
   `get_channel_shorts`, `get_channel_streams`, `get_playlist_videos`,
@@ -103,31 +129,17 @@ All notable changes to this project are documented in this file.
   `get_video_comments`, `get_video_comments_with_reply_tokens`,
   `get_comment_replies`, `get_comment_threads`) check their arguments up
   front and return a generator; requests still start on first iteration.
-- **`get_comment_threads` defaults to `sort_by='recent'`**, like every
-  other comment method (it was `'top'`). Pass `sort_by='top'` for the
-  previous order. The README now notes that `'recent'` is YouTube's
-  "Newest" view, which includes potential spam.
-- **A channel tab that can't be fetched now raises.** `get_channel_videos`,
-  `get_channel_shorts` and `get_channel_streams` used to log the error and
-  yield nothing, so a missing or mistyped channel looked like an empty
-  one. They now raise `VideoUnavailableError`, as playlists already did.
-  The error policy is written down in the `fetchers` module docstring and
-  the README's Errors section.
 - **Documentation.** The README is reorganized for new users (install,
   quick start, one section per task, then filtering, caching, errors and
   a complete API reference), and its claims were checked against the
-  code. `YtMeta` docstrings share one style.
+  code. `YtMeta` docstrings share one style. The examples and internal
+  docstrings were rewritten in the same plain style, and comments that
+  contradicted the code were corrected.
 - Internal restructuring with no change in behavior: every listing
   shares one page fetch and pagination loop, YouTube page-layout
   lookups live in `parsing`, and comment sort options are read from the
   comments panel menu instead of a search of the whole page. Cache keys
   are unchanged.
-- **Filter validation is stricter.** Values are checked against the
-  field's type, so `{"title": {"eq": 5}}` and
-  `{"view_count": {"eq": "100"}}` raise `TypeError` instead of crashing
-  later or matching nothing. Comment-only fields on video filters, and
-  video-only fields on comment filters, raise `ValueError`.
-  `validate_filters` takes an optional `kind="video"|"comment"`.
 
 ## [0.8.0] - 2026-07-06
 

@@ -50,7 +50,7 @@ logger = logging.getLogger(__name__)
 
 
 def _utcnow_iso() -> str:
-    """Current UTC time as an ISO-8601 string. Indirected through a
+    """Return the current UTC time as an ISO-8601 string. Indirected through a
     module function so tests can monkeypatch a deterministic clock."""
     return datetime.now(timezone.utc).isoformat()
 
@@ -61,13 +61,13 @@ def _apply_status_tracking(parsed: dict, prior: dict | None) -> dict:
 
     - ``status_checked_at``: always set to now (we just verified it).
     - ``status_changed_at``: now if the status differs from the prior
-      record (or there is no prior — first sighting); otherwise carried
+      record (or there is no prior, i.e. first sighting); otherwise carried
       forward from the prior record.
     - When a video is ``unavailable`` and a prior record exists, the
       prior record's content fields (title, channel, counts, …) are
-      preserved and the status fields overlaid — so callers never lose
-      data they already had. M-b: this must hold on EVERY unavailable
-      check, not just the first ok→unavailable transition — a repeat
+      preserved and the status fields overlaid, so callers never lose
+      data they already had. M-b: this must hold on every unavailable
+      check, not just the first ok→unavailable transition. A repeat
       check of an already-unavailable video re-preserves the carried
       content instead of overwriting it with the fresh parse's Nones.
     """
@@ -76,7 +76,7 @@ def _apply_status_tracking(parsed: dict, prior: dict | None) -> dict:
     prior_status = prior.get("status") if prior else None
 
     if status == "unavailable" and prior:
-        # Unavailable with history — keep the last-known-good content.
+        # Unavailable with history: keep the last-known-good content.
         # Only "unavailable": an "upcoming" parse is complete, and taking
         # the prior record kept a rescheduled premiere's old start time.
         result = dict(prior)
@@ -123,14 +123,14 @@ def _process_videos(
     log,
     coarse_date_cond=None,
 ):
-    """The per-video filter+enrich loop, extracted as a free function so
-    it can be unit-tested without a fetcher instance (L5). Applies fast
+    """Run the per-video filter+enrich loop. A free function so it can
+    be unit-tested without a fetcher instance (L5). Applies fast
     filters on the raw renderer dict, optionally fetches full metadata
     and merges it, applies slow filters on the merged dict, and yields
     survivors until stop_at_video_id or max_videos."""
 
     def admit(video):
-        """The merged video if it passes every filter, else None."""
+        """Return the merged video if it passes every filter, else None."""
         # Date-funnel coarse cut (see _run_filtered_pipeline): padded
         # pre-hydration screen on the approximate date. Skips the
         # hydration request for videos safely outside the window.
@@ -139,7 +139,7 @@ def _process_videos(
         ):
             return None
         # M-e: when full metadata will be fetched anyway, a fast-filter
-        # field that is missing/None on the raw item is DEFERRED to the
+        # field that is missing/None on the raw item is deferred to the
         # merged dict instead of dropping the video one request too
         # early (e.g. a page shape without date text + a publish_date
         # filter + fetch_full_metadata=True). Without hydration the
@@ -182,7 +182,7 @@ def _process_videos(
             yield merged_video
             videos_processed += 1
         # The marker ends pagination whether or not it passed the
-        # filters (or its metadata fetch failed) — checking only after
+        # filters (or its metadata fetch failed). Checking only after
         # a yield walked the whole channel when the marker was filtered.
         if stop_at_video_id and video["video_id"] == stop_at_video_id:
             return
@@ -201,14 +201,14 @@ def _run_filtered_pipeline(
     stop_at_video_id,
     max_videos,
 ):
-    """The shared filter-pipeline epilogue, extracted from the three
+    """Run the shared filter pipeline, extracted from the three
     fetcher entrypoints (get_channel_videos / get_channel_shorts /
     get_playlist_videos) which previously hand-copied it (L5).
 
     Partitions filters into fast/slow, decides whether full metadata
     must be fetched (always when a slow filter is present), logs the
     auto-enable, then yields from the per-video loop. Independently
-    unit-testable — no HTTP, no fetcher instance required.
+    unit-testable: no HTTP, no fetcher instance required.
     """
     fast_filters, slow_filters = partition_filters(
         filters or {}, content_type=content_type
@@ -222,11 +222,11 @@ def _run_filtered_pipeline(
         )
 
     # The date funnel: when hydrating, publish_date bounds are decided
-    # by the EXACT (post-merge) date; pre-merge, the approximate date
+    # by the exact (post-merge) date; pre-merge, the approximate date
     # only serves as a coarse cut padded by its own rounding error
     # (passes_padded_date_window), so near-boundary videos survive to
-    # hydration. Without hydration, approximate dates are all there is
-    # — date-granularity bounds work as documented, but hour-level
+    # hydration. Without hydration, approximate dates are all there is:
+    # date-granularity bounds work as documented, but hour-level
     # bounds cannot be honored and must fail loudly rather than compare
     # against query-time noise.
     coarse_date_cond = None
@@ -259,11 +259,10 @@ class _BaseFetcher:
     """Minimal shared base for ChannelFetcher and PlaylistFetcher.
 
     Holds the common construction (session / cache / video_fetcher /
-    logger) and the continuation-fetch HTTP method they both use. The
-    filter-pipeline logic that used to live here is now the free
-    functions ``_run_filtered_pipeline`` / ``_process_videos`` above —
-    extracted per L5 so it's unit-testable in isolation. What remains
-    here is genuinely shared behavior, not a pipeline shim.
+    logger) and the page fetch, continuation fetch and pagination they
+    both use. The filter pipeline lives in the free functions
+    ``_run_filtered_pipeline`` / ``_process_videos`` above (L5), so it
+    can be unit-tested in isolation.
     """
 
     def __init__(
@@ -374,7 +373,7 @@ class _BaseFetcher:
 
 
 class VideoFetcher:
-    """Fetches data related to a single YouTube video."""
+    """Fetcher for one video's watch-page metadata."""
 
     def __init__(self, session: httpx.Client, cache: MutableMapping | None):
         self.session = session
@@ -383,7 +382,7 @@ class VideoFetcher:
     def get_video_metadata(
         self, youtube_url: str, force_refresh: bool = False
     ) -> dict | None:
-        """One video's watch-page metadata with status tracking. Contract: see
+        """Return one video's watch-page metadata with status tracking. Contract: see
         YtMeta.get_video_metadata.
         """
         logger.info(f"Fetching video page: {youtube_url}")
@@ -401,7 +400,7 @@ class VideoFetcher:
         watch_url = f"https://www.youtube.com/watch?v={video_id}"
         try:
             # C3: this GET runs once per video during full-metadata
-            # hydration — the library's highest-volume request — so a
+            # hydration (the library's highest-volume request), so a
             # transient 429/5xx here must be retried, not kill the
             # calling generator.
             response = request_with_retries(
@@ -409,7 +408,7 @@ class VideoFetcher:
             )
             html = response.text
         except httpx.HTTPError as e:
-            # C2: httpx.HTTPError covers BOTH RequestError (connection/
+            # C2: httpx.HTTPError covers both RequestError (connection/
             # timeout) and HTTPStatusError (raise_for_status on 4xx/5xx).
             # Catching only RequestError let status errors escape
             # unwrapped, contradicting the docstring's promise.
@@ -424,8 +423,8 @@ class VideoFetcher:
         initial_data = parsing.extract_and_parse_json(html, "ytInitialData")
 
         # Only a missing player response is truly unparseable. An
-        # unavailable video DOES return a player response (with a
-        # non-OK playabilityStatus) — that is reported via `status`,
+        # unavailable video does return a player response (with a
+        # non-OK playabilityStatus); that is reported via `status`,
         # not by returning None.
         if not player_response_data:
             logger.warning(
@@ -441,7 +440,7 @@ class VideoFetcher:
 
 
 class ChannelFetcher(_BaseFetcher):
-    """Fetches data related to a YouTube channel's videos and shorts."""
+    """Fetcher for a channel's metadata and its Videos, Shorts and Live tabs."""
 
     def __init__(
         self,
@@ -461,7 +460,7 @@ class ChannelFetcher(_BaseFetcher):
 
     @staticmethod
     def _tab_url(channel_url: str, tab: str) -> str:
-        """The channel's ``tab`` URL. Strip first: a trailing slash
+        """Return the channel's ``tab`` URL. Strip first: a trailing slash
         ("…/videos/") used to defeat the suffix check and produce
         "…/videos/videos", which YouTube serves but which split the cache
         key from the plain form."""
@@ -487,7 +486,7 @@ class ChannelFetcher(_BaseFetcher):
     def _get_channel_page_data(
         self, channel_url: str, force_refresh: bool = False
     ) -> tuple[dict, dict]:
-        """The channel's Videos tab page, which also carries the channel
+        """Return the channel's Videos tab page, which also carries the channel
         metadata."""
         return self._get_tab_page_data(channel_url, "videos", force_refresh)
 
@@ -531,10 +530,10 @@ class ChannelFetcher(_BaseFetcher):
     def _get_raw_channel_videos_generator(
         self, channel_url, force_refresh, final_start_date, stop_pad=False
     ):
-        """The Videos tab, stopping after the page that reaches a video
+        """Yield the Videos tab, stopping after the page that reaches a video
         older than ``final_start_date``.
 
-        The early-stop compares APPROXIMATE dates. When the pipeline will
+        The early-stop compares approximate dates. When the pipeline will
         hydrate (stop_pad), the boundary is padded by each date's own
         rounding error ("3 years ago" ≈ ±6 months) so near-boundary videos
         on later pages still reach the exact check.
@@ -572,7 +571,7 @@ class ChannelFetcher(_BaseFetcher):
         stop_at_video_id=None,
         max_videos=-1,
     ):
-        """Channel Videos tab, filtered. Parameters: see YtMeta.get_channel_videos."""
+        """Return the channel's Videos tab, filtered. Parameters: see YtMeta.get_channel_videos."""
         validate_filters(filters, kind="video")
         validate_youtube_url(channel_url)
         channel_url = self._tab_url(channel_url, "videos")
@@ -580,7 +579,7 @@ class ChannelFetcher(_BaseFetcher):
             start_date, end_date, filters
         )
         # Pad the pagination early-stop only when the pipeline will
-        # hydrate — that's when an exact post-merge check exists to
+        # hydrate; that's when an exact post-merge check exists to
         # tighten what the padded boundary lets through.
         will_hydrate = fetch_full_metadata or any(
             k not in FAST_VIDEO_FILTERS for k in (filters or {})
@@ -607,7 +606,7 @@ class ChannelFetcher(_BaseFetcher):
         force_refresh=False,
         margin=3,
     ):
-        """Exact-date window by bisection. Parameters: see
+        """Return the videos in an exact-date window, found by bisection. Parameters: see
         YtMeta.get_videos_published_between.
 
         ``margin`` extra items are hydrated on each side of the bisected
@@ -664,8 +663,9 @@ class ChannelFetcher(_BaseFetcher):
             vid = video["video_id"]
             if vid not in hydrated:
                 # One failed probe used to abort the whole window search.
-                # Fall back to the listing record (approximate date), as
-                # _process_videos does for the same errors.
+                # Fall back to the listing record (approximate date).
+                # _process_videos skips the video on the same errors, but
+                # the bisect needs a record at every index.
                 try:
                     full = self.video_fetcher.get_video_metadata(
                         f"https://www.youtube.com/watch?v={vid}"
@@ -679,7 +679,7 @@ class ChannelFetcher(_BaseFetcher):
             return hydrated[vid]
 
         def probe_day(i):
-            """Exact calendar day of raw[i] (falls back to the
+            """Return the exact calendar day of raw[i] (falls back to the
             approximate date if the watch page had none)."""
             merged = hydrate(i)
             dt = merged.get("publish_date") or raw[i].get("publish_date")
@@ -729,7 +729,7 @@ class ChannelFetcher(_BaseFetcher):
         stop_at_video_id=None,
         max_videos=-1,
     ):
-        """Channel Shorts tab, filtered. Parameters: see YtMeta.get_channel_shorts."""
+        """Return the channel's Shorts tab, filtered. Parameters: see YtMeta.get_channel_shorts."""
         validate_filters(filters, kind="video")
         validate_youtube_url(channel_url)
         return _run_filtered_pipeline(
@@ -752,7 +752,7 @@ class ChannelFetcher(_BaseFetcher):
         stop_at_video_id=None,
         max_videos=-1,
     ):
-        """Channel Live (/streams) tab, filtered. Parameters: see YtMeta.get_channel_streams."""
+        """Return the channel's Live (/streams) tab, filtered. Parameters: see YtMeta.get_channel_streams."""
         validate_filters(filters, kind="video")
         validate_youtube_url(channel_url)
         channel_url = self._tab_url(channel_url, "streams")
@@ -769,7 +769,7 @@ class ChannelFetcher(_BaseFetcher):
 
 
 class PlaylistFetcher(_BaseFetcher):
-    """Fetches data related to a YouTube playlist."""
+    """Fetcher for a playlist's metadata and items."""
 
     def __init__(
         self,
@@ -792,7 +792,7 @@ class PlaylistFetcher(_BaseFetcher):
 
     def get_playlist_metadata(self, playlist_id: str) -> dict:
         """Fetch and parse a playlist's own metadata (title, author,
-        description, video_count, ...). Wired in 0.8.0 — the parser
+        description, video_count, ...). Wired in 0.8.0; the parser
         existed with tests but was unreachable from the facade."""
         initial_data, _ = self._get_playlist_page_data(
             playlist_id, require_ytcfg=False
@@ -825,7 +825,7 @@ class PlaylistFetcher(_BaseFetcher):
         stop_at_video_id=None,
         max_videos=-1,
     ):
-        """Playlist items, filtered. Parameters: see YtMeta.get_playlist_videos."""
+        """Return the playlist's items, filtered. Parameters: see YtMeta.get_playlist_videos."""
         validate_filters(filters, kind="video")
         filters, _, _ = build_date_filter(start_date, end_date, filters)
         return _run_filtered_pipeline(

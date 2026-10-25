@@ -1,16 +1,17 @@
+"""
+Example: Filter channel videos by title
+
+title is a fast filter: the listing carries it, so no extra request per
+video is needed. Both contains and re match case-insensitively.
+"""
+
 import itertools
 
 from yt_meta import YtMeta
 
-# Example: Find videos by filtering on their title.
-# This is a "fast" filter because the title is available on the main channel
-# page, avoiding extra requests.
-
 client = YtMeta()
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
-# Find videos with "python" in the title (case-insensitive).
-# Title filtering is a "fast" filter since title is available in the basic video data.
 filters = {"title": {"contains": "python"}}
 
 print(f"Finding videos on {channel_url} with 'python' in the title...")
@@ -25,8 +26,7 @@ for video in itertools.islice(videos, 5):
 if count == 0:
     print("No videos found with 'python' in the title. Try 'AI' or 'machine' instead.")
 
-# --- Example 2: Using a regular expression ---
-# Find videos that start with "Python"
+# Titles that start with "Python".
 filters_re = {"title": {"re": r"^Python"}}
 
 print(f"\nFinding videos on {channel_url} that start with 'Python'...")

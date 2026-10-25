@@ -1,48 +1,32 @@
 """
-Example: Filtering by Full Description
+Example: Filter channel videos by full description
 
-This example demonstrates how to filter videos based on their full description
-content. This is a "slow" filter that requires fetching complete metadata.
-
-Key concepts:
-• Full description filtering
-• Slow vs fast filters
-• Automatic metadata fetching
-• Content-based video discovery
+full_description is a slow filter, so the client turns on
+fetch_full_metadata and makes one extra request per video checked.
+start_date bounds the scan.
 """
 
 import itertools
 
 from yt_meta import YtMeta
 
-# --- 1. Initialize the client ---
 client = YtMeta()
-
-# --- 2. Define the channel and filter ---
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
-# Find videos where the full description contains "LangChain"
-# This is useful for finding videos that mention specific technologies or topics
 filters = {"full_description": {"contains": "LangChain"}}
 
-# --- 3. Fetch filtered videos ---
-# The client will automatically set `fetch_full_metadata=True` for slow filters
 print(f"Finding videos on {channel_url} with 'LangChain' in the full description...")
-print("Note: This may take longer as full metadata is required.\n")
+print("This fetches each video's page, so it is slower than a listing-only filter.\n")
 
-# Bound the scan window: a slow filter costs one request per scanned
-# video until enough matches are found.
 videos = client.get_channel_videos(
     channel_url, filters=filters, start_date="6 months ago", max_videos=3
 )
 
-# --- 4. Display results ---
-print("--- Matching Videos ---")
+print("Matching videos:")
 count = 0
 for video in itertools.islice(videos, 3):
     count += 1
     title = video.get("title", "N/A")
-    # Show a snippet of the description to confirm the match
     description_snippet = " ".join(video.get("full_description", "").split()[:20])
 
     print(f"{count}. '{title}'")
@@ -53,4 +37,4 @@ if count == 0:
     print("No videos found with 'LangChain' in the description.")
     print("Try searching for 'AI', 'machine learning', or 'python' instead.")
 else:
-    print(f"✅ Found {count} videos matching the description filter!")
+    print(f"Found {count} videos matching the description filter.")

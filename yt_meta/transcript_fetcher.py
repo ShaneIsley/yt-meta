@@ -16,7 +16,7 @@ from .utils import CONSENT_COOKIE
 logger = logging.getLogger(__name__)
 
 # The library's documented "this video has no transcript to give you"
-# outcomes. These — and only these — map to an empty list. M-d/M20: the
+# outcomes. These, and only these, map to an empty list. M-d/M20: the
 # previous bare `except Exception: return []` also swallowed rate
 # limits, network failures, and parser bugs, making them
 # indistinguishable from "no transcript".
@@ -24,7 +24,7 @@ _NO_TRANSCRIPT_ERRORS = (NoTranscriptFound, TranscriptsDisabled, VideoUnavailabl
 
 
 class TranscriptFetcher:
-    """A fetcher for retrieving video transcripts from YouTube.
+    """Transcript fetcher built on youtube_transcript_api.
 
     youtube_transcript_api makes its own requests through a
     ``requests.Session``, so it can't use YtMeta's httpx session. The
@@ -60,12 +60,12 @@ class TranscriptFetcher:
         self, video_id: str, languages: list[str] | None = None
     ) -> list[dict]:
         """
-        Fetches the transcript for a given video ID.
+        Fetch the transcript for a video ID.
 
         Args:
             video_id: The ID of the YouTube video.
             languages: A list of language codes to prioritize (e.g., ['en', 'de']).
-                       If None, it will default to English.
+                       Defaults to English (['en']).
 
         Returns:
             A list of dictionary objects, where each object represents a
@@ -75,8 +75,8 @@ class TranscriptFetcher:
             disabled, or the video is unavailable).
 
         Raises:
-            Any other error — rate limiting, network failure, an
-            upstream shape change — propagates so it can't be mistaken
+            Any other error (rate limiting, network failure, an
+            upstream shape change) propagates so it can't be mistaken
             for "no transcript".
         """
         if languages is None:

@@ -1,6 +1,4 @@
-"""
-Main comment fetcher that orchestrates API client and parser for comprehensive comment extraction.
-"""
+"""Fetch a video's comments and replies, page by page, with sort, date and filter options."""
 
 import logging
 from collections.abc import Callable, Iterator, MutableMapping
@@ -20,10 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class CommentFetcher:
-    """
-    Main comment fetcher that combines API client and parser for complete comment extraction.
-    Provides a clean interface for fetching YouTube comments with comprehensive metadata.
-    """
+    """Comment and reply fetcher built on CommentAPIClient (HTTP) and CommentParser (parsing)."""
 
     def __init__(
         self,
@@ -44,8 +39,9 @@ class CommentFetcher:
                 whole library uses one client (M1/L2).
             cache: Optional MutableMapping shared with the surrounding
                 Facade. Used for caching watch-page parses under the
-                ``video_initial:{video_id}`` key so VideoFetcher and
-                CommentFetcher reuse each other's fetches.
+                ``video_initial:{video_id}`` key so repeated comment and
+                reply fetches for a video share one watch-page request.
+                VideoFetcher caches under its own key and does not share it.
         """
         self.api_client = CommentAPIClient(
             timeout=timeout,
@@ -79,7 +75,7 @@ class CommentFetcher:
         include_reply_continuation: bool = False,
         filters: dict | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Top-level comments for a video. Parameters: see YtMeta.get_video_comments.
+        """Return a lazy iterator of a video's top-level comments. Parameters: see YtMeta.get_video_comments.
 
         ``include_reply_continuation=True`` adds each comment's
         ``reply_continuation_token`` (what YtMeta.get_video_comments_with_reply_tokens
@@ -122,10 +118,8 @@ class CommentFetcher:
         logger.info(f"Fetching comments for video: {video_id}")
 
         try:
-            # Get initial video page data
             initial_data, ytcfg = self.api_client.get_initial_video_data(video_id)
 
-            # Get comment sort endpoints with flexible detection
             sort_endpoints = self.api_client.get_sort_endpoints_flexible(
                 initial_data, ytcfg
             )
@@ -134,7 +128,6 @@ class CommentFetcher:
                 logger.warning("No comment sort endpoints found")
                 return
 
-            # Select appropriate endpoint
             # since_date stops at the first older comment, so it needs a
             # real newest-first ordering; no silent fallback to top.
             continuation_token = self.api_client.select_sort_endpoint(
@@ -151,14 +144,13 @@ class CommentFetcher:
                 logger.warning(f"No continuation token found for sort_by='{sort_by}'")
                 return
 
-            # Fetch comments using continuation
             comment_count = 0
             seen_ids = set()
-            # H4: consecutive pages that carried zero NEW comment ids. A
+            # H4: consecutive pages that carried zero new comment ids. A
             # legitimate all-duplicate page can happen (sort_by='top'
-            # re-rankings overlap window boundaries) — break only after
+            # re-rankings overlap window boundaries), so break only after
             # several in a row so a one-off doesn't silently truncate.
-            # C5: "new" is measured PRE-filter — a page full of fresh
+            # C5: "new" is measured before filtering. A page full of fresh
             # comments that all fail the user's filters is progress, not
             # an empty page. Counting post-filter survivors made a rare
             # filter (one specific author) truncate pagination after
@@ -173,7 +165,6 @@ class CommentFetcher:
             # with their real stack trace instead of silently truncating
             # a complete-looking stream.
             while continuation_token and (limit is None or comment_count < limit):
-                # Make API request for comments
                 api_response = self.api_client.make_api_request(
                     continuation_token, ytcfg
                 )
@@ -181,17 +172,14 @@ class CommentFetcher:
                 if not api_response:
                     break
 
-                # Extract complete comments directly (new approach)
                 comments = self.parser.extract_complete_comments(api_response)
 
-                # Extract reply continuation tokens if requested
                 reply_tokens = {}
                 if include_reply_continuation:
                     reply_tokens = self.parser.extract_reply_continuations(
                         api_response
                     )
 
-                # Process comments
                 found_new_ids = False
                 for comment in comments:
                     if limit and comment_count >= limit:
@@ -200,9 +188,9 @@ class CommentFetcher:
                     if not comment or comment["id"] in seen_ids:
                         continue
 
-                    # C5: record page progress BEFORE the user
+                    # C5: record page progress before the user
                     # filters run. Filters are deterministic, so
-                    # marking a filtered-out id as seen is safe —
+                    # marking a filtered-out id as seen is safe:
                     # it would fail the same filters on any later
                     # page too.
                     seen_ids.add(comment["id"])
@@ -210,7 +198,7 @@ class CommentFetcher:
 
                     # since_date short-circuit: sort_by='recent' is
                     # newest-first, so the first comment older than the
-                    # cutoff ends the stream. Pinned comments are exempt —
+                    # cutoff ends the stream. Pinned comments are exempt;
                     # YouTube pins them to the top regardless of age.
                     if since_date and comment.get("publish_date"):
                         if comment["publish_date"] < since_date:
@@ -219,13 +207,11 @@ class CommentFetcher:
                             reached_since_date = True
                             break
 
-                    # Apply user-supplied predicate filters
                     if filters and not apply_comment_filters(comment, filters):
                         continue
 
                     comment_count += 1
 
-                    # Add reply continuation token if available and requested
                     if include_reply_continuation and comment["id"] in reply_tokens:
                         comment["reply_continuation_token"] = reply_tokens[
                             comment["id"]
@@ -243,7 +229,7 @@ class CommentFetcher:
                 # before breaking. The previous unconditional break
                 # truncated results on any page that happened to
                 # land all-duplicates (legitimate for 'top' sort)
-                # AND masked H3's wrong-token bug.
+                # and masked H3's wrong-token bug.
                 if found_new_ids:
                     consecutive_empty_pages = 0
                 else:
@@ -251,7 +237,6 @@ class CommentFetcher:
                     if consecutive_empty_pages >= EMPTY_PAGE_LIMIT:
                         break
 
-                # Get next continuation token using API client
                 continuation_token = self.api_client.extract_continuation_token(
                     api_response
                 )
@@ -263,7 +248,7 @@ class CommentFetcher:
             # M23: narrowed from `except Exception`. Programmer bugs
             # (KeyError from a code change in the parser, TypeError
             # from a wrong assumption) used to get wrapped as
-            # "video unavailable" — misleading the user about the
+            # "video unavailable", misleading the user about the
             # actual cause. Now only genuine HTTP failures get the
             # VideoUnavailableError wrap; everything else surfaces
             # so the real stack trace is visible.
@@ -279,8 +264,8 @@ class CommentFetcher:
         limit: int | None = None,
         progress_callback: Callable[[int], None] | None = None,
     ) -> Iterator[dict[str, Any]]:
-        """Replies in one comment thread. Parameters: see YtMeta.get_comment_replies."""
-        # C4: same normalization as get_comments — -1 means unbounded.
+        """Return a lazy iterator of the replies in one comment thread. Parameters: see YtMeta.get_comment_replies."""
+        # C4: same normalization as get_comments; -1 means unbounded.
         if limit is not None and limit < 0:
             limit = None
         video_id = extract_video_id(video_id)
@@ -292,18 +277,16 @@ class CommentFetcher:
         logger.info(f"Fetching replies for video: {video_id}")
 
         try:
-            # Get initial video page data for ytcfg
+            # Only ytcfg (API key and client context) is needed for replies.
             _, ytcfg = self.api_client.get_initial_video_data(video_id)
 
-            # Fetch replies using continuation
             reply_count = 0
             seen_ids = set()
             continuation_token = reply_continuation_token
 
             while continuation_token and (limit is None or reply_count < limit):
-                # M-d: no inner try/except — HTTP failures propagate to
+                # M-d: no inner try/except. HTTP failures propagate to
                 # the outer handler; parser bugs surface unwrapped.
-                # Make API request for replies
                 api_response = self.api_client.make_reply_request(
                     continuation_token, ytcfg
                 )
@@ -311,7 +294,7 @@ class CommentFetcher:
                 if not api_response:
                     break
 
-                # Extract replies using the same direct extraction as main comments
+                # Reply pages carry the same commentEntityPayload shape as comment pages.
                 replies = self.parser.extract_complete_comments(api_response)
                 replies_found = False
 
@@ -322,7 +305,6 @@ class CommentFetcher:
                     if limit and reply_count >= limit:
                         break
 
-                    # Mark as reply and set reply-specific properties
                     reply["is_reply"] = True
                     reply["reply_count"] = 0  # Replies don't have nested replies
                     reply["is_pinned"] = False  # Replies can't be pinned
@@ -339,7 +321,6 @@ class CommentFetcher:
                 if not replies_found:
                     break
 
-                # Look for next continuation token for more replies
                 continuation_token = self.api_client.extract_continuation_token(
                     api_response
                 )
@@ -349,7 +330,7 @@ class CommentFetcher:
             raise
         except httpx.HTTPError as e:
             # M-d: narrowed from `except Exception`, matching the M23
-            # fix in get_comments — only genuine HTTP failures get the
+            # fix in get_comments: only genuine HTTP failures get the
             # VideoUnavailableError wrap; programmer bugs surface with
             # their real stack trace.
             logger.error(f"Error fetching replies: {e}")
@@ -360,13 +341,13 @@ class CommentFetcher:
 
 def __getattr__(name):
     """Deprecated alias: ``BestCommentFetcher`` (the pre-0.4 class name).
-    Emits DeprecationWarning on access; scheduled for removal in 0.9.0."""
+    Emits DeprecationWarning on access; scheduled for removal in 1.0."""
     if name == "BestCommentFetcher":
         import warnings
 
         warnings.warn(
             "BestCommentFetcher is deprecated; use CommentFetcher. "
-            "The alias will be removed in yt-meta 0.9.0.",
+            "The alias will be removed in yt-meta 1.0.",
             DeprecationWarning,
             stacklevel=2,
         )

@@ -1,7 +1,7 @@
 """In-house HTTP retry/backoff (H9).
 
 A small dependency-free helper that retries transient YouTube failures
-— HTTP 429 and 5xx, plus connection-level ``httpx.RequestError`` — with
+(HTTP 429 and 5xx, plus connection-level ``httpx.RequestError``) with
 exponential backoff + jitter, honoring ``Retry-After`` on 429. Kept
 in-house (no tenacity) to preserve the project's lightweight runtime
 footprint; the testable surface is one function with injectable sleep
@@ -17,12 +17,12 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Status codes worth retrying: rate-limit + transient server errors.
-# 4xx other than 429 are caller errors and are NOT retried.
+# 4xx other than 429 are caller errors and are not retried.
 RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
 def _backoff_delay(attempt: int, base_delay: float, max_delay: float, rng) -> float:
-    """Exponential backoff with full jitter: a random point in
+    """Return an exponential backoff delay with full jitter: a random point in
     [0, min(base * 2**attempt, max_delay)]. Full jitter spreads
     retries from many clients instead of synchronizing them."""
     ceiling = min(base_delay * (2**attempt), max_delay)
