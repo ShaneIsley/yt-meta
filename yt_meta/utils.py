@@ -52,9 +52,8 @@ def _deep_get(dictionary, keys, default=None):
     """
     Safely access nested dictionary keys and list indices.
 
-    This function allows you to retrieve a value from a nested structure of
-    dictionaries and lists using a dot-separated string of keys or a list
-    of keys/indices.
+    Walk a nested structure of dictionaries and lists using a
+    dot-separated string of keys or a list of keys/indices.
 
     Args:
         dictionary (dict or list): The nested structure to search.
@@ -95,7 +94,7 @@ def extract_video_id(youtube_url: str) -> str:
     Accepts ``watch?v=ID``, ``/shorts/ID``, ``/live/ID``, ``youtu.be/ID``,
     and a bare 11-char ID. Every return path validates the extracted ID
     against ``[A-Za-z0-9_-]{11}``. The previous pass-through fallback that
-    accepted any non-``http`` string (M13) is removed — it allowed
+    accepted any non-``http`` string (M13) is removed; it allowed
     "test_id", "../etc/passwd", and similar to flow into cache keys.
 
     Raises ValueError if the ID can't be extracted or fails validation.
@@ -103,7 +102,7 @@ def extract_video_id(youtube_url: str) -> str:
     if not isinstance(youtube_url, str) or not youtube_url:
         raise ValueError(f"Could not extract video ID from: {youtube_url!r}")
 
-    # Bare 11-char ID — fast path.
+    # Fast path: a bare 11-char ID.
     if _is_valid_video_id(youtube_url):
         return youtube_url
 

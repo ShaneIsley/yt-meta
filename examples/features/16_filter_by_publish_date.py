@@ -1,5 +1,5 @@
 """
-Example: filter channel videos with a publish_date condition.
+Example: Filter channel videos with a publish_date condition
 
 publish_date is a fast filter for channel videos. It compares the
 listing's approximate date, parsed from relative text such as

@@ -1,6 +1,4 @@
-"""
-Comment parser for extracting and structuring comment data from YouTube API responses.
-"""
+"""Turn YouTube comment API responses into comment dicts and reply continuation tokens."""
 
 import logging
 from typing import Any
@@ -11,10 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 class CommentParser:
-    """
-    Handles extraction and parsing of comment data from YouTube API responses.
-    Responsible for payload extraction, data mapping, and comment structuring.
-    """
+    """Parser for comment API responses: comment dicts and reply continuation tokens."""
 
     def extract_reply_continuations(self, api_response: dict) -> dict[str, str]:
         """
@@ -33,7 +28,6 @@ class CommentParser:
                 if "commentThreadRenderer" in obj:
                     thread = obj["commentThreadRenderer"]
 
-                    # Get comment ID from commentViewModel
                     comment_id = None
                     if "commentViewModel" in thread:
                         view_model = thread["commentViewModel"]
@@ -136,14 +130,16 @@ class CommentParser:
 
     def extract_complete_comments(self, api_response: dict) -> list[dict[str, Any]]:
         """
-        Extract complete comment data directly from commentEntityPayload.
-        This approach gets all data (comment, author, toolbar) from a single payload.
+        Extract comments from each commentEntityPayload in the response.
+
+        Text, author and toolbar counts come from the payload itself; heart
+        and pinned state are joined in from elsewhere in the response (C1).
 
         Args:
             api_response: API response data
 
         Returns:
-            List of complete comment dictionaries
+            List of comment dictionaries
         """
         comments = []
 
@@ -180,18 +176,15 @@ class CommentParser:
                 if "commentEntityPayload" in obj:
                     payload = obj["commentEntityPayload"]
 
-                    # Extract comment properties
                     properties = payload.get("properties", {})
                     comment_id = properties.get("commentId")
 
                     if not comment_id:
                         return
 
-                    # Extract text content
                     content = properties.get("content", {})
                     text = content.get("content", "")
 
-                    # Extract author data directly from payload
                     author_data = payload.get("author", {})
                     author_name = author_data.get("displayName", "Unknown")
                     author_channel_id = author_data.get("channelId", "")
@@ -199,7 +192,6 @@ class CommentParser:
                     is_verified = author_data.get("isVerified", False)
                     is_creator = author_data.get("isCreator", False)
 
-                    # Extract toolbar data directly from payload
                     toolbar_data = payload.get("toolbar", {})
                     like_count = self._parse_engagement_count(
                         toolbar_data.get("likeCountNotliked")
@@ -210,7 +202,6 @@ class CommentParser:
                         toolbar_data.get("replyCount", "0")
                     )
 
-                    # Extract time information
                     published_time = properties.get("publishedTime", "")
                     publish_date = None
                     if published_time:
@@ -225,7 +216,6 @@ class CommentParser:
                                 "Could not parse comment date %r", published_time
                             )
 
-                    # Extract other properties
                     reply_level = properties.get("replyLevel", 0)
                     is_reply = reply_level > 0
 
@@ -245,8 +235,8 @@ class CommentParser:
                         "author_avatar_url": author_avatar_url,
                         "publish_date": publish_date,
                         "time_human": published_time,
-                        # Option A: comments exist upstream ONLY as
-                        # relative text — permanently approximate, to
+                        # Option A: comments exist upstream only as
+                        # relative text, so they are always approximate, to
                         # the day at best. publish_date_text mirrors
                         # time_human for cross-surface schema
                         # uniformity with videos/streams/playlists.

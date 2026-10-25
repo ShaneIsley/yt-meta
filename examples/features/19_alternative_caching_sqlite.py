@@ -1,76 +1,67 @@
+"""
+Example: SQLite persistent cache
+
+Times one video fetch three ways: with no cache, with a new SQLite cache
+(cache_path=), and from a second client reading that same cache file. The
+first two runs hit YouTube; the third reads from disk.
+"""
+
 import os
 import time
 from pathlib import Path
 
 from yt_meta import YtMeta
 
-# --- Configuration ---
 VIDEO_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 DB_FILE = Path("alternative_cache.sqlite")
 
 
 def clear_cache_files():
-    """Removes the cache files if they exist to ensure a clean benchmark."""
+    """Delete the cache file so each run starts cold."""
     if DB_FILE.exists():
         os.remove(DB_FILE)
 
 
 def main():
-    """
-    Demonstrates the built-in SQLite persistent cache (cache_path=), mimicking the 3-step
-    benchmark for clarity.
-    """
+    """Time an uncached fetch, a cache-populating fetch, and a fetch from disk."""
     clear_cache_files()
-    print("--- Using the built-in SQLite persistent cache ---")
-    print("-" * 50)
+    print("Built-in SQLite persistent cache")
+    print()
 
-    # --- Step 1: Initial fetch time with no cache at all ---
-    # (A bare YtMeta() does NOT cache — every call hits the network.)
-    print("Step 1: Running with a standard client (no caching).")
+    # A bare YtMeta() has no cache, so every call hits the network.
+    print("Step 1: client without a cache.")
     client_uncached = YtMeta()
     start_time = time.perf_counter()
     client_uncached.get_video_metadata(VIDEO_URL)
     duration_uncached = time.perf_counter() - start_time
-    print(f"-> Initial fetch took: {duration_uncached:.4f} seconds.\n")
+    print(f"-> Fetch took: {duration_uncached:.4f} seconds.\n")
 
-    print("-" * 50)
-
-    # --- Step 2: First fetch with the persistent cache (populating it) ---
-    print("Step 2: Running with a new client to populate the SQLite cache.")
-
+    print("Step 2: new client that writes to the SQLite cache.")
     client_populating = YtMeta(cache_path=str(DB_FILE))
     start_time = time.perf_counter()
     client_populating.get_video_metadata(VIDEO_URL)
     duration_populating = time.perf_counter() - start_time
     print(
-        f"-> First fetch with SQLite (populating) took: {duration_populating:.4f} seconds.\n"
+        f"-> Fetch that populated the SQLite cache took: {duration_populating:.4f} seconds.\n"
     )
 
-    print("-" * 50)
-
-    # --- Step 3: A completely new client reading from the populated cache ---
-    print("Step 3: Simulating a new run with another new client instance.")
-    print("        This demonstrates reading from the existing SQLite cache.")
-
+    # A separate client stands in for a later run of the program.
+    print("Step 3: another new client reading the same cache file.")
     client_from_disk = YtMeta(cache_path=str(DB_FILE))
     start_time = time.perf_counter()
     client_from_disk.get_video_metadata(VIDEO_URL)
     duration_cached = time.perf_counter() - start_time
     print(
-        f"-> First fetch for this new client (from disk) took: {duration_cached:.4f} seconds.\n"
+        f"-> Fetch from the cache on disk took: {duration_cached:.4f} seconds.\n"
     )
 
-    print("-" * 50)
-
-    # --- Conclusion ---
     if duration_cached > 0:
         speedup = duration_populating / duration_cached
-        print("Conclusion:")
-        print(f"The call using the populated SQLite cache was ~{speedup:.0f}x faster.")
+        print("Result:")
+        print(f"The fetch from the SQLite cache was ~{speedup:.0f}x faster.")
 
-    # Clean up
     clear_cache_files()
-    print(f"Cleaned up cache files: {DB_FILE} and related journal/cache files.")
+    print(f"Removed cache file: {DB_FILE}")
 
 
 if __name__ == "__main__":

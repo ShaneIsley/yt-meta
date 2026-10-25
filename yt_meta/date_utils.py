@@ -7,7 +7,7 @@ import dateparser
 
 def parse_relative_date_string(date_str: str) -> date:
     """
-    Parses a date string into a date object.
+    Parse a date string into a date object.
 
     Handles three formats:
     1. Shorthand notation (e.g., "1d", "2w", "3m", "4y" for days, weeks,
@@ -21,7 +21,7 @@ def parse_relative_date_string(date_str: str) -> date:
     - Months are approximated as 30 days, years as 365 days.
     - Non-str inputs (e.g. ``None``) return today's date as a defensive
       fallback for callers using ``dict.get(...)``-style lookups.
-    - Unrecognized strings raise ``ValueError`` — failing loudly is preferred
+    - Unrecognized strings raise ``ValueError``. Failing loudly is preferred
       to silently returning today, which corrupted downstream date filters
       (see review H2).
     """
@@ -76,7 +76,7 @@ def parse_relative_date_string(date_str: str) -> date:
 
 
 def approx_date_resolution(text: str | None) -> timedelta:
-    """The rounding error bound of an APPROXIMATE publish date, derived
+    """Return the rounding error bound of an approximate publish date, derived
     from its raw relative text (``publish_date_text``).
 
     YouTube rounds listing dates to the largest unit ("3 years ago"

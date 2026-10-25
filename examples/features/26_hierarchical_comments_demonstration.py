@@ -1,19 +1,19 @@
 """
-Example: Hierarchical Comment Organization
+Example: Comment threads from reply tokens
 
-This example demonstrates how to organize YouTube comments into
-hierarchical threads (a top-level comment plus its replies).
+Builds threads (a top-level comment plus its replies) by hand.
+`get_video_comments` returns only top-level comments, because YouTube serves
+replies through a continuation token per thread. The steps, also used in
+example 30, are:
 
-`get_video_comments` returns only TOP-LEVEL comments — YouTube serves
-replies through per-thread continuation tokens, not inline. The correct
-workflow (also shown in example 30) is:
+  1. `get_video_comments_with_reply_tokens(...)` returns top-level comments,
+     each with a `reply_continuation_token` when it has replies.
+  2. `get_comment_replies(video, token)` returns the replies for one thread,
+     at one request per page of about 10 replies.
 
-  1. `get_video_comments_with_reply_tokens(...)` — top-level comments,
-     each carrying a `reply_continuation_token` when it has replies;
-  2. `get_comment_replies(video, token)` — the replies for one thread.
-
-(Before 0.8.0 this example built the hierarchy from `parent_id`, which
-is always None on top-level fetches — it demonstrated nothing.)
+Example 27b does the same with `get_comment_threads`. (Before 0.8.0 this
+example built threads from `parent_id`, which is always None on top-level
+fetches, so it never found a reply.)
 """
 
 import logging
@@ -35,7 +35,7 @@ def main():
         )
     )
 
-    # Build the hierarchy: fetch replies for the 3 most-replied threads.
+    # Fetch replies only for the 3 threads with the most replies.
     threads = sorted(top_level, key=lambda c: c["reply_count"], reverse=True)
     hierarchy = {}
     for comment in threads[:3]:
@@ -48,26 +48,20 @@ def main():
         hierarchy[comment["id"]] = (comment, replies)
 
     total_replies = sum(c["reply_count"] for c in top_level)
-    print("\n📊 HIERARCHY SUMMARY:")
+    print("\nSummary")
     print(f"Top-level comments fetched: {len(top_level)}")
     print(f"Replies reported across them: {total_replies}")
     print(f"Threads expanded below: {len(hierarchy)}")
 
-    print("\n💬 MOST ACTIVE THREADS:")
+    print("\nMost active threads")
     for i, (comment, replies) in enumerate(hierarchy.values(), 1):
         print(f"\n{i}. @{comment['author']} ({comment['reply_count']} replies)")
-        print(f"   💬 {comment['text'][:70]}...")
-        print(f"   👍 {comment['like_count']} likes")
+        print(f"   {comment['text'][:70]}...")
+        print(f"   {comment['like_count']} likes")
         for reply in replies:
             print(f"   ↳ @{reply['author']}: {reply['text'][:50]}...")
         if comment["reply_count"] > len(replies):
             print(f"   ↳ ... and {comment['reply_count'] - len(replies)} more replies")
-
-    print("\n✨ Hierarchical organization helps:")
-    print("• Identify popular discussion topics")
-    print("• Track conversation threads")
-    print("• Find most engaging comments")
-    print("• Understand community interactions")
 
 
 if __name__ == "__main__":

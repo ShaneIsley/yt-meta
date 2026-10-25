@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 # Pickle protocol marker byte (PROTO opcode = 0x80, present in pickle
 # protocols 2+, which covers all output from Python's default pickling
 # since 2.x). Used to detect pre-0.5.0 cache files written by the prior
-# pickle-based SQLiteCache and refuse to deserialize them — closing the
+# pickle-based SQLiteCache and refuse to deserialize them, closing the
 # RCE vector that pickle.loads on a tampered cache file would open.
 _LEGACY_PICKLE_MARKER = b"\x80"
 
@@ -21,8 +21,8 @@ def _json_default(obj):
     """M-a: explicit, revivable encoding for the non-JSON types the
     cache actually holds (datetime/date, e.g. publish_date). The
     previous ``default=str`` fallback silently changed value types on
-    the read side — a cache HIT returned publish_date as a string while
-    a MISS returned datetime. Anything else raises at WRITE time (R7:
+    the read side: a cache hit returned publish_date as a string while
+    a miss returned datetime. Anything else raises at write time (R7:
     no silent serialization fallbacks). datetime is checked before date
     (it's a date subclass)."""
     if isinstance(obj, datetime):
@@ -64,7 +64,7 @@ class DummyCache(MutableMapping):
         return 0
 
     def close(self) -> None:
-        """No-op — there's nothing to release. Present so callers can
+        """Do nothing; there's nothing to release. Present so callers can
         treat any cache the same way (YtMeta.close() calls cache.close()
         unconditionally).
         """
@@ -72,9 +72,7 @@ class DummyCache(MutableMapping):
 
 
 class SQLiteCache(MutableMapping):
-    """
-    A cache that uses SQLite as a backend.
-    """
+    """A cache backed by SQLite, with JSON values and a per-entry TTL."""
 
     def __init__(self, path=".my_yt_meta_cache/cache.db", ttl_seconds=86400):
         self.path = path
@@ -88,7 +86,7 @@ class SQLiteCache(MutableMapping):
         self._lock = threading.Lock()
         # WAL gives concurrent readers + a single writer without each
         # commit blocking readers (the default 'delete' mode does).
-        # synchronous=NORMAL is the standard pairing with WAL — durable
+        # synchronous=NORMAL is the standard pairing with WAL: durable
         # across crashes, faster than FULL.
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
@@ -103,7 +101,7 @@ class SQLiteCache(MutableMapping):
         self.close()
 
     def close(self) -> None:
-        """Close the underlying SQLite connection. Idempotent —
+        """Close the underlying SQLite connection. Idempotent:
         sqlite3.Connection.close() on an already-closed connection is
         a no-op.
         """

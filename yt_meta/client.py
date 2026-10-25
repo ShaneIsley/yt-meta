@@ -49,7 +49,7 @@ class YtMeta:
         if accept_cookies:
             # YouTube's documented consent-bypass cookie. Set on the single
             # shared session, so it covers every fetcher (video / channel /
-            # playlist / comment) — M1/L2 unified them onto this session.
+            # playlist / comment); M1/L2 unified them onto this session.
             self.session.cookies.set(*CONSENT_COOKIE, domain=".youtube.com")
             logger.info("accept_cookies=True: set SOCS consent cookie on session.")
         if cache is not None:
@@ -145,7 +145,7 @@ class YtMeta:
     ) -> str:
         """M9: video-targeting methods accept either ``youtube_url`` or
         ``video_id`` as a keyword. Exactly one must be provided. Returns
-        the raw value (a URL or a bare id) — callers run it through
+        the raw value (a URL or a bare id); callers run it through
         ``extract_video_id`` as needed.
         """
         provided = [v for v in (youtube_url, video_id) if v is not None]

@@ -1,6 +1,4 @@
-"""
-Comment API client for handling HTTP operations and YouTube API interaction.
-"""
+"""HTTP client for YouTube's comment endpoints: the watch page and the InnerTube ``next`` API."""
 
 import json
 import logging
@@ -19,10 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class CommentAPIClient:
-    """
-    Handles HTTP operations and YouTube API interaction for comment fetching.
-    Responsible for endpoint detection, API requests, and data retrieval.
-    """
+    """HTTP client that loads a video's watch page and pages through its comments and replies."""
 
     def __init__(
         self,
@@ -37,21 +32,23 @@ class CommentAPIClient:
         Args:
             timeout: HTTP timeout for self-owned sessions. Ignored when
                 ``session`` is injected.
-            retries: Reserved for future retry-wrapper work (H9).
+            retries: Retry count for transient failures (H9), passed to
+                ``request_with_retries`` on every request.
             user_agent: User-Agent for self-owned sessions. Ignored when
                 ``session`` is injected.
             session: An ``httpx.Client`` to use instead of constructing
                 a new one. YtMeta injects its main session here under
                 M1/L2 so the whole library shares one client and the
                 whole watch-page cache stays consistent. When injected,
-                this object does NOT own the session (close() leaves it
-                alone — lifecycle stays with the injector).
+                this object does not own the session: close() leaves it
+                alone and the injector owns its lifecycle.
             cache: A ``MutableMapping`` for caching watch-page parse
                 results under the shared ``video_initial:{video_id}``
-                key. YtMeta injects its main cache here so comment
-                fetches reuse any prior watch-page fetch done by
-                VideoFetcher (and vice versa, eventually). Defaults to
-                a no-op ``DummyCache``.
+                key. YtMeta injects its main cache here so repeated
+                comment and reply fetches for a video share one
+                watch-page request. VideoFetcher caches under its own
+                key, so it does not share this entry. Defaults to a
+                no-op ``DummyCache``.
         """
         self.timeout = timeout
         self.retries = retries
@@ -74,8 +71,8 @@ class CommentAPIClient:
         self.cache = cache if cache is not None else DummyCache()
 
     def close(self) -> None:
-        """Close the underlying httpx.Client IF we own it. Injected
-        sessions are left alone — the injector owns the lifecycle.
+        """Close the underlying httpx.Client if we own it. Injected
+        sessions are left alone; the injector owns the lifecycle.
         Idempotent. Replaces the prior ``__del__`` hook which was
         unreliable at interpreter shutdown and on reference cycles.
         """
@@ -94,7 +91,7 @@ class CommentAPIClient:
         Caches the (initial_data, ytcfg) parse under
         ``video_initial:{video_id}``, in the cache shared across the
         YtMeta facade (M1/L2), so repeated comment and reply fetches for
-        a video reuse one watch-page request. VideoFetcher does NOT read
+        a video reuse one watch-page request. VideoFetcher does not read
         this key: it caches its own parsed record under
         ``video_meta:{video_id}``, so fetching a video's metadata and its
         comments still downloads the watch page twice.
@@ -148,7 +145,7 @@ class CommentAPIClient:
     def get_sort_endpoints_flexible(
         self, initial_data: dict, ytcfg: dict | None = None
     ) -> dict[str, str]:
-        """Comment sort tokens on the watch page, keyed "top" / "recent"
+        """Return the comment sort tokens on the watch page, keyed "top" / "recent"
         (see parsing.find_comment_sort_tokens). ``ytcfg`` is unused and
         kept for call compatibility."""
         endpoints = find_comment_sort_tokens(initial_data or {})
@@ -176,13 +173,12 @@ class CommentAPIClient:
         if not endpoints:
             return None
 
-        # Mapping of sort preferences to endpoint keywords
         if sort_by == "top":
             preferences = ["top comments", "top", "best comments", "best"]
         else:
             preferences = ["newest first", "newest", "recent", "new comments", "latest"]
 
-        # Try to find exact matches first
+        # Substring match against endpoint names, in preference order.
         for pref in preferences:
             for endpoint_name, token in endpoints.items():
                 if pref.lower() in endpoint_name.lower():
@@ -205,7 +201,7 @@ class CommentAPIClient:
 
     def make_api_request(self, continuation_token: str, ytcfg: dict) -> dict | None:
         """
-        Make API request to get comment data using continuation token.
+        Request a page of comments for a continuation token.
 
         Args:
             continuation_token: Token for the API request
@@ -233,7 +229,7 @@ class CommentAPIClient:
 
         # H9: wire the previously-ignored ``retries`` constructor param
         # through the actual retry/backoff helper. M-d: no blanket
-        # except — a persistent HTTP failure used to become None, which
+        # except: a persistent HTTP failure used to become None, which
         # the pagination loop treated as a normal end-of-stream (silent
         # truncation). Let it propagate; CommentFetcher wraps httpx
         # errors as VideoUnavailableError.
@@ -244,7 +240,7 @@ class CommentAPIClient:
 
     @staticmethod
     def _json(response) -> dict:
-        """response.json(), with a non-JSON body (HTML error page, a
+        """Return response.json(), with a non-JSON body (HTML error page, a
         truncated response) raised as MetadataParsingError instead of a
         bare JSONDecodeError."""
         try:
@@ -264,11 +260,11 @@ class CommentAPIClient:
           - ``appendContinuationItemsAction`` (subsequent pages)
 
         Both have a ``continuationItems`` list. The next-page token is
-        in the LAST ``continuationItemRenderer`` in that list (earlier
-        items are comment threads, which themselves contain nested
-        reply continuation tokens we MUST NOT pick up).
+        in the last ``continuationItemRenderer`` in that list. Earlier
+        items are comment threads, which contain nested reply
+        continuation tokens that must not be picked up.
 
-        M-c: the renderer carries its token in one of two forms —
+        M-c: the renderer carries its token in one of two forms:
         ``continuationEndpoint.continuationCommand.token`` (comment
         pages) or ``button.buttonRenderer.command.continuationCommand
         .token`` (reply "Show more replies" pages). Only the first was
@@ -301,7 +297,7 @@ class CommentAPIClient:
             if not items_wrapper:
                 continue
             items = items_wrapper.get("continuationItems") or []
-            # The next-page token is the LAST continuationItemRenderer.
+            # The next-page token is in the last continuationItemRenderer.
             # Iterate in reverse so we find it without scanning every
             # thread, and so we never see a comment thread first.
             for item in reversed(items):
@@ -325,7 +321,7 @@ class CommentAPIClient:
         self, reply_continuation_token: str, ytcfg: dict
     ) -> dict | None:
         """
-        Make API request to get reply data using reply continuation token.
+        Request a page of replies for a reply continuation token.
 
         Args:
             reply_continuation_token: Reply continuation token
@@ -351,7 +347,7 @@ class CommentAPIClient:
 
         payload = {"context": context, "continuation": reply_continuation_token}
 
-        # M-d: same as make_api_request — HTTP failures propagate.
+        # M-d: as in make_api_request, HTTP failures propagate.
         response = request_with_retries(
             lambda: self.client.post(url, json=payload), retries=self.retries
         )

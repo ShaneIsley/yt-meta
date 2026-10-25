@@ -1,41 +1,31 @@
-import itertools
+"""
+Example: Filter a playlist by publish date
+
+Playlists aren't in date order, so a date filter scans the whole playlist
+instead of stopping early. Without fetch_full_metadata the filter uses the
+listing's approximate dates ("2 years ago") and costs no extra requests.
+"""
+
 import logging
 from datetime import date
 
 from yt_meta import YtMeta
 
-# Enable logging to see the process
 logging.basicConfig(level=logging.INFO)
 
-# --- Example: Get videos from a specific date window in a channel ---
-print("--- Example: Filtering a channel by a specific date range ---")
 client = YtMeta()
 
-channel_url = "https://www.youtube.com/@samwitteveenai/videos"
+# Corey Schafer's Python tutorials: about 160 videos from 2015 onwards.
+playlist_id = "PL-osiE80TeTt2d9bfVyTiXJA-UTHn6WwU"
+start_date = date(2024, 1, 1)
 
-# Define a date window
-start_date = date(2025, 4, 1)
-end_date = date(2025, 6, 30)
-
-# The `publish_date` filter is fast on playlists: the listing carries
-# approximate relative dates, so no per-video fetch is needed. Pass
-# fetch_full_metadata=True when you need precise dates.
-date_filter = {"publish_date": {"gte": start_date, "lte": end_date}}
-videos_generator = client.get_channel_videos(
-    channel_url,
-    filters=date_filter,
+videos = list(
+    client.get_playlist_videos(
+        playlist_id,
+        filters={"publish_date": {"gte": start_date}},
+    )
 )
 
-# Use itertools.islice to get just the first 5 results for this example
-filtered_videos = list(itertools.islice(videos_generator, 5))
-
-print(
-    f"Found {len(filtered_videos)} videos from the channel published between {start_date} and {end_date} (showing first 5):"
-)
-for video in filtered_videos:
-    publish_date = video.get("publish_date", "N/A")
-    print(f"- Title: {video.get('title')}")
-    print(f"  Published: {publish_date}")
-    print(f"  URL: {video.get('url')}")
-
-print("\nNote: If no videos were found, there may be none in that date range.")
+print(f"{len(videos)} videos in the playlist published on or after {start_date}:")
+for video in videos:
+    print(f"- {video['title']} ({video['publish_date_text']})")

@@ -1,33 +1,32 @@
-# examples/features/04_get_channel_videos_full_metadata.py
+"""
+Example: Channel videos with full metadata
+
+fetch_full_metadata=True fetches each video's own page to add fields the
+listing lacks (likes, category, exact publish date). It costs one extra
+request per video.
+"""
+
 import itertools
 import logging
 
 from yt_meta import YtMeta
 
-# --- Optional: Configure logging to see what's happening ---
+# INFO logging shows each video page request.
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# --- 1. Initialize the client ---
 client = YtMeta()
-
-# --- 2. Define the channel URL ---
-# We'll fetch from a channel with good metadata variety
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
-# --- 3. Get the video generator with full metadata ---
-# Setting `fetch_full_metadata=True` gets additional data like likes, category, etc.
 print(f"Fetching videos with full metadata from: {channel_url}\n")
 videos_generator = client.get_channel_videos(
     channel_url,
-    fetch_full_metadata=True,  # This enables "slow" filters
+    fetch_full_metadata=True,  # slow filters turn this on automatically
 )
 
-# --- 4. Iterate and print the enriched results ---
-print("--- First 5 Videos with Full Metadata ---")
+print("First 5 videos with full metadata:")
 for video in itertools.islice(videos_generator, 5):
-    # Now we have access to additional metadata fields
     video_id = video.get("video_id", "N/A")
     title = video.get("title", "No Title")
     views = video.get("view_count", "N/A")
@@ -39,4 +38,4 @@ for video in itertools.islice(videos_generator, 5):
         f"  Info: (ID: {video_id}) - Views: {views:,} - Likes: {likes:,} - Category: {category}\n"
     )
 
-print("Note: Full metadata fetching takes longer but provides richer data.")
+print("Full metadata costs one request per video, so it is slower than the listing alone.")

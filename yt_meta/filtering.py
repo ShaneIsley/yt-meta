@@ -1,10 +1,8 @@
-"""
-This module contains the logic for advanced, dictionary-based filtering.
+"""Apply dictionary-based filters to video and comment records.
 
-It defines which filters are "fast" (available on the initial page load) and
-which are "slow" (requiring a separate request per video). The main entry
-point is `apply_filters`, which checks if a given video dictionary meets a
-set of specified criteria.
+Filters are split into "fast" (fields present on the listing page) and
+"slow" (fields that need one extra request per video). `apply_filters`
+checks one video dict against a filter dict.
 """
 
 import logging
@@ -21,7 +19,7 @@ logger = logging.getLogger(__name__)
 # These keys are available in the basic video metadata from channel/playlist pages.
 # C1/R2: this set must stay a subset of what parse_lockup_view_model
 # emits (pinned by tests/test_filter_schema_contract.py).
-# description_snippet was removed in 0.8.0 — only the retired
+# description_snippet was removed in 0.8.0: only the retired
 # videoRenderer shape carried it, so as a fast filter it silently
 # dropped every video on current lockup-shaped pages. Use
 # full_description (slow) instead.
@@ -33,7 +31,7 @@ FAST_VIDEO_FILTERS = {
 }
 FAST_SHORTS_FILTERS = {"view_count", "title"}
 
-# These keys require fetching full metadata for each video, making them slower.
+# These keys need full metadata, one extra request per video.
 SLOW_FILTER_KEYS = {
     "like_count",
     "category",
@@ -51,7 +49,7 @@ COMMENT_FILTER_KEYS = COMMENT_FILTER_FIELDS
 
 def partition_filters(filters: dict, content_type: str) -> tuple[dict, dict]:
     """
-    Partitions filters into fast and slow filters based on the content type.
+    Split filters into fast and slow filters based on the content type.
 
     Fast filters can be applied to the basic metadata fetched in the initial channel/shorts page load.
     Slow filters require fetching full metadata for each individual video/short.
@@ -79,7 +77,7 @@ def partition_filters(filters: dict, content_type: str) -> tuple[dict, dict]:
 
 def _check_numerical_condition(video_value, condition_dict) -> bool:
     """
-    Checks if a numerical video value meets all conditions in the dictionary.
+    Check a numerical value against every condition in the dictionary.
     Supports gt, gte, lt, lte, eq.
     """
     for op, filter_value in condition_dict.items():
@@ -105,19 +103,19 @@ def _check_numerical_condition(video_value, condition_dict) -> bool:
 
 def _check_date_condition(video_value, filter_value, op, precision=None) -> bool:
     """
-    Checks if a date video value meets a single condition.
+    Check a date value against a single condition.
     Supports gt, gte, lt, lte, eq, after, before.
 
     Granularity: when the filter bound is a ``datetime`` (the caller
-    cares about time-of-day) AND the record's value is precision-exact,
-    full datetimes are compared — a naive bound against a tz-aware
+    cares about time-of-day) and the record's value is precision-exact,
+    full datetimes are compared; a naive bound against a tz-aware
     value compares wall-clock. In every other case both sides are
-    truncated to calendar dates: the time-of-day on an APPROXIMATE
+    truncated to calendar dates: the time-of-day on an approximate
     value is query-time noise, and a bare ``date`` bound means "that
-    calendar day". (Previously hour bounds were ALWAYS truncated, which
+    calendar day". (Previously hour bounds were always truncated, which
     made a same-day hour window drop everything, silently.)
     """
-    # Ensure both values are datetime objects before comparison
+    # Strings are parsed here; one that won't parse fails the check below.
     if isinstance(video_value, str):
         video_value = dateparser.parse(
             video_value, settings={"PREFER_DATES_FROM": "past"}
@@ -145,7 +143,6 @@ def _check_date_condition(video_value, filter_value, op, precision=None) -> bool
             filter_value = filter_value.replace(tzinfo=None)
         comp_video_value, comp_filter_value = video_value, filter_value
     else:
-        # Standardize to date objects for comparison
         comp_video_value = (
             video_value.date() if isinstance(video_value, datetime) else video_value
         )
@@ -169,8 +166,8 @@ def _check_date_condition(video_value, filter_value, op, precision=None) -> bool
 
 def _check_text_condition(video_value, condition_dict) -> bool:
     """
-    Checks if a text video value meets all conditions in the dictionary.
-    Supports 'contains', 're', and 'eq'.
+    Check a text value against every condition in the dictionary,
+    case-insensitively. Supports 'contains', 're', and 'eq'.
     """
     for op, filter_value in condition_dict.items():
         if op == "contains":
@@ -189,22 +186,19 @@ def _check_text_condition(video_value, condition_dict) -> bool:
 
 def _check_list_condition(video_value_list, condition_dict) -> bool:
     """
-    Checks if a list of video values meets the conditions in the dictionary.
-    Supports 'contains_any' and 'contains_all'.
+    Check a list of values against the conditions in the dictionary,
+    case-insensitively. Supports 'contains_any' and 'contains_all'.
     """
-    # Ensure video_value_list is a list of lowercase strings for case-insensitive matching
     video_value_list = [str(v).lower() for v in video_value_list]
 
     contains_any = condition_dict.get("contains_any", [])
     if contains_any:
-        # Ensure filter values are a list of lowercase strings
         filter_values = [str(v).lower() for v in contains_any]
         if not any(v in video_value_list for v in filter_values):
             return False
 
     contains_all = condition_dict.get("contains_all", [])
     if contains_all:
-        # Ensure filter values are a list of lowercase strings
         filter_values = [str(v).lower() for v in contains_all]
         if not all(v in video_value_list for v in filter_values):
             return False
@@ -217,7 +211,7 @@ def build_date_filter(
     end_date,
     filters: dict | None = None,
 ):
-    """Unify date-filter construction across the fetchers.
+    """Build the merged date filter and pagination bounds for a fetcher.
 
     Reads any existing ``publish_date`` entry from ``filters`` (gt/gte
     for start, lt/lte for end), merges with explicit start_date /
@@ -230,16 +224,14 @@ def build_date_filter(
     ``final_start_date`` / ``final_end_date`` for short-circuit
     pagination (e.g. ChannelFetcher's renderer-level early-stop).
 
-    Before L1, ChannelFetcher had the rich merging logic inline at
-    fetchers.py:437-456 and PlaylistFetcher had a simpler but
-    differently-shaped version at fetchers.py:609-615. The disagreement
-    is what allowed H1 (PlaylistFetcher built tuples) to ship — the
-    two paths weren't unified. M5 (validate_filters ran before the
+    Before L1, ChannelFetcher had the full merging logic inline in
+    fetchers.py and PlaylistFetcher had a simpler, differently-shaped
+    version. That split is what allowed H1 (PlaylistFetcher built
+    tuples) to ship. M5 (validate_filters ran before the
     rewrite) had the same root cause.
     """
-    # Import here to avoid a circular import (filtering.py is imported
-    # by date_utils.py — wait, the other way actually, but keep local
-    # to make the dep direction explicit).
+    # Local import. There is no cycle to break (date_utils imports
+    # nothing from yt_meta); it just keeps the dependency visible here.
     from .date_utils import parse_relative_date_string
 
     if filters is None:
@@ -249,8 +241,8 @@ def build_date_filter(
 
     existing_pd = filters.get("publish_date", {}) or {}
     # Day-level kwargs overriding day-level filter bounds is documented
-    # ("kwargs win"). But silently replacing an HOUR-level bound with a
-    # day-level kwarg would evaporate the time window with no error —
+    # ("kwargs win"). But silently replacing an hour-level bound with a
+    # day-level kwarg would drop the time window with no error. This was
     # found live when both were passed together.
     if (start_date is not None or end_date is not None) and condition_has_time(
         existing_pd
@@ -267,7 +259,7 @@ def build_date_filter(
     final_end = end_date if end_date is not None else end_from_filter
 
     # C8: normalize every accepted shape to a plain date. datetime must
-    # be checked BEFORE the str branch's implicit date passthrough —
+    # be checked before the str branch's implicit date passthrough:
     # datetime is a date subclass, and leaving one through crashed the
     # channel generator's `publish_date.date() < final_start` comparison.
     if isinstance(final_start, str):
@@ -301,23 +293,23 @@ def build_date_filter(
 
 
 def condition_has_time(condition: dict | None) -> bool:
-    """True when any bound in a publish_date condition is a ``datetime``
-    — i.e. the caller cares about time-of-day, which only exact
-    (hydrated) dates can honor."""
+    """Return True when any bound in a publish_date condition is a
+    ``datetime``, meaning the caller cares about time-of-day, which only
+    exact (hydrated) dates can honor."""
     if not condition:
         return False
     return any(isinstance(v, datetime) for v in condition.values())
 
 
 def passes_padded_date_window(video: dict, condition: dict) -> bool:
-    """The padded coarse cut of the date funnel: does this video's
-    APPROXIMATE date fall inside the condition's window widened by the
+    """Apply the padded coarse cut of the date funnel: does this video's
+    approximate date fall inside the condition's window widened by the
     date's own rounding error (from ``publish_date_text`` granularity)?
 
     Used pre-hydration when full metadata will be fetched anyway: a "3
     years ago" date can be ~6 months off, so near-boundary videos must
     survive to hydration, where the exact date decides. Videos with no
-    approximate date pass (hydration supplies the field — M-e).
+    approximate date pass (hydration supplies the field, M-e).
     """
     from .date_utils import approx_date_resolution
 
@@ -348,7 +340,7 @@ def passes_padded_date_window(video: dict, condition: dict) -> bool:
 
 def apply_filters(video: dict, filters: dict | None) -> bool:
     """
-    Checks if a video dictionary passes a set of filters.
+    Check whether a video dictionary passes a set of filters.
 
     Args:
         video: The video metadata dictionary.
@@ -358,7 +350,7 @@ def apply_filters(video: dict, filters: dict | None) -> bool:
         True if the video passes all filters, False otherwise.
 
     Missing-field semantics (M6): if ``video[key]`` is ``None`` or the
-    key is absent, the video is treated as failing the filter — it
+    key is absent, the video is treated as failing the filter, since it
     cannot match. This is the right default for the common case
     ("``publish_date >= 2023``" should not include videos with no
     publish_date), but it can surprise users debugging "where did my
@@ -367,7 +359,7 @@ def apply_filters(video: dict, filters: dict | None) -> bool:
     see them.
     """
     if filters is None:
-        return True  # If no filters are provided, consider the video as passing
+        return True
 
     for key, condition in filters.items():
         if video.get(key) is None:
@@ -414,7 +406,7 @@ def apply_filters(video: dict, filters: dict | None) -> bool:
 
 def apply_comment_filters(comment: dict, filters: dict) -> bool:
     """
-    Checks if a comment object meets the criteria specified in the filters dict.
+    Check whether a comment dictionary passes a set of filters.
 
     Args:
         comment: A dictionary representing the comment's metadata.
@@ -456,8 +448,7 @@ def apply_comment_filters(comment: dict, filters: dict) -> bool:
 
 def _check_boolean_condition(value: bool, condition_dict: dict) -> bool:
     """
-    Checks if a boolean value matches the specified condition.
-    Supports 'eq'.
+    Check a boolean value against the condition. Supports 'eq'.
     """
     if "eq" in condition_dict:
         return value == condition_dict["eq"]

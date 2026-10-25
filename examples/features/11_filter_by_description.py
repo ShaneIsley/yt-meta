@@ -1,19 +1,20 @@
+"""
+Example: Filter channel videos by description text
+
+full_description is a slow filter: the listing has no description text (the
+description_snippet fast filter was removed in 0.8.0), so each video checked
+costs one metadata request. max_videos caps the results, not the videos
+scanned, so a rare term can scan the whole channel.
+"""
+
 import itertools
 
 from yt_meta import YtMeta
 
-# Example: Find videos with a specific keyword in their description.
-#
-# Description filtering uses `full_description`, a SLOW filter: the
-# listing page carries no description text on current YouTube (the
-# `description_snippet` fast filter was removed in 0.8.0), so each
-# candidate video costs one metadata request. Bound the scan with
-# max_videos to keep request counts predictable.
-
 client = YtMeta()
 channel_url = "https://www.youtube.com/@samwitteveenai/videos"
 
-# --- Example 1: Using the 'contains' operator ---
+# Substring match (case-insensitive).
 filters_contains = {"full_description": {"contains": "Gemini"}}
 
 print(f"Finding videos on {channel_url} with 'Gemini' in the description...")
@@ -30,8 +31,7 @@ for video in itertools.islice(videos_contains, 3):
     print(f"  Description: {desc}\n")
 
 
-# --- Example 2: Using a regular expression ---
-# Find videos that mention "AI" or "LLM" as whole words
+# Regex match: "AI" or "LLM" as whole words.
 filters_re = {"full_description": {"re": r"\b(AI|LLM)\b"}}
 
 print(f"\nFinding videos on {channel_url} using a regex for AI/LLM...")

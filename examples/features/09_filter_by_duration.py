@@ -1,5 +1,5 @@
 """
-Example: filter channel videos by duration.
+Example: Filter channel videos by duration
 
 duration_seconds is a fast filter for channel videos: the listing
 carries each video's length, so no extra request per video is needed.
